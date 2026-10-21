@@ -1,6 +1,6 @@
 /* ================= save ================= */
 const KEY = "math-hero-v1";  // kept so existing progress carries over
-const DEFAULT = {stars:{}, hero:0, voice:true, sound:true, timer:true, py:0.25, openAll:false, voiceName:"", rate:0.9, stats:{}, mistakes:[], stickers:{}, medals:{}, tier:{}, shiny:{}, items:{heal:1,time:1,ice:1}};
+const DEFAULT = {stars:{}, hero:0, voice:true, sound:true, timer:true, py:0.25, openAll:false, voiceName:"", rate:0.9, stats:{}, mistakes:[], stickers:{}, medals:{}, tier:{}, shiny:{}, items:{heal:1,time:1,ice:1}, bag:[], equipped:{weapon:null,helmet:null,armor:null,shield:null}, chests:0};
 let S;
 try { S = Object.assign({}, DEFAULT, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch(e){ S = Object.assign({}, DEFAULT); }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
@@ -973,6 +973,8 @@ const STK = {
 const STK_N = STK.n.list, STK_R = STK.r.list, STK_L = STK.l.list;
 const ALLSTK = STK_N.length + STK_R.length + STK_L.length;
 const MAXSTARS = WORLDS.length*5*3;
+const setOwned = k => (STK[k] && S.stickers) ? STK[k].list.filter(e=>S.stickers[e]).length : 0;
+const setDone = k => STK[k] ? setOwned(k)===STK[k].list.length : false;
 
 // progress used to be keyed by world position; key it by world id so new worlds can be inserted
 (function migrate(){
@@ -983,6 +985,56 @@ const MAXSTARS = WORLDS.length*5*3;
   S.tier = S.tier || {}; S.shiny = S.shiny || {}; S.items = S.items || {heal:1,time:1,ice:1};
   // a level already cleared with 3 stars counts as a mastered gold tier
   for(const k in S.stars) if(S.stars[k]===3 && !(k in S.tier)){ S.tier[k] = 1; changed = true; }
+
+  // 装备系统新增字段与默认值（正式存档 math-hero-v1 结构兼容）
+  if(!Array.isArray(S.bag)) { S.bag = []; changed = true; }
+  if(!S.equipped || typeof S.equipped !== "object"){
+    S.equipped = {weapon:null, helmet:null, armor:null, shield:null};
+    changed = true;
+  } else {
+    for(const slot of ["weapon","helmet","armor","shield"]){
+      if(!(slot in S.equipped)){ S.equipped[slot] = null; changed = true; }
+    }
+  }
+  if(typeof S.chests !== "number"){ S.chests = 0; changed = true; }
+
+  // 旧贴纸折算宝箱规则（保证孩子绝不吃亏）：
+  // 1. 每张普通贴纸折算 1 个宝箱
+  // 2. 每张稀有贴纸折算 3 个宝箱（对应 3:1 合成）
+  // 3. 每张传说贴纸折算 9 个宝箱（对应 9:1 合成）
+  // 4. 每张闪光贴纸额外奖励 2 个宝箱
+  // 5. 达成集齐奖励（全部普通+5、全部稀有+10、全部传说+20）
+  // 6. 保底机制：只要原有贴纸，折算不少于 3 个宝箱
+  // 7. 旧贴纸数据（S.stickers、S.shiny）完整保留，不删除不改名
+  if(!S.stickerMigrated){
+    const stkEntries = Object.entries(S.stickers || {});
+    if(stkEntries.length > 0){
+      let bonus = 0;
+      const rareSet = new Set(STK.r.list);
+      const legSet = new Set(STK.l.list);
+      for(const [e, count] of stkEntries){
+        const cnt = typeof count === "number" ? count : 1;
+        if(legSet.has(e)) bonus += cnt * 9;
+        else if(rareSet.has(e)) bonus += cnt * 3;
+        else bonus += cnt * 1;
+      }
+      if(S.shiny){
+        for(const e in S.shiny){
+          if(S.shiny[e]) bonus += 2;
+        }
+      }
+      if(setDone("n")) bonus += 5;
+      if(setDone("r")) bonus += 10;
+      if(setDone("l")) bonus += 20;
+
+      bonus = Math.max(3, bonus);
+      S.chests = (S.chests || 0) + bonus;
+      changed = true;
+    }
+    S.stickerMigrated = true;
+    changed = true;
+  }
+
   if(changed) save();
 })();
 
@@ -997,10 +1049,405 @@ const isFinal = (w,l) => w===WORLDS.length-1 && l===4;
 const mastery = (w,l) => S.tier[lvKey(w,l)]||0;
 const diffOf = (w,l) => isFinal(w,l) ? 0 : Math.min(mastery(w,l),3);
 const ITEMS = {heal:{e:"💖",tip:"💖 加一颗心"}, time:{e:"⏳",tip:"⏳ 多 10 秒时间"}, ice:{e:"🧊",tip:"🧊 冻住怪兽 10 秒"}};
-const setOwned = k => STK[k].list.filter(e=>S.stickers[e]).length;
-const setDone = k => setOwned(k)===STK[k].list.length;
 const goldAura = () => setDone("r");
 const heroUnlocked = i => { const h = HEROES[i]; return h.set ? setDone(h.set) : totalStars()>=h.need; };
 const stickerCount = () => Object.keys(S.stickers).length;
 function hero(){ if(!heroUnlocked(S.hero)) S.hero=0; return HEROES[S.hero]; }
+
+/* ================= gear system (装备系统) ================= */
+// 1. 六种品质：白、蓝、粉、紫、橙、红（颜色、掉落权重，红最稀有）
+const GEAR_QUALITIES = [
+  { key: "white",  name: "白", title: "白·普通", col: "#94a3b8", bg: "#f1f5f9", weight: 500, affixes: 1 },
+  { key: "blue",   name: "蓝", title: "蓝·优秀", col: "#3b82f6", bg: "#dbeafe", weight: 280, affixes: 2 },
+  { key: "pink",   name: "粉", title: "粉·精致", col: "#ec4899", bg: "#fce7f3", weight: 130, affixes: 2 },
+  { key: "purple", name: "紫", title: "紫·稀有", col: "#a855f7", bg: "#f3e8ff", weight: 60,  affixes: 3 },
+  { key: "orange", name: "橙", title: "橙·史诗", col: "#f97316", bg: "#ffedd5", weight: 24,  affixes: 4 },
+  { key: "red",    name: "红", title: "红·传说", col: "#ef4444", bg: "#fee2e2", weight: 6,   affixes: 5 }
+];
+const GEAR_QUALITY_MAP = Object.fromEntries(GEAR_QUALITIES.map(q => [q.key, q]));
+
+// 品质前缀
+const GEAR_PREFIXES = {
+  white:  ["初学者", "训练", "简易", "生铁", "练习"],
+  blue:   ["精铁", "灵巧", "冒险者", "疾风", "坚韧"],
+  pink:   ["幻彩", "晶莹", "璀璨", "星芒", "魔力"],
+  purple: ["秘银", "暗夜", "符文", "狂澜", "圣殿"],
+  orange: ["烈焰", "风暴", "极光", "不朽", "炽天使"],
+  red:    ["创世", "真龙", "至尊", "弑神", "宇宙"]
+};
+
+// 2. 四个部位：武器、头盔、盔甲、盾牌
+const GEAR_SLOTS = {
+  weapon: {
+    key: "weapon",
+    name: "武器",
+    e: "⚔️",
+    pool: [
+      { name: "短剑", e: "🗡️" },
+      { name: "双剑", e: "⚔️" },
+      { name: "长弓", e: "🏹" },
+      { name: "法杖", e: "🪄" },
+      { name: "战斧", e: "🪓" },
+      { name: "巨锤", e: "🔨" }
+    ]
+  },
+  helmet: {
+    key: "helmet",
+    name: "头盔",
+    e: "🪖",
+    pool: [
+      { name: "铁盔", e: "🪖" },
+      { name: "王冠", e: "👑" },
+      { name: "战帽", e: "🧢" },
+      { name: "法帽", e: "🎩" }
+    ]
+  },
+  armor: {
+    key: "armor",
+    name: "盔甲",
+    e: "🥋",
+    pool: [
+      { name: "战袍", e: "🥋" },
+      { name: "护甲", e: "🦺" },
+      { name: "战衣", e: "👕" },
+      { name: "披风", e: "🧥" }
+    ]
+  },
+  shield: {
+    key: "shield",
+    name: "盾牌",
+    e: "🛡️",
+    pool: [
+      { name: "坚盾", e: "🛡️" },
+      { name: "重盾", e: "🛡️" },
+      { name: "法球", e: "🔮" },
+      { name: "晶壁", e: "💎" }
+    ]
+  }
+};
+
+// 3. 词缀池：每条词缀有图标 emoji 和数值范围，品质越高词缀越多、数值越大
+const GEAR_AFFIXES = {
+  atk: {
+    id: "atk",
+    name: "攻击",
+    e: "⚔️",
+    format: v => "攻击 +" + v,
+    ranges: {
+      white:  [1, 1],
+      blue:   [1, 2],
+      pink:   [2, 3],
+      purple: [3, 4],
+      orange: [4, 6],
+      red:    [6, 8]
+    }
+  },
+  critRate: {
+    id: "critRate",
+    name: "暴击率",
+    e: "🎯",
+    format: v => "暴击率 +" + v + "%",
+    ranges: {
+      white:  [3, 5],
+      blue:   [6, 10],
+      pink:   [11, 15],
+      purple: [16, 22],
+      orange: [23, 30],
+      red:    [32, 45]
+    }
+  },
+  time: {
+    id: "time",
+    name: "答题时间",
+    e: "⏳",
+    format: v => "答题时间 +" + v + "秒",
+    ranges: {
+      white:  [1, 2],
+      blue:   [2, 3],
+      pink:   [3, 4],
+      purple: [4, 6],
+      orange: [6, 8],
+      red:    [8, 12]
+    }
+  },
+  shield: {
+    id: "shield",
+    name: "每关护盾",
+    e: "🛡️",
+    format: v => "每关护盾 " + v + "次",
+    ranges: {
+      white:  [1, 1],
+      blue:   [1, 1],
+      pink:   [1, 2],
+      purple: [2, 2],
+      orange: [2, 3],
+      red:    [3, 4]
+    }
+  },
+  comboHeal: {
+    id: "comboHeal",
+    name: "连对回心",
+    e: "💖",
+    format: v => v === 1 ? "连对 5 题回 1 颗心" : "连对 5 题回 " + v + " 颗心",
+    ranges: {
+      white:  [1, 1],
+      blue:   [1, 1],
+      pink:   [1, 2],
+      purple: [2, 2],
+      orange: [2, 3],
+      red:    [3, 4]
+    }
+  },
+  critDmg: {
+    id: "critDmg",
+    name: "暴击伤害",
+    e: "💥",
+    format: v => "暴击伤害 +" + v,
+    ranges: {
+      white:  [1, 1],
+      blue:   [1, 1],
+      pink:   [1, 2],
+      purple: [2, 2],
+      orange: [2, 3],
+      red:    [3, 4]
+    }
+  },
+  lucky: {
+    id: "lucky",
+    name: "幸运免伤",
+    e: "🍀",
+    format: v => "每关答错免伤 " + v + "次",
+    ranges: {
+      white:  [1, 1],
+      blue:   [1, 1],
+      pink:   [1, 1],
+      purple: [1, 2],
+      orange: [2, 2],
+      red:    [2, 3]
+    }
+  },
+  slow: {
+    id: "slow",
+    name: "怪兽减速",
+    e: "❄️",
+    format: v => "怪兽蓄力慢 " + v + "%",
+    ranges: {
+      white:  [5, 10],
+      blue:   [10, 15],
+      pink:   [15, 20],
+      purple: [20, 25],
+      orange: [25, 35],
+      red:    [35, 50]
+    }
+  }
+};
+
+// 纯函数：根据关卡和是否Boss计算各品质掉落权重
+function getQualityWeights(stage = 1, isBoss = false){
+  if(isBoss){
+    return [
+      { key: "white",  w: 0 },
+      { key: "blue",   w: 300 },
+      { key: "pink",   w: 360 },
+      { key: "purple", w: 220 },
+      { key: "orange", w: 90 },
+      { key: "red",    w: 30 }
+    ];
+  }
+  const s = Math.max(1, stage || 1);
+  const bonus = Math.min(Math.floor((s - 1) / 5) * 5, 50);
+  return [
+    { key: "white",  w: Math.max(350, 500 - bonus * 2) },
+    { key: "blue",   w: 280 },
+    { key: "pink",   w: 130 + Math.floor(bonus * 1.0) },
+    { key: "purple", w: 60  + Math.floor(bonus * 0.6) },
+    { key: "orange", w: 24  + Math.floor(bonus * 0.3) },
+    { key: "red",    w: 6   + Math.floor(bonus * 0.1) }
+  ];
+}
+
+// 抽取品质
+function rollQuality(stage = 1, isBoss = false){
+  const weights = getQualityWeights(stage, isBoss);
+  const total = weights.reduce((sum, item) => sum + item.w, 0);
+  let rnd = Math.random() * total;
+  for(const item of weights){
+    if(rnd < item.w) return item.key;
+    rnd -= item.w;
+  }
+  return weights[weights.length - 1].key;
+}
+
+// 词缀数量：品质越高词缀越多
+function getAffixCount(qKey){
+  switch(qKey){
+    case "white":  return 1;
+    case "blue":   return 2;
+    case "pink":   return Math.random() < 0.5 ? 2 : 3;
+    case "purple": return 3;
+    case "orange": return 4;
+    case "red":    return 5;
+    default:       return 1;
+  }
+}
+
+// 纯函数：rollGear(关卡号, 是否Boss) 生成一件装备
+function rollGear(stage = 1, isBoss = false){
+  const qKey = rollQuality(stage, isBoss);
+  const qDef = GEAR_QUALITY_MAP[qKey] || GEAR_QUALITIES[0];
+  const slotKeys = ["weapon", "helmet", "armor", "shield"];
+  const slotKey = slotKeys[Math.floor(Math.random() * slotKeys.length)];
+  const slotDef = GEAR_SLOTS[slotKey];
+  const baseItem = slotDef.pool[Math.floor(Math.random() * slotDef.pool.length)];
+  const prefixes = GEAR_PREFIXES[qKey] || ["简易"];
+  const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+  const name = prefix + "·" + baseItem.name;
+
+  const count = getAffixCount(qKey);
+  const affixKeys = Object.keys(GEAR_AFFIXES);
+  const shuffledKeys = [...affixKeys];
+  for(let i = shuffledKeys.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffledKeys[i], shuffledKeys[j]] = [shuffledKeys[j], shuffledKeys[i]];
+  }
+  const chosenKeys = shuffledKeys.slice(0, count);
+
+  const affixes = chosenKeys.map(k => {
+    const aDef = GEAR_AFFIXES[k];
+    const range = aDef.ranges[qKey] || aDef.ranges.white;
+    const [min, max] = range;
+    const val = min + Math.floor(Math.random() * (max - min + 1));
+    return {
+      id: aDef.id,
+      name: aDef.name,
+      e: aDef.e,
+      val: val,
+      text: aDef.format(val)
+    };
+  });
+
+  const id = "g_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7);
+
+  return {
+    id,
+    slot: slotKey,
+    slotName: slotDef.name,
+    quality: qKey,
+    qualityName: qDef.name,
+    col: qDef.col,
+    bg: qDef.bg,
+    name,
+    e: baseItem.e,
+    stage: stage || 1,
+    affixes
+  };
+}
+
+// 纯函数：gearStats(已穿戴) 汇总成战斗可用的数值
+function gearStats(equipped){
+  const stats = {
+    atk: 0,
+    critRate: 0,
+    critDmg: 0,
+    time: 0,
+    shield: 0,
+    comboHeal: 0,
+    lucky: 0,
+    slow: 0,
+    affixesCount: 0,
+    list: []
+  };
+  if(!equipped) return stats;
+  const items = Array.isArray(equipped) ? equipped : Object.values(equipped);
+  for(const item of items){
+    if(!item || !item.affixes) continue;
+    for(const a of item.affixes){
+      if(typeof stats[a.id] === "number"){
+        stats[a.id] += (a.val || 0);
+      }
+      stats.affixesCount++;
+      stats.list.push(a);
+    }
+  }
+  return stats;
+}
+
+// 背包增删、穿戴、卸下
+function addGear(gear, state){
+  const s = state || S;
+  if(!s.bag) s.bag = [];
+  if(gear){
+    s.bag.push(gear);
+    if(s === S) save();
+  }
+  return gear;
+}
+
+function removeGear(gearId, state){
+  const s = state || S;
+  if(!s.bag) return null;
+  const idx = s.bag.findIndex(g => g && g.id === gearId);
+  if(idx === -1) return null;
+  const [removed] = s.bag.splice(idx, 1);
+  if(s === S) save();
+  return removed;
+}
+
+function equipGear(gearOrId, state){
+  const s = state || S;
+  if(!s.bag) s.bag = [];
+  if(!s.equipped) s.equipped = {weapon:null, helmet:null, armor:null, shield:null};
+  const gear = typeof gearOrId === "string" ? s.bag.find(g => g && g.id === gearOrId) : gearOrId;
+  if(!gear || !gear.slot || !(gear.slot in s.equipped)){
+    return {success: false, error: "invalid_gear"};
+  }
+  const bagIdx = s.bag.findIndex(g => g && g.id === gear.id);
+  if(bagIdx !== -1) s.bag.splice(bagIdx, 1);
+
+  const prev = s.equipped[gear.slot];
+  if(prev){
+    s.bag.push(prev);
+  }
+  s.equipped[gear.slot] = gear;
+  if(s === S) save();
+  return {success: true, equipped: gear, unequipped: prev || null};
+}
+
+function unequipGear(slot, state){
+  const s = state || S;
+  if(!s.equipped || !s.equipped[slot]){
+    return {success: false, error: "empty_slot"};
+  }
+  if(!s.bag) s.bag = [];
+  const gear = s.equipped[slot];
+  s.equipped[slot] = null;
+  s.bag.push(gear);
+  if(s === S) save();
+  return {success: true, unequipped: gear};
+}
+
+function openGearChest(stage, isBoss, state){
+  const s = state || S;
+  if((s.chests || 0) <= 0) return null;
+  s.chests--;
+  const gear = rollGear(stage || 1, isBoss || false);
+  addGear(gear, s);
+  if(s === S) save();
+  return gear;
+}
+
+// 挂载到 window，方便测试和 UI 调用
+if(typeof window !== "undefined"){
+  window.GEAR_QUALITIES = GEAR_QUALITIES;
+  window.GEAR_QUALITY_MAP = GEAR_QUALITY_MAP;
+  window.GEAR_SLOTS = GEAR_SLOTS;
+  window.GEAR_AFFIXES = GEAR_AFFIXES;
+  window.rollGear = rollGear;
+  window.gearStats = gearStats;
+  window.addGear = addGear;
+  window.removeGear = removeGear;
+  window.equipGear = equipGear;
+  window.unequipGear = unequipGear;
+  window.openGearChest = openGearChest;
+}
 
