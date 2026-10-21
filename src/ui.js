@@ -656,8 +656,8 @@ function monsterAttack(reason){
 
 /* ================= 算术消除 (match) 和 汉字-拼音连连看 (link) ================= */
 // 消除：棋盘来自 makeMatchBoard（logic.js），出题器用 matchGenFor 选，保证不走保底题。每个世界后半段（第 8 关起）用 2 层叠法。
-// 连连看：makeLinkBoard / linkPick / linkDone（logic.js），字对取自课本字表 PY。
-const linkPairs = () => shuffle(PY.slice()).map(e=>({hz:e[0], py:pyMark(e[1],e[2]), e:e[3]}));
+// 连连看：makeLinkBoard / linkPick / linkDone（logic.js），字对取自连连看题库 LLK_SETS（按世界往后翻课本）。
+const linkPairs = w => llkPairs(w, LINK_N);
 function startBoard(){
   B.charge = 0; B.lastTick = 0; B.sel = null;
   // speak = the board's one-line instruction, so the 🔊 button repeats it
@@ -666,7 +666,7 @@ function startBoard(){
     B.board = makeMatchBoard(matchGenFor(B.w,B.l) || (()=>G.add(10)), {layers, cols: layers===2 ? 3 : 4});
     B.q = {kind:"board", speak: layers===2 ? "找出得数一样的两张卡片！上面的卡片拿走，下面的才能用哦！" : "找出得数一样的两张卡片！"};
   } else {
-    B.board = makeLinkBoard(linkPairs(), {n:LINK_N});
+    B.board = makeLinkBoard(linkPairs(B.w), {n:LINK_N});
     B.q = {kind:"board", speak:"把汉字和它的拼音连起来！"};
   }
   say(B.q.speak);
