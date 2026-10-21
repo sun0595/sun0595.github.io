@@ -522,6 +522,82 @@ img{-webkit-user-drag:none;pointer-events:none}
 .av.lay .hand{position:absolute;bottom:16%;width:46%;height:auto;pointer-events:none;filter:drop-shadow(0 0 2px var(--qc)) drop-shadow(0 0 5px var(--qc))}
 .av.lay .hand.rh{left:-18%}
 .av.lay .hand.lh{right:-16%;width:42%}
+/* rewards (家长 10-21): experience bar, gear experience, drops — no chest step */
+.page.win .pbody{gap:10px}
+.rexp{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:16px;border:3px solid var(--ink);background:#fff}
+.rlv{flex:none;font-size:17px;color:var(--ink)}
+.rlv b{font:800 22px/1 var(--f-num);color:var(--purple-d)}
+.xbar{position:relative;flex:1;height:18px;border-radius:9px;border:3px solid var(--ink);background:#ece8f8;overflow:hidden}
+.xbar i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(#8ef07f,#3fbf3a);border-radius:9px;transition:width .75s ease-out}
+.rgain{flex:none;font:800 18px/1 var(--f-num);color:var(--green-d)}
+.rgx{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px;font-size:15px;color:var(--ink2)}
+.rgp{display:inline-flex;align-items:center;gap:2px;height:28px;padding:0 8px 0 2px;border-radius:14px;border:2px solid var(--qc,var(--ink));background:#fff}
+.rgp .ei{font-size:22px;vertical-align:0}
+.rgp b{font:800 14px/1 var(--f-num);color:var(--ink)}
+.rdrops{display:flex;flex-direction:column;gap:8px}
+.drow{position:relative;display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:16px;border:3px solid var(--qc);background:linear-gradient(#fff 40%,var(--qb));text-align:left;box-shadow:0 0 0 2px var(--ink),0 0 var(--g1) var(--qc);animation:gIn .5s cubic-bezier(.2,1.6,.4,1) backwards}
+.drow .gicon{width:52px;height:52px}
+.drow .gicon .ei{font-size:36px}
+.drow .ginfo b{font-size:17px}
+.drow .ginfo small{font-size:12px}
+.dtag{font-weight:400;color:#fff;background:var(--red);border-radius:8px;padding:0 6px;font-size:12px}
+.dbtns{flex:none;display:flex;flex-direction:column;gap:6px}
+.dbtns .btn{min-height:34px;padding:2px 10px;font-size:15px;border-radius:12px;gap:2px;box-shadow:inset 0 3px 0 rgba(255,255,255,.55),0 3px 0 var(--ink)}
+.dbtns .btn .ei{font-size:20px}
+.drow.gone{justify-content:center;min-height:52px;background:#f3f1fa;border-color:#cfcae4;box-shadow:0 0 0 2px var(--ink);animation:none}
+.dgone{font-size:15px;color:var(--ink2)}
+.dgone .ei{font-size:22px}
+.rchips{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
+.rchip{display:inline-flex;align-items:center;gap:3px;height:32px;padding:0 10px 0 4px;border-radius:16px;border:2px solid var(--qc,var(--ink));background:#fff;font-size:15px;color:var(--ink)}
+.rchip .ei{font-size:24px;vertical-align:0}
+.rchip b{font:800 15px/1 var(--f-num)}
+.lvup{position:absolute;left:50%;top:38%;z-index:6;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:6px;width:max-content;max-width:92%;
+  padding:12px 18px;border-radius:20px;border:4px solid var(--ink);background:linear-gradient(#fff7c2,#ffcd3c);box-shadow:0 6px 0 var(--ink),0 0 40px #ffd23f;text-align:center;pointer-events:none}
+.lvup b{font:400 30px/1.1 var(--f-ui);color:var(--ink)}
+.lvup span{font-size:16px;color:var(--ink)}
+.lvup .ei{font-size:24px}
+.lvup.on{animation:winIn .6s cubic-bezier(.2,1.6,.4,1)}
+/* map: hero level under the avatar */
+.topbar .avatarbtn{overflow:visible}
+.lvb{position:absolute;left:50%;bottom:-9px;transform:translateX(-50%);min-width:44px;height:20px;padding:0 6px 3px;border-radius:10px;border:2px solid var(--ink);background:var(--purple);color:#fff;font-size:12px;line-height:15px;white-space:nowrap;overflow:hidden}
+.lvb b{font:800 13px/15px var(--f-num)}
+.lvb i{position:absolute;left:0;bottom:0;height:3px;background:var(--gold)}
+/* battle: what the monster may drop */
+.droptag{position:relative;z-index:2;display:flex;align-items:center;gap:2px;height:20px;padding:0 7px 0 3px;border-radius:10px;border:2px solid var(--ink);background:rgba(255,248,232,.92);color:var(--ink);font-size:12px;white-space:nowrap}
+.droptag .ei{font-size:16px;vertical-align:0}
+.droptag b{font:800 12px/1 var(--f-num)}
+.droptag.boss{background:linear-gradient(#ffe169,#ffb21a)}
+.droptag:empty{display:none}
+#battle.hinting .droptag{display:none}
+/* flee */
+.fleeart{font-size:84px;line-height:1}
+/* bag: levels, salvage, ascend, synth */
+.glv{display:flex;align-items:center;gap:6px;margin-top:2px}
+.glv b{font:800 14px/1 var(--f-num);color:var(--purple-d)}
+.glv small{font:800 12px/1 var(--f-num);color:var(--ink2)}
+.gxbar{position:relative;flex:1;height:10px;border-radius:5px;border:2px solid var(--ink);background:#ece8f8;overflow:hidden}
+.gxbar i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(#86c8ff,#3a8ef2)}
+.gbtns{display:flex;gap:8px}
+.gbtns .btn{flex:1;min-height:40px;font-size:16px;padding:2px 8px;gap:2px}
+.gbtns .btn .ei{font-size:22px}
+.gascend{width:100%;min-height:40px;font-size:16px;gap:2px}
+.gascend .ei{font-size:22px}
+.ghint{display:block;text-align:center;font-size:13px;color:var(--ink2)}
+.ghint .ei{font-size:18px}
+.bagbtns{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.bagsm{position:relative;min-height:34px;padding:2px 8px 2px 4px;font-size:14px;gap:2px;border-radius:12px;box-shadow:inset 0 3px 0 rgba(255,255,255,.55),0 3px 0 var(--ink)}
+.bagsm .ei{font-size:22px}
+.bagsm b{font:800 14px var(--f-num)}
+.pill.stones{height:32px;padding:0 8px 0 2px}
+.pill.stones .ei{font-size:22px}
+.gt[data-lv]::before{content:attr(data-lv);position:absolute;left:-4px;top:-6px;z-index:1;font:800 11px/1 var(--f-num);padding:2px 4px;border-radius:7px;border:2px solid var(--ink);background:#fff;color:var(--ink)}
+.gt.picked{outline:4px solid var(--green);outline-offset:2px}
+.qtabs{display:flex;gap:6px;justify-content:center}
+.qtab{flex:1;min-width:0;height:38px;border-radius:12px;border:3px solid var(--qc);background:#fff;display:flex;align-items:center;justify-content:center;gap:3px;font-size:15px;color:var(--ink)}
+.qtab b{font:800 13px/1 var(--f-num);color:var(--ink2)}
+.qtab.on{background:var(--qc);color:#fff}
+.qtab.on b{color:#fff}
+.ggrid.haul{grid-template-columns:repeat(6,minmax(0,1fr))}
 /* bag page */
 .bagtop{display:flex;align-items:center;gap:12px}
 .bagav{flex:none;width:118px;height:108px;display:grid;place-items:center;border-radius:18px;border:3px solid var(--ink);background:radial-gradient(circle at 50% 45%,#fff,#e5e1f5);padding-top:14px}
