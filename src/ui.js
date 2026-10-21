@@ -653,7 +653,7 @@ function heroAttack(board){
   if(B.combo>=2) setCombo(crit ? "连击 ×"+B.combo+" 暴击！" : "连击 ×"+B.combo);
   setTimeout(()=>{
     shot.remove();
-    if(B!==cur) return;
+    if(B!==cur || B.over) return;   // level already won (e.g. last pairs tapped fast): don't hit or win() again
     play($("monSprite"),"hit");
     fxAt(h.fx, crit); tint(h.col);
     popAt("mon"+(crit?" big":""), "-"+dmg);
@@ -666,7 +666,7 @@ function heroAttack(board){
       setTimeout(()=>toast(h.heal?"🐲":"💖", (h.heal?"龙之恢复":"连对回心")+" +"+heal+" 颗心"), 200);
     }
     if(B.hp<=0) return win();
-    if(board){ setTimeout(()=>{ if(B===cur && !B.over){ B.busy = false; renderBoard(); } }, 250); return; }
+    if(board) return;
     if(B.L.boss && !B.enraged && B.hp <= B.maxHp/2){
       B.enraged = true;
       $("battle").classList.add("enraged");
@@ -730,27 +730,33 @@ function startBoard(){
   renderBoard();
   B.busy = false; drawCharge();
 }
+/* Input on the boards is never locked by animations: the kid can pick the next card while the hero's attack or the
+   monster's hit is still playing. Only a finished level (B.over) stops taps. Picking only toggles classes; a matched pair
+   only updates its own slots (match) or marks the two buttons (link), so a finger is never lost on a rebuilt button. */
+function mcardHTML(x){
+  const under = x.coveredBy && x.coveredBy.length;
+  return '<button class="mcard'+(under?" under":"")+(x.value>=100||String(x.text).length>7?" sm":"")+'" data-id="'+x.id+'"'+(under?' disabled aria-label="被压住了"':'')+'>'+(under?"":'<span class="num">'+x.text+'</span>')+'</button>';
+}
+const slotCards = (r,c) => (B.board.cards || B.board).filter(x=>x.row===r && x.col===c).sort((a,z)=>a.layer-z.layer);
 function renderBoard(){
   const bd = $("board"), b = B.board;
   if(B.mode==="match"){
-    const cards = b.cards || b, cols = b.cols, rows = b.layers===2 ? 2 : Math.ceil(12/cols);
+    const cols = b.cols, rows = b.layers===2 ? 2 : Math.ceil(12/cols);
     let h = '<div class="mboard'+(b.layers===2?" two":"")+'" style="--cols:'+cols+';--rows:'+rows+'">';
-    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
-      const here = cards.filter(x=>x.row===r && x.col===c).sort((a,z)=>a.layer-z.layer);
-      h += '<div class="mslot">'+here.map(x=>{
-        const under = x.coveredBy && x.coveredBy.length;
-        return '<button class="mcard'+(under?" under":"")+(B.sel===x.id?" sel":"")+(x.value>=100||String(x.text).length>7?" sm":"")+'" data-id="'+x.id+'"'+(under?' disabled aria-label="被压住了"':'')+'>'+(under?"":'<span class="num">'+x.text+'</span>')+'</button>';
-      }).join("")+'</div>';
-    }
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) h += '<div class="mslot" data-rc="'+r+'-'+c+'">'+slotCards(r,c).map(mcardHTML).join("")+'</div>';
     bd.innerHTML = h + '</div>';
-    bd.querySelectorAll(".mcard:not(.under)").forEach(el=>el.onclick=()=>pickCard(el.dataset.id, el));
   } else {
-    const side = (list, cls) => '<div class="lcol">'+list.map(x=>'<button class="lnk '+cls+(x.matched?" done":"")+(B.sel===x.id?" sel":"")+'" data-id="'+x.id+'"'+(x.matched?" disabled":"")+'>'
+    const side = (list, cls) => '<div class="lcol">'+list.map(x=>'<button class="lnk '+cls+(x.matched?" done":"")+'" data-id="'+x.id+'"'+(x.matched?" disabled":"")+'>'
       + (cls==="hz" ? (x.e?img(x.e):"")+'<b>'+x.hz+'</b>' : '<span class="py">'+x.py+'</span>')+'</button>').join("")+'</div>';
     bd.innerHTML = '<div class="lboard"><svg class="llines" id="llines"></svg>'+side(b.left,"hz")+side(b.right,"pyb")+'</div>';
-    bd.querySelectorAll(".lnk:not(.done)").forEach(el=>el.onclick=()=>pickLink(el.dataset.id, el));
     drawLinks();
   }
+  // one delegated listener: survives partial updates
+  bd.onclick = e => { const el = e.target.closest(".mcard:not(.under), .lnk:not(.done)"); if(el) (B.mode==="match" ? pickCard : pickLink)(el.dataset.id, el); };
+}
+function markSel(id){
+  $("board").querySelectorAll(".sel").forEach(x=>x.classList.remove("sel"));
+  const el = id && $("board").querySelector('[data-id="'+id+'"]'); if(el) el.classList.add("sel");
 }
 function drawLinks(){
   const svg = $("llines"); if(!svg) return;
@@ -761,7 +767,7 @@ function drawLinks(){
   }).join("");
 }
 function boardRight(){
-  B.busy = true; B.combo++;
+  B.combo++;
   const st = S.stats[B.W.id] || (S.stats[B.W.id]={r:0,w:0}); st.r++; save();
   heroAttack(true);
 }
@@ -770,25 +776,33 @@ function boardWrong(els){
   els.forEach(el=>{ if(el){ el.classList.remove("shake"); void el.offsetWidth; el.classList.add("shake","bad"); } });
   sfx.wrong(); B.combo = 0; $("combo").textContent = "";
   const st = S.stats[B.W.id] || (S.stats[B.W.id]={r:0,w:0}); st.w++; save();
-  setTimeout(()=>{ if(B===cur && !B.over) renderBoard(); }, 600);
+  setTimeout(()=>els.forEach(el=>{ if(el && B===cur) el.classList.remove("shake","bad"); }), 600);
   if(B.lucky>0){ B.lucky--; B.charge = 0; B.lastTick = 0; sfx.shield(); toast("🍀","幸运光环！不扣心"); }
   else monsterAttack("wrong");
 }
 function pickCard(id, el){
-  if(!B || B.busy || B.over) return;
-  if(!B.sel || B.sel===id){ B.sel = B.sel===id ? null : id; sfx.click(); renderBoard(); return; }
-  const a = B.sel; B.sel = null;
+  if(!B || B.over || !B.board) return;
+  if(!B.sel || B.sel===id){ B.sel = B.sel===id ? null : id; sfx.click(); markSel(B.sel); return; }
+  const a = B.sel; B.sel = null; markSel(null);
   const first = $("board").querySelector('[data-id="'+a+'"]');
-  if(matchPick(B.board, a, id)){ renderBoard(); boardRight(); }
+  const slots = [first, el].map(x=>x && x.parentNode).filter(Boolean);
+  if(matchPick(B.board, a, id)){
+    // only the two slots change: the pair goes, a card underneath (2 层) turns face up
+    slots.forEach(sl=>{ const [r,c] = sl.dataset.rc.split("-").map(Number); sl.innerHTML = slotCards(r,c).map(mcardHTML).join(""); });
+    boardRight();
+  }
   else boardWrong([first, el]);
 }
 function pickLink(id, el){
-  if(!B || B.busy || B.over) return;
+  if(!B || B.over || !B.board) return;
   const side = id[0];
-  if(!B.sel || B.sel===id || B.sel[0]===side){ B.sel = B.sel===id ? null : id; sfx.click(); renderBoard(); return; }
-  const a = B.sel; B.sel = null;
+  if(!B.sel || B.sel===id || B.sel[0]===side){ B.sel = B.sel===id ? null : id; sfx.click(); markSel(B.sel); return; }
+  const a = B.sel; B.sel = null; markSel(null);
   const first = $("board").querySelector('[data-id="'+a+'"]');
-  if(linkPick(B.board, a, id)){ renderBoard(); boardRight(); }
+  if(linkPick(B.board, a, id)){
+    [first, el].forEach(x=>{ if(x){ x.classList.add("done"); x.disabled = true; } });
+    drawLinks(); boardRight();
+  }
   else boardWrong([first, el]);
 }
 
