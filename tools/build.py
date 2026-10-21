@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Build 小勇士大冒险 into ONE self-contained HTML file.
 
-    python3 tools/build.py            # -> xiaoyongshi/index.html  (what GitHub Pages serves)
-    python3 tools/build.py --test     # -> build/test.html          (same game + window.__t test hook)
+    python3 tools/build.py            # -> xiaoyongshi/index.html       (正式版, what GitHub Pages serves)
+    python3 tools/build.py --beta     # -> xiaoyongshi/beta/index.html  (试玩版: own save key, 「试玩版」 tag)
+    python3 tools/build.py --test     # -> build/test.html + build/test-beta.html (both + window.__t test hook)
 
 Needs: Python 3.9+, `pip install fonttools brotli`, network access on first run
 (downloads the Fluent Emoji 3D package from npm and three fonts from the google/fonts repo
@@ -61,7 +62,10 @@ const ri = (a,b) => a + Math.floor(Math.random()*(b-a+1));
 const pick = arr => arr[Math.floor(Math.random()*arr.length)];
 const shuffle = a => { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]} return a; };
 '''
-TEST_HOOK = "window.__t={showRunReward,startRun,openRunMenu,useItem,pyQ,pyBlend,pyBlendHz,PY,LLK_SETS,pyLegal,pySplit,pyMark,get B(){return B}};\n"
+TEST_HOOK = ("window.__t={showRunReward,startRun,openRunMenu,useItem,qTime,openBag,get B(){return B},get S(){return S},G,WP,LEVEL_PLAN,"
+             "WORLDS_V2,LEVEL_MODES,img,"
+             "pyQ,pyBlend,pyBlendHz,PY,LLK_SETS,pyLegal,pySplit,pyMark,"
+             "setDaily(n){ daily().n = n; save(); renderMap(); }};\n")
 
 def emoji_table(src, emoji_dir):
     """map every emoji string that appears in the source to an embedded webp"""
@@ -110,32 +114,58 @@ def font_faces(text):
           + face % ("Baloo 2", "font-weight:800;", woff2("Baloo2.ttf", ascii_ | set("×−·"), 800))
           + face % ("Andika", "font-weight:700;", woff2("Andika-Bold.ttf", py)))
 
+BETA_TITLE = "（试玩版）"
+
+def make_page(head, body, logic, ui, imgjs, beta):
+    """assemble one page; the 试玩版 gets its own title and IS_BETA = true (logic.js then uses its own save key)"""
+    title = re.search(r"<title>(.*?)</title>", head)
+    head = head.replace(title.group(0), "", 1)
+    name = title.group(1) + (BETA_TITLE if beta else "")
+    return ('<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n'
+            '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">\n'
+            '<meta name="apple-mobile-web-app-capable" content="yes">\n'
+            # opaque status bar: the home-screen app starts below it instead of drawing underneath
+            '<meta name="apple-mobile-web-app-status-bar-style" content="black">\n'
+            '<meta name="theme-color" content="#1b1640">\n'
+            '<meta name="format-detection" content="telephone=no">\n'
+            + "<title>" + name + "</title>\n<style>html,body{margin:0}</style>\n"
+            + "</head>\n<body>\n" + head + body
+            + '<script>\n(function(){\n"use strict";\n'
+            + "const IS_BETA = %s;\n" % ("true" if beta else "false")
+            + HELPERS + imgjs + logic + ui + "})();\n</script>\n</body>\n</html>\n")
+
+def write(page, out):
+    ext = re.findall(r'(?:src|href)=["\']https?://[^"\']+', page)
+    if ext:
+        sys.exit("ERROR: external references found (must stay zero for China): %s" % ext)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(page)
+    return out
+
 def main():
-    test = "--test" in sys.argv
+    test, beta = "--test" in sys.argv, "--beta" in sys.argv
+    if test and beta:
+        print("note: --test already builds both build/test.html and build/test-beta.html; --beta is ignored "
+              "(run `python3 tools/build.py --beta` on its own for xiaoyongshi/beta/index.html)")
     emoji_dir = ensure_assets()
     head, body, logic, ui = read("head.html"), read("body.html"), read("logic.js"), read("ui.js")
     if test:
         assert ui.rstrip().endswith("renderMap();"), "ui.js must end with renderMap(); for the test hook"
         ui = ui.rstrip() + "\n" + TEST_HOOK
-    src = head + body + logic + ui
+    src = head + body + logic + ui + BETA_TITLE
     imgjs, nimg = emoji_table(src, emoji_dir)
     head = head.replace("<style>", "<style>\n" + font_faces(src), 1)
-    title = re.search(r"<title>.*?</title>", head).group(0)
-    head = head.replace(title, "", 1)
-    page = ('<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n'
-            '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">\n'
-            '<meta name="apple-mobile-web-app-capable" content="yes">\n<meta name="format-detection" content="telephone=no">\n'
-            + title + "\n<style>html,body{margin:0}body{padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}</style>\n"
-            + "</head>\n<body>\n" + head + body
-            + '<script>\n(function(){\n"use strict";\n' + HELPERS + imgjs + logic + ui + "})();\n</script>\n</body>\n</html>\n")
-    ext = re.findall(r'(?:src|href)=["\']https?://[^"\']+', page)
-    if ext:
-        sys.exit("ERROR: external references found (must stay zero for China): %s" % ext)
-    out = os.path.join(ROOT, "build", "test.html") if test else os.path.join(ROOT, "xiaoyongshi", "index.html")
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    with open(out, "w", encoding="utf-8") as f:
-        f.write(page)
-    print("wrote %s  (%d KB, %d 3D images)" % (os.path.relpath(out, ROOT), len(page.encode()) // 1024, nimg))
+    if test:   # the smoke test plays both the normal game and the 试玩版
+        outs = [(os.path.join(ROOT, "build", "test.html"), False), (os.path.join(ROOT, "build", "test-beta.html"), True)]
+    elif beta:
+        outs = [(os.path.join(ROOT, "xiaoyongshi", "beta", "index.html"), True)]
+    else:
+        outs = [(os.path.join(ROOT, "xiaoyongshi", "index.html"), False)]
+    for out, b in outs:
+        page = make_page(head, body, logic, ui, imgjs, b)
+        write(page, out)
+        print("wrote %s  (%d KB, %d 3D images)" % (os.path.relpath(out, ROOT), len(page.encode()) // 1024, nimg))
 
 if __name__ == "__main__":
     main()
