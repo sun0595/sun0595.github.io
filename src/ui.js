@@ -64,21 +64,24 @@ function renderMap(dir){
   if(curWorld===null) curWorld = (S.world!=null && S.world<WORLDS.length) ? S.world : defaultWorld();
   const ts = totalStars(), h = hero(), w = WORLDS[curWorld], wi = curWorld, open = worldOpen(wi);
   const next = HEROES.find(x=>x.need!=null && x.need>ts);
-  const craftable = dupList("n").length>=3 || dupList("r").length>=3;
   let html = '<div class="topbar">'
     + '<button class="ibtn round avatarbtn" id="heroBtn" aria-label="换勇士">'+img(h.e)+'</button>'
     + '<span class="pill">'+img("⭐")+'<span class="num">'+ts+'</span></span>'
     + '<span class="grow"></span>'
-    + '<button class="ibtn" id="albumBtn" aria-label="贴纸册">'+img("📒")+(craftable?'<span class="badge pulse">!</span>':'')+'</button>'
+    + '<button class="ibtn" id="bagBtn" aria-label="背包">'+img("🎒")+(S.chests>0?'<span class="badge pulse">'+S.chests+'</span>':'')+'</button>'
     + '<button class="ibtn" id="soundBtn" aria-label="声音">'+img(S.sound||S.voice?"🔊":"🔇")+'</button>'
     + '<button class="ibtn" id="parentBtn" aria-label="家长设置">'+img("⚙️")+'</button></div>';
-  html += next ? '<div class="nexthero">'+img(next.e)+'再拿 <span class="num">'+(next.need-ts)+'</span> '+img("⭐")+' 解锁「'+next.n+'」</div>'
-               : '<div class="nexthero">'+img("🏆")+'所有勇士都解锁了！</div>';
+  const dn = daily().n;   // 当天进度：前 15 次通关正常，之后进入狂暴
+  const dayTag = dn<15 ? '<span class="pill tag" id="dayTag">今天 <span class="num">'+dn+'/15</span></span>'
+                       : '<span class="pill tag hot" id="dayTag">狂暴中</span>';
+  html += next ? '<div class="nexthero">'+dayTag+img(next.e)+'再拿 <span class="num">'+(next.need-ts)+'</span> '+img("⭐")+' 解锁「'+next.n+'」</div>'
+               : '<div class="nexthero">'+dayTag+img("🏆")+'所有勇士都解锁了！</div>';
   html += '<div class="wview" id="wview"><div class="wcard" id="wcard" style="--wdir:'+(dir||0)*40+'px">'
     + decoHTML(w.id)
     + '<svg class="wpath" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="'+PATH_D+'" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="7" stroke-linecap="round" stroke-dasharray="0.1 16" vector-effect="non-scaling-stroke"/></svg>'
     + '<div class="whead"><span class="ribbon'+(wi===WORLDS.length-1?" blue":"")+'">'+(wi+1)+' · '+w.name+'</span></div><span class="wsub">'+w.sub+'</span>'
-    + (S.medals[w.id]?'<span class="wmedal">'+img("🏅")+'</span>':'');
+    + (S.medals[w.id]?'<span class="wmedal">'+img("🏅")+'</span>':'')
+    + (IS_BETA?'<span class="pill beta" id="betaTag">试玩版</span>':'');
   let currentMarked = false;
   w.levels.forEach((L,li)=>{
     const lo = levelOpen(wi,li), st = starOf(wi,li), m = mastery(wi,li), fin = isFinal(wi,li), [x,y] = NODE_POS[li];
@@ -109,7 +112,7 @@ function renderMap(dir){
   $("wview").addEventListener("touchstart", e=>{ tx = e.touches[0].clientX; }, {passive:true});
   $("wview").addEventListener("touchend", e=>{ if(tx===null) return; const dx = e.changedTouches[0].clientX - tx; tx = null; if(Math.abs(dx)>50) go(dx<0?1:-1); });
   $("heroBtn").onclick = ()=>{ sfx.click(); openHeroes(); };
-  $("albumBtn").onclick = ()=>{ sfx.click(); openAlbum(); };
+  $("bagBtn").onclick = ()=>{ sfx.click(); openBag(); };
   $("soundBtn").onclick = ()=>{ const on = !(S.sound||S.voice); S.sound = on; S.voice = on; save(); if(!on) try{speechSynthesis.cancel()}catch(e){} else { sfx.click(); say("声音打开啦"); } renderMap(); };
   $("parentBtn").onclick = ()=>{ sfx.click(); openParent(); };
 }
@@ -155,79 +158,88 @@ function openHeroes(){
   render(true);
 }
 
-function extras(k){ return STK[k].list.reduce((a,e)=>a+Math.max(0,(S.stickers[e]||0)-1),0); }
-function consume(k, n){
-  const used = [];
-  for(let i=0;i<n;i++){
-    const e = STK[k].list.filter(x=>(S.stickers[x]||0)>1).sort((a,b)=>S.stickers[b]-S.stickers[a])[0];
-    S.stickers[e]--; used.push(e);
-  }
-  return used;
+/* ================= gear (装备)：掉落卡、背包、主角穿戴预览 =================
+   Data (GEAR_*, rollGear, gearStats, equipGear, openGearChest, S.bag/S.equipped/S.chests) lives in logic.js.
+   The old sticker album / crafting is gone from the screen; S.stickers / S.shiny are kept untouched in the save. */
+const SLOT_KEYS = ["weapon","helmet","armor","shield"];
+const QIDX = Object.fromEntries(GEAR_QUALITIES.map((q,i)=>[q.key,i]));
+const qCol = g => (GEAR_QUALITY_MAP[g.quality]||GEAR_QUALITIES[0]).col;
+// affixes are shown as icon + number, e.g. ⚔️+3  ⏳+2秒
+const AFX_NUM = {atk:v=>"+"+v, critRate:v=>"+"+v+"%", critDmg:v=>"+"+v, time:v=>"+"+v+"秒", shield:v=>"+"+v, comboHeal:v=>"+"+v, lucky:v=>"+"+v, slow:v=>"+"+v+"%"};
+const afxChip = (id, v) => '<span class="afx">'+img(GEAR_AFFIXES[id].e)+'<b class="num">'+AFX_NUM[id](v)+'</b></span>';
+// how good a piece is: quality first, then each affix as a share of its best possible (red) value
+const gearPower = g => !g ? -1 : QIDX[g.quality]*2 + g.affixes.reduce((s,a)=>s + (GEAR_AFFIXES[a.id] ? a.val/GEAR_AFFIXES[a.id].ranges.red[1] : 0), 0);
+const isBetter = g => gearPower(g) > gearPower(S.equipped[g.slot]);
+const isWorn = g => !!g && !!S.equipped[g.slot] && S.equipped[g.slot].id===g.id;
+// placeholder look until the real art arrives: hero emoji with the four pieces stacked on head / hands / chest
+function avatarHTML(eq){
+  return '<span class="av">'+img(hero().e)+SLOT_KEYS.map(k=>eq[k] ? '<span class="ag '+k+' q-'+eq[k].quality+'" style="--qc:'+qCol(eq[k])+'">'+img(eq[k].e)+'</span>' : '').join("")+'</span>';
 }
-function dupList(k){
-  const out = [];
-  STK[k].list.filter(e=>(S.stickers[e]||0)>1).sort((a,b)=>S.stickers[b]-S.stickers[a]).forEach(e=>{ for(let i=1;i<S.stickers[e];i++) out.push(e); });
-  return out;
+const gearTile = (g, cls, attrs) => '<button class="gt q-'+g.quality+(cls?" "+cls:"")+'" style="--qc:'+qCol(g)+'" '+(attrs||"")+' aria-label="'+g.name+'">'+img(g.e)+'</button>';
+// one piece of gear as a card: quality frame + glow (stronger / animated for rarer pieces), slot, affixes, optional preview
+function gearCard(g, o){
+  o = o || {};
+  const q = GEAR_QUALITY_MAP[g.quality]||GEAR_QUALITIES[0];
+  return '<div class="gcard q-'+g.quality+(o.cls?" "+o.cls:"")+'" style="--qc:'+q.col+';--qb:'+q.bg+'">'
+    + '<div class="gmain"><span class="gicon">'+img(g.e)+(o.up && isBetter(g) ? '<span class="gup" aria-label="比现在的好"><span class="chev"></span></span>' : '')+'</span>'
+    + '<div class="ginfo"><b>'+g.name+'</b><small>'+q.title+' · '+(GEAR_SLOTS[g.slot]||{}).name+'</small>'
+    + '<div class="afxs">'+g.affixes.map(a=>GEAR_AFFIXES[a.id] ? afxChip(a.id, a.val) : '').join("")+'</div></div>'
+    + (o.preview ? '<span class="gprev">'+avatarHTML(Object.assign({}, S.equipped, {[g.slot]:g}))+'</span>' : '')+'</div>'
+    + (o.btn||"")+'</div>';
 }
-const SET_REWARD = {
-  n:{em:"🦄", text:"解锁勇士「独角兽」：每关第 1 次答错不扣心"},
-  r:{em:"✨", text:"金色光环：所有勇士暴击多打 1 滴血"},
-  l:{em:"🤴", text:"解锁勇士「贴纸国王」：护盾 + 快速暴击 + 时间减速"}
-};
-const TIER_ICON = {n:"⭐", r:"💎", l:"🌠"};
-const ITEM_HOW = {heal:"+1 ❤️", time:"+10 秒", ice:"冻住 10 秒"};
-function openAlbum(tab){
-  tab = tab || "stk";
-  let tier = "n";
-  const craftable = () => dupList("n").length>=3 || dupList("r").length>=3;
+const wearBtn = (g, id) => isWorn(g) ? '<button class="btn white gwear" id="'+id+'" disabled>已穿戴</button>' : '<button class="btn green gwear" id="'+id+'">'+img("👕")+' 穿上</button>';
+function statsHTML(){
+  const gs = gearStats(S.equipped), on = Object.keys(AFX_NUM).filter(k=>gs[k]>0);
+  return on.length ? '<div class="gstats">'+on.map(k=>afxChip(k, gs[k])).join("")+'</div>' : '<p class="gempty">穿上装备，<br>勇士会变强！</p>';
+}
+
+function openBag(slot){
+  slot = slot || "weapon";
+  let sel = null, pg = 0;
+  const PER = 8;
   const render = first => {
-    let body = '<div class="tabs"><button class="tab'+(tab==="stk"?" on":"")+'" data-t="stk">'+img("📒")+' 贴纸</button>'
-      + '<button class="tab'+(tab==="craft"?" on":"")+'" data-t="craft">'+img("🔁")+' 合成 · 道具'+(craftable()?'<span class="badge pulse">!</span>':'')+'</button></div>';
-    if(tab==="stk"){
-      const goal = k => { const have = setOwned(k), need = STK[k].list.length;
-        return '<button class="goalb'+(have>=need?" done":"")+'" data-k="'+k+'" style="--p:'+(have/need*100)+'%">'+img(SET_REWARD[k].em)+'<small>'+have+'/'+need+'</small></button>'; };
-      const cell = (e,k) => S.stickers[e]
-        ? '<span class="'+k+(S.shiny[e]?" shiny":"")+(S.stickers[e]>1?" dup":"")+'">'+img(e)+(S.stickers[e]>1?'<b class="cnt">'+S.stickers[e]+'</b>':'')+'</span>'
-        : '<span><span class="no">?</span></span>';
-      body += '<div class="goals">'+goal("n")+goal("r")+goal("l")+'</div>'
-        + '<div class="tierpills" style="margin-top:14px">'+["n","r","l"].map(k=>'<button class="'+(k===tier?"on":"")+'" data-k="'+k+'">'+img(TIER_ICON[k])+setOwned(k)+'/'+STK[k].list.length+'</button>').join("")+'</div>'
-        + '<div class="grid">'+STK[tier].list.map(e=>cell(e, tier==="n"?"":tier)).join("")+'</div>';
-    } else {
-      const craft = (from,to) => { const d = dupList(from), ok = d.length>=3;
-        return '<button class="craft'+(ok?" ready":"")+'" data-f="'+from+'" data-t="'+to+'">'+[0,1,2].map(i=>'<span class="slot'+(d[i]?" f":"")+'">'+(d[i]?img(d[i]):"")+'</span>').join("")
-          + '<span class="arr">➜</span><span class="slot out '+to+'">?</span></button>'; };
-      body += '<p>3 张一样的贴纸 ➜ 1 张更厉害的</p>'+craft("n","r")+craft("r","l")
-        + '<p style="margin-top:6px">'+img("🎒")+' 道具：打怪时点战场上方的按钮</p>'
-        + '<div class="row" style="gap:12px">'+Object.keys(ITEMS).map(k=>'<button class="itile" data-it="'+k+'">'+img(ITEMS[k].e)+'<b class="cnt">'+(S.items[k]||0)+'</b><small>'+emo(ITEM_HOW[k])+'</small></button>').join("")+'</div>';
-    }
-    if(first) openPage({title:"📒 贴纸册", back:true, onClose:renderMap, body}); else setBody(body);
+    const list = S.bag.filter(g=>g && g.slot===slot), worn = S.equipped[slot];
+    const all = (worn ? [worn] : []).concat(list);
+    const pages = Math.max(1, Math.ceil(all.length/PER)); pg = Math.min(pg, pages-1);
+    const cur = all.find(g=>g.id===sel) || all[0] || null;
+    let body = '<div class="bagtop"><span class="bagav">'+avatarHTML(S.equipped)+'</span><div class="bagside">'+statsHTML()
+      + (S.chests>0 ? '<button class="btn bagchest" id="chestBtn">'+img("🎁")+' 开宝箱 <b class="num" id="chestN">×'+S.chests+'</b></button>' : '')+'</div></div>'
+      + '<div class="tabs">'+SLOT_KEYS.map(k=>'<button class="tab'+(k===slot?" on":"")+'" data-s="'+k+'">'+img(GEAR_SLOTS[k].e)+GEAR_SLOTS[k].name+'</button>').join("")+'</div>';
+    body += cur ? gearCard(cur, {cls:"mini", btn: isWorn(cur) ? '<button class="btn white gwear" id="gOff">卸下</button>' : '<button class="btn green gwear" id="gOn">'+img("👕")+' 穿上</button>', up:true})
+                : '<div class="gnone">'+img(GEAR_SLOTS[slot].e)+'<span>还没有'+GEAR_SLOTS[slot].name+'<br>打败怪兽就会掉落！</span></div>';
+    body += '<div class="ggrid">'+all.slice(pg*PER, pg*PER+PER).map(g=>gearTile(g, (cur && g.id===cur.id?"sel":"")+(isWorn(g)?" worn":""), 'data-id="'+g.id+'"')).join("")+'</div>';
+    if(pages>1) body += '<div class="gpager"><button class="ibtn round" id="gPrev"'+(pg?'':' disabled')+' aria-label="上一页">'+chev()+'</button><b class="num">'+(pg+1)+' / '+pages+'</b><button class="ibtn round" id="gNext"'+(pg<pages-1?'':' disabled')+' aria-label="下一页">'+chev(true)+'</button></div>';
+    if(first) openPage({title:"🎒 背包", back:true, onClose:renderMap, body}); else setBody(body);
     const P = $("pbody");
-    P.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ sfx.click(); tab = b.dataset.t; render(false); });
-    P.querySelectorAll(".goalb").forEach(b=>b.onclick=()=>{ const k = b.dataset.k; bubble((setDone(k)?"✅ ":"集齐全部"+STK[k].name+"贴纸："+"")+SET_REWARD[k].text); });
-    P.querySelectorAll(".tierpills button").forEach(b=>b.onclick=()=>{ sfx.click(); tier = b.dataset.k; render(false); });
-    P.querySelectorAll(".craft").forEach(b=>b.onclick=()=>{
-      const f = b.dataset.f, t = b.dataset.t;
-      if(dupList(f).length>=3) synth(f,t);
-      else bubble("3 张一样的"+STK[f].name+"贴纸 ➜ 1 张"+STK[t].name+"贴纸！");
-    });
-    P.querySelectorAll(".itile").forEach(b=>b.onclick=()=>bubble(ITEMS[b.dataset.it].tip+"！打怪时点上面的按钮"));
+    P.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ sfx.click(); slot = b.dataset.s; sel = null; pg = 0; render(false); });
+    P.querySelectorAll(".gt").forEach(b=>b.onclick=()=>{ sfx.click(); sel = b.dataset.id; render(false); });
+    if($("gOn")) $("gOn").onclick = ()=>{ equipGear(cur.id); sel = cur.id; sfx.right(); say("穿上了"+cur.name+"！"); render(false); };
+    if($("gOff")) $("gOff").onclick = ()=>{ unequipGear(slot); sel = cur.id; sfx.click(); render(false); };
+    if($("gPrev")) $("gPrev").onclick = ()=>{ pg--; render(false); };
+    if($("gNext")) $("gNext").onclick = ()=>{ pg++; render(false); };
+    if($("chestBtn")) $("chestBtn").onclick = ()=>bagChest(g=>{ slot = g.slot; sel = g.id; pg = 0; render(false); });
   };
   render(true);
-  const seq = pageSeq;
-  if(tab==="stk" && craftable()) setTimeout(()=>{ if(seq===pageSeq) bubble("有 3 张一样的贴纸啦！点「合成」试试！"); }, 500);
 }
-function synth(from, to){
-  const doneBefore = setDone(to);
-  const used = consume(from, 3);
-  const g = drawSticker(to); save();
-  sfx.chest(); setTimeout(()=>confetti(120), 650);
-  const note = !doneBefore && setDone(to) ? '<div class="note">'+img(SET_REWARD[to].em)+'<span>集齐全部'+STK[to].name+'贴纸！'+SET_REWARD[to].text+'</span></div>' : '';
-  openPage({title:"合成成功！", ribbon:"gold", back:true, onClose:renderMap,
-    body:'<div class="row" style="gap:12px;height:60px">'+used.map((e,i)=>'<span style="font-size:46px;animation:merge .7s ease-in forwards;--mx:'+(66-i*66)+'px">'+img(e)+'</span>').join("")+'</div>'
-      + '<div class="loot">'+lootTile(g, .65)+'</div>'+note
-      + '<button class="btn" id="mBack">'+img("📒")+' 回贴纸册</button>'});
-  say(to==="l" ? "哇！合成了传说贴纸！" : "合成了稀有贴纸！");
-  $("mBack").onclick = ()=>{ pageOnClose = null; openAlbum("craft"); };
+// open one saved chest inside the bag: the chest shakes, bursts, then shows the new piece
+function bagChest(back){
+  if(!(S.chests>0)) return;
+  const seq = pageSeq;
+  setBody('<div class="chestopen"><div class="chest s2">'+img("🎁")+'</div></div>');
+  sfx.star(1); setTimeout(()=>sfx.star(2), 300);
+  setTimeout(()=>{
+    if(seq!==pageSeq) return;
+    const stage = Math.max(1, Object.keys(S.stars).length);
+    const g = openGearChest(stage, false);
+    if(!g) return back({slot:"weapon"});
+    sfx.chest(); confetti(QIDX[g.quality]>=3 ? 160 : 80);
+    setBody('<p class="gsay">'+img("🎁")+' 宝箱里是……</p>'+gearCard(g, {preview:true, up:true, cls:"pop"})
+      + '<div class="btnrow"><button class="btn white" id="cBack">回背包</button>'+wearBtn(g, "cWear")+'</div>'
+      + (S.chests>0 ? '<p>还有 <b class="num">'+S.chests+'</b> 个宝箱</p>' : ''));
+    say(GEAR_QUALITY_MAP[g.quality].name+"色装备！"+g.name+"！");
+    $("cBack").onclick = ()=>{ sfx.click(); back(g); };
+    if(!isWorn(g)) $("cWear").onclick = ()=>{ equipGear(g.id); sfx.right(); say("穿上啦！"); back(g); };
+  }, 900);
 }
 
 function openParent(tab){
@@ -291,21 +303,23 @@ $("speakBtn").innerHTML = img("🔊");
 
 function startLevel(w,l,run){
   const Wd = WORLDS[w], L = Wd.levels[l];
-  const diff = run ? 0 : diffOf(w,l);
+  const diff = run ? 0 : diffOf(w,l), rage = rageLevel();
   const maxH = run ? 5 : (L.boss ? 5 : 3);
-  const h = hero();
-  B = {w,l,W:Wd,L,h,diff,run:run||null,hp:L.hp+diff,maxHp:L.hp+diff,maxH,hearts:run?run.hearts:maxH,combo:0,q:null,busy:true,charge:0,over:false,recent:[],enraged:false,hintOpen:false,step:0,lastTick:0,wrongThisQ:false,
-       shield:h.shield?1:0, lucky:h.lucky?1:0, frozenUntil:0};
+  const h = hero(), gs = gearStats(S.equipped);
+  B = {w,l,W:Wd,L,h,diff,run:run||null,hp:L.hp+2*diff,maxHp:L.hp+2*diff,rage,dmg:RAGE[rage].dmg,maxH,hearts:run?run.hearts:maxH,combo:0,q:null,busy:true,charge:0,over:false,recent:[],enraged:false,hintOpen:false,step:0,lastTick:0,wrongThisQ:false,
+       gs, shield:(h.shield||0)+gs.shield, lucky:(h.lucky||0)+gs.lucky, frozenUntil:0};
   const cur = B, bt = $("battle");
   $("arena").style.setProperty("--wbg", sceneURL(Wd.id));
   $("arena").querySelectorAll(".deco").forEach(d=>d.remove());
   $("arena").insertAdjacentHTML("afterbegin", decoHTML(Wd.id, .7));
   bt.classList.toggle("boss", !!L.boss); bt.classList.remove("enraged","hinting");
+  bt.classList.toggle("rage", rage>0);
+  $("rageTag").hidden = !rage; $("rageTag").innerHTML = '狂暴 <span class="num">×'+B.dmg+'</span>';
   $("map").hidden = true; bt.hidden = false;
   $("bTitle").innerHTML = emo(run ? (RUNS[run.mode].name+" "+(run.i+1)+"/"+run.seq.length)
     : Wd.name+" · "+(L.boss?"BOSS":"第"+(l+1)+"关")+(diff?" · "+TIERS[diff].n+"挑战":""));
   const hb = $("heroBox"); hb.style.setProperty("--hcol", h.col); hb.classList.toggle("gold", goldAura());
-  $("heroSprite").className = "sprite"; $("heroSprite").innerHTML = img(h.e); $("heroName").innerHTML = emo((S.crown?"👑":"")+h.n);
+  $("heroSprite").className = "sprite"; $("heroSprite").innerHTML = avatarHTML(S.equipped); $("heroName").innerHTML = emo((S.crown?"👑":"")+h.n);
   $("shield").hidden = !B.shield; $("shield").className = "shield";
   const ms = $("monSprite"); ms.className = "sprite"; ms.innerHTML = img(L.m);
   $("monGrow").style.transform = ""; $("monBox").classList.remove("angry","frozen");
@@ -323,8 +337,8 @@ function startLevel(w,l,run){
     say("警告！"+L.n+"来了！");
     delay = 2400;
   } else {
-    banner('<div class="ribbon'+(diff?" blue":"")+'">'+(diff?TIERS[diff].n+"挑战！":"")+L.n+' 出现了！</div>', 1400);
-    say(L.n+"出现了！");
+    banner('<div class="ribbon'+(diff?" blue":"")+'">'+(rage?"🔥狂暴":"")+(diff?TIERS[diff].n+"挑战！":"")+L.n+' 出现了！</div>', 1400);
+    say((rage?"狂暴模式！":"")+L.n+"出现了！");
     delay = 1400;
   }
   setTimeout(()=>{ if(B===cur && !B.over) nextQuestion(); }, delay);
@@ -342,19 +356,23 @@ function toast(e, text){
 }
 function drawHearts(broke, gained){
   let h = "";
-  for(let i=0;i<B.maxH;i++) h += '<span class="'+(i<B.hearts ? (gained && i===B.hearts-1 ? "gain" : "") : (broke && i===B.hearts ? "break" : "lost"))+'">'+img("❤️")+'</span>';
+  for(let i=0;i<B.maxH;i++) h += '<span class="'+(i<B.hearts ? (gained && i===B.hearts-1 ? "gain" : "") : (broke && i<B.hearts+(+broke) ? "break" : "lost"))+'">'+img("❤️")+'</span>';
   $("hearts").innerHTML = h;
 }
 function drawHP(){
   $("hpFill").style.width = (B.hp/B.maxHp*100)+"%";
   $("hpText").textContent = B.hp+" / "+B.maxHp;
 }
+/* 勇士技能 + 装备词缀的叠加规则：一律相加。
+   时间：(档位秒数 + 装备 ⏳) × (1 + 减速%)，减速% = 勇士时间减速 30% + 装备 ❄️，合计封顶 60%；
+   护盾次数、幸运免伤次数、暴击伤害、攻击、连对回心都直接相加；暴击率（装备 🎯）封顶 60%。 */
+const SLOW_CAP = 60, CRIT_CAP = 60;
 function qTime(){
-  // word problems keep their long reading time; everything else is 25% shorter than the level's base (20s -> 15s)
-  let t = B.L.t >= 50 ? B.L.t : B.L.t*0.75;
-  if(B.q && B.q.kind==="word") t = Math.max(t,55);
-  if(B.enraged) t *= 0.75;
-  return t * (1 - 0.1*B.diff) * (B.h.slow||1);
+  // fixed 15 s per question (word problems 40 s), shortened by the day's rage level
+  const t = RAGE[B.rage].t;
+  const base = B.q && B.q.kind==="word" ? Math.max(WORD_MIN, Math.round(WORD_TIME*t/Q_TIME)) : t;
+  const slow = Math.min(SLOW_CAP, Math.round(((B.h.slow||1)-1)*100) + B.gs.slow);
+  return (base + B.gs.time) * (1 + slow/100);
 }
 const thinking = () => B && B.hintOpen && B.q && B.q.kind==="word";
 const frozen = () => B && B.frozenUntil > performance.now();
@@ -542,8 +560,9 @@ function fxAt(em, big){
 function tint(col){ const t = $("tint"); t.style.setProperty("--tc", col); restart(t,"on"); }
 function heroAttack(){
   const cur = B, h = B.h;
-  const crit = B.combo >= (h.critAt||3);
-  const dmg = Math.min(B.hp, crit ? (h.critDmg||2)+(goldAura()?1:0) : 1);
+  const gs = B.gs;
+  const crit = B.combo >= (h.critAt||3) || Math.random()*100 < Math.min(CRIT_CAP, gs.critRate);
+  const dmg = Math.min(B.hp, (crit ? (h.critDmg||2)+(goldAura()?1:0)+gs.critDmg : 1) + gs.atk);
   crit ? sfx.crit() : sfx.right();
   play($("heroSprite"),"attack");
   const shot = document.createElement("span"); shot.className = "shot"; shot.innerHTML = img(h.shot);
@@ -558,16 +577,18 @@ function heroAttack(){
     popAt("mon"+(crit?" big":""), "-"+dmg);
     if(crit){ burst(8,[h.fx,"✨"]); restart($("battle"),"quake"); }
     B.hp -= dmg; drawHP();
-    if(h.heal && B.combo>0 && B.combo%h.heal===0 && B.hearts<B.maxH){
-      B.hearts++; drawHearts(false,true); renderItems(); sfx.heal();
-      setTimeout(()=>toast("🐲","龙之恢复 +1 颗心"), 200);
+    // 神龙 heals 1 every h.heal combo; gear 💖 heals gs.comboHeal every 5 combo; both add up
+    const heal = (h.heal && B.combo>0 && B.combo%h.heal===0 ? 1 : 0) + (gs.comboHeal && B.combo>0 && B.combo%5===0 ? gs.comboHeal : 0);
+    if(heal && B.hearts<B.maxH){
+      B.hearts = Math.min(B.maxH, B.hearts+heal); drawHearts(false,true); renderItems(); sfx.heal();
+      setTimeout(()=>toast(h.heal?"🐲":"💖", (h.heal?"龙之恢复":"连对回心")+" +"+heal+" 颗心"), 200);
     }
     if(B.hp<=0) return win();
     if(B.L.boss && !B.enraged && B.hp <= B.maxHp/2){
       B.enraged = true;
       $("battle").classList.add("enraged");
       sfx.roar(); restart($("battle"),"quake");
-      banner('<div class="ribbon">'+B.L.n+' 暴怒了！攻击更快了！</div>', 1500);
+      banner('<div class="ribbon">'+B.L.n+' 暴怒了！小心！</div>', 1500);
       say(B.L.n+"暴怒了！");
       setTimeout(()=>{ if(B===cur && !B.over) nextQuestion(); }, 1500);
       return;
@@ -587,7 +608,7 @@ function monsterAttack(reason){
     B.charge = 0; B.lastTick = 0;
     if(B.shield>0){
       B.shield--; sfx.shield(); tint("#38bdf8");
-      const sh = $("shield"); restart(sh,"pop"); setTimeout(()=>{ sh.hidden = true; }, 500);
+      const sh = $("shield"); restart(sh,"pop"); setTimeout(()=>{ if(B.shield>0) sh.className = "shield"; else sh.hidden = true; }, 500);
       toast("🛡️","护盾挡住了！");
       drawCharge();
       setTimeout(()=>{ if(B===cur && !B.over) B.busy = false; }, 450);
@@ -598,8 +619,9 @@ function monsterAttack(reason){
     restart($("battle"),"quake");
     play($("heroSprite"),"hurt");
     try{ navigator.vibrate && navigator.vibrate([120,60,120]); }catch(e){}
-    popAt("me", "-1");
-    B.hearts--; drawHearts(true); renderItems();
+    const dmg = Math.min(B.hearts, B.dmg);
+    popAt("me", "-"+B.dmg);
+    B.hearts -= dmg; drawHearts(dmg); renderItems();
     drawCharge();
     if(B.hearts<=0) return lose();
     setTimeout(()=>{ if(B===cur && !B.over) B.busy = false; }, 450);
@@ -624,6 +646,7 @@ function win(){
   if(info.boss){ info.firstMedal = !S.medals[B.W.id]; S.medals[B.W.id] = true; info.final = isFinal(B.w,B.l); }
   if(B.run){ B.run.hearts = Math.min(5, B.hearts+1); B.run.i++; info.runDone = B.run.i>=B.run.seq.length; }
   if(info.newWorld){ curWorld = B.w+1; S.world = curWorld; }
+  daily().n++;   // every win counts, replays and 连闯 battles included
   save();
   $("monBox").classList.remove("angry","frozen"); $("iceBlock").hidden = true; $("iceChip").hidden = true; $("frost").classList.remove("on"); $("items").innerHTML = "";
   if(info.boss) return bossFinale(cur, info);
@@ -654,10 +677,6 @@ function bossFinale(cur, info){
   }, 1900);
   setTimeout(()=>{ if(B!==cur) return; info.run ? (info.runDone ? showRunReward(info) : showRunNext(info)) : showWin(info); }, 3000);
 }
-const lootTile = (g, delay) => {
-  const cls = {n:"",r:" r",l:" l"}[g.k], label = {n:"新贴纸",r:"稀有",l:"传说"}[g.k];
-  return '<div class="lt'+cls+'" style="animation-delay:'+(delay||0)+'s">'+img(g.e)+(g.isNew?'<span class="tagnew">'+label+'</span>':'<b class="cnt">'+S.stickers[g.e]+'</b>')+'</div>';
-};
 const itemTile = (k, delay, n) => '<div class="lt it" style="animation-delay:'+(delay||0)+'s">'+img(ITEMS[k].e)+'<span class="tagnew">道具'+(n>1?" ×"+n:"")+'</span></div>';
 function showWin(info){
   const title = info.boss ? "👑 BOSS 击败！" : info.stars===3 ? "完美通关！" : "胜利！";
@@ -696,28 +715,25 @@ function showWin(info){
   $("rMap").onclick = ()=>{ closePage(); toMap(); };
   if($("rMap2")) $("rMap2").onclick = ()=>{ closePage(); toMap(); };
 }
-function drawSticker(k){
-  // mostly new stickers, but some repeats on purpose: repeats are what crafting uses
-  const pool = STK[k].list, fresh = pool.filter(e=>!S.stickers[e]);
-  const e = (fresh.length && Math.random() < {n:.6,r:.7,l:1}[k]) ? pick(fresh) : pick(pool);
-  const isNew = !S.stickers[e];
-  S.stickers[e] = (S.stickers[e]||0)+1;
-  return {e, k, isNew};
-}
 function giveItems(n){ const ks = Object.keys(ITEMS), got = []; for(let i=0;i<n;i++){ const k = pick(ks); S.items[k] = (S.items[k]||0)+1; got.push(k); } return got; }
+// 关卡序号 (1, 2, 3 … across all worlds) drives the drop quality
+const stageNo = (w,l) => w*5 + l + 1;
 function openChest(info){
-  const doneBefore = {n:setDone("n"), r:setDone("r"), l:setDone("l")};
   sfx.chest(); confetti(info.boss?220:90);
-  const got = [];
-  if(info.boss) got.push(drawSticker("n"), drawSticker("n"), drawSticker("r"));
-  else { got.push(drawSticker("n")); if(info.stars===3) got.push(drawSticker("n")); }
+  const g = addGear(rollGear(stageNo(info.w, info.l), !!info.boss));   // 本关掉落: one piece of gear instead of stickers
   const items = giveItems(info.boss ? 2 : (info.stars===3 || Math.random()<.5) ? 1 : 0);
   save();
-  let html = '<div class="loot">'+got.map((g,i)=>lootTile(g, i*.22)).join("")+items.map((k,i)=>itemTile(k,(got.length+i)*.22)).join("")+'</div>';
-  ["n","r","l"].forEach(k=>{ if(!doneBefore[k] && setDone(k)) html += '<div class="note">'+img(SET_REWARD[k].em)+'<span>集齐全部'+STK[k].name+'贴纸！</span></div>'; });
-  $("chestBox").innerHTML = emo(html);
+  const cnt = {}; items.forEach(k=>cnt[k]=(cnt[k]||0)+1);
+  const extra = items.length ? '<div class="gextra">还得到 '+Object.keys(cnt).map(k=>img(ITEMS[k].e)+'<b class="num">×'+cnt[k]+'</b>').join(" ")+'</div>' : '';
+  $("chestBox").innerHTML = '<p class="gsay">'+img("🎁")+' 本关掉落</p>'+gearCard(g, {preview:true, up:true, cls:"pop", btn:extra+wearBtn(g, "dWear")});
   $("winBtns").hidden = false;
-  say(got.some(g=>g.k==="r") ? "哇！稀有贴纸！" : got.some(g=>g.isNew) ? "得到新贴纸啦！" : "打开宝箱啦！");
+  say(QIDX[g.quality]>=3 ? "哇！"+GEAR_QUALITY_MAP[g.quality].name+"色装备！" : "掉落了"+g.name+"！");
+  if(!isWorn(g)) $("dWear").onclick = ()=>{
+    equipGear(g.id); sfx.right(); say("穿上啦！");
+    const b = $("dWear"); b.className = "btn white gwear"; b.disabled = true; b.textContent = "已穿戴";
+    const pv = $("chestBox").querySelector(".gprev"); if(pv) pv.innerHTML = avatarHTML(S.equipped);
+    const up = $("chestBox").querySelector(".gup"); if(up) up.remove();
+  };
 }
 function lose(){
   B.over = true; B.busy = true;
@@ -764,7 +780,7 @@ function openRunMenu(){
   const card = (mode, ok, lock, cls) => { const rw = RUN_RW[RUNS[mode].lvl];
     return '<button class="runcard '+cls+'" id="run_'+mode+'"'+(ok?"":" disabled")+'><b>'+RUNS[mode].name+'</b>'
       + '<div class="rpath">'+runIcons(mode).map(e=>img(e)).join("")+'</div>'
-      + '<div class="rrw">'+img("🎴")+'×'+rw.cards+' '+img("✨")+'×'+rw.shine+' '+img("🎒")+'×'+rw.items+(rw.crown?' '+img("👑"):'')+'</div>'
+      + '<div class="rrw">'+img("🎴")+'×'+rw.cards+' '+img("🎒")+'×'+rw.items+(rw.crown?' '+img("👑"):'')+'</div>'
       + (ok?'':'<span class="lk">'+img("🔒")+' '+lock+'</span>')+'</button>'; };
   openPage({title:"👹 挑战大魔王", ribbon:"blue", back:true, onClose:renderMap,
     body:'<p>一口气打到底，中途不能停！<br>'+img("❤️")+' 会带到下一战，每赢一场 +1</p>'
@@ -802,24 +818,11 @@ function showRunReward(info){
   cards.forEach(c=>c.onclick=()=>{
     if(picks<=0 || c.classList.contains("flip")) return;
     picks--;
-    const g = setOwned("l")<STK_L.length ? drawSticker("l") : drawSticker("r");
-    save();
-    c.classList.add("flip"); c.innerHTML = img(g.e);
+    const g = addGear(rollGear(stageNo(5,4) + 10*RUNS[info.run.mode].lvl, true));
+    c.classList.add("flip","q-"+g.quality); c.style.setProperty("--qc", qCol(g)); c.innerHTML = img(g.e);
     sfx.chest(); confetti(120);
-    say(g.k==="l" ? "传说贴纸！" : "稀有贴纸！");
-    if(picks===0){ cards.forEach(x=>{ if(!x.classList.contains("flip")) x.disabled = true; }); setTimeout(()=>showShine(info, rw.shine), 1500); }
-  });
-}
-function showShine(info, n){
-  const owned = [...STK_L,...STK_R,...STK_N].filter(e=>S.stickers[e] && !S.shiny[e]).slice(0,32);
-  if(!owned.length) return showRunItems(info);
-  setBody('<p style="font-size:20px;color:var(--ink)">'+img("✨")+' 选 '+n+' 张最喜欢的贴纸<br>让它变成闪光贴纸！</p><div class="grid" id="shineGrid">'+owned.map(e=>'<button data-e="'+e+'">'+img(e)+'</button>').join("")+'</div>');
-  say("选"+(n===1?"一":"两")+"张你最喜欢的贴纸，让它变成闪光贴纸！");
-  $("shineGrid").querySelectorAll("button").forEach(b=>b.onclick=()=>{
-    if(n<=0 || b.classList.contains("picked")) return;
-    n--; S.shiny[b.dataset.e] = true; save();
-    b.classList.add("picked"); sfx.star(2); confetti(60);
-    if(n===0){ $("shineGrid").querySelectorAll("button:not(.picked)").forEach(x=>x.disabled = true); setTimeout(()=>showRunItems(info), 1000); }
+    say(GEAR_QUALITY_MAP[g.quality].name+"色装备！"+g.name+"！");
+    if(picks===0){ cards.forEach(x=>{ if(!x.classList.contains("flip")) x.disabled = true; }); setTimeout(()=>showRunItems(info), 1500); }
   });
 }
 function showRunItems(info){

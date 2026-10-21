@@ -1,6 +1,10 @@
 /* ================= save ================= */
-const KEY = "math-hero-v1";  // kept so existing progress carries over
-const DEFAULT = {stars:{}, hero:0, voice:true, sound:true, timer:true, py:0.25, openAll:false, voiceName:"", rate:0.9, stats:{}, mistakes:[], stickers:{}, medals:{}, tier:{}, shiny:{}, items:{heal:1,time:1,ice:1}};
+const MAIN_KEY = "math-hero-v1";  // 正式版存档，kept so existing progress carries over
+// 试玩版 (built with `tools/build.py --beta`, IS_BETA = true) keeps its own save so it can never touch the real one:
+// on its first run it copies the 正式版 save once, after that it only reads/writes "math-hero-beta".
+const KEY = IS_BETA ? "math-hero-beta" : MAIN_KEY;
+if(IS_BETA) try { if(localStorage.getItem(KEY)===null){ const v1 = localStorage.getItem(MAIN_KEY); if(v1!==null) localStorage.setItem(KEY, v1); } } catch(e){}
+const DEFAULT = {stars:{}, hero:0, voice:true, sound:true, timer:true, py:0.25, openAll:false, voiceName:"", rate:0.9, stats:{}, mistakes:[], stickers:{}, medals:{}, tier:{}, shiny:{}, items:{heal:1,time:1,ice:1}, bag:[], equipped:{weapon:null,helmet:null,armor:null,shield:null}, chests:0, daily:{date:"",n:0}};
 let S;
 try { S = Object.assign({}, DEFAULT, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch(e){ S = Object.assign({}, DEFAULT); }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
@@ -162,6 +166,91 @@ function missSubQ(a,c){
   const hint = '<p class="htitle">拿走了几个？</p><p>本来有 '+a+' 个，剩下 '+c+' 个。被划掉的有几个？</p>'+dots([{n:c,c:"a"},{n:a-c,c:"x"}]);
   return mk([a,"−","?","=",c], a+"减几等于"+c+"？", a-c, hint);
 }
+// 语音读法。大数用汉字，避免把 100 读成「一零零」。
+function zhNum(n){
+  const d = "零一二三四五六七八九";
+  if(n===0) return "零";
+  if(n===1000) return "一千";
+  if(n<10) return d[n];
+  if(n<20) return "十"+(n%10?d[n%10]:"");
+  if(n<100){ const t=Math.floor(n/10), o=n%10; return d[t]+"十"+(o?d[o]:""); }
+  const h=Math.floor(n/100), rest=n%100, s=d[h]+"百";
+  if(!rest) return s;
+  if(rest<10) return s+"零"+d[rest];
+  const t=Math.floor(rest/10), o=rest%10;
+  return s+d[t]+"十"+(o?d[o]:"");
+}
+// 错误选项优先放孩子真会犯的错；凑不满 4 个时才用邻近数。答案一定在里面。
+function kidOpts(ans, traps, lo, hi){
+  const set = new Set([ans]);
+  const add = t => { if(set.size>=4) return; if(Number.isInteger(t) && t>=lo && t<=hi && !set.has(t)) set.add(t); };
+  (traps||[]).forEach(add);
+  shuffle([ans+10,ans-10,ans+1,ans-1,ans+20,ans-20,ans+100,ans-100,ans+2,ans-2]).forEach(add);
+  let guard=0;
+  while(set.size<4 && guard++<80) add(ri(lo,hi));
+  return [...set].sort((a,b)=>a-b);
+}
+function placeQ(op, a, b, hint, traps, lo, hi){
+  const ans = op==="+" ? a+b : a-b;
+  const sign = op==="+" ? "+" : "−";
+  const word = op==="+" ? "加" : "减";
+  return mk([a,sign,b,"=","?"], zhNum(a)+word+zhNum(b)+"等于几？", ans, hint, {
+    options: kidOpts(ans, traps, lo, hi),
+    small: a>=100 || b>=100 || ans>=100
+  });
+}
+function hintTenAdd(a,b){
+  const tail = a+b===100
+    ? "<p>满了 10 个十，就要进成 1 个百，后面写两个 0。</p>"
+    : "<p>得数是几十，末尾要写上 0。</p>";
+  return '<p class="htitle">整十相加</p><p>'+a+" 是 <b>"+(a/10)+"</b> 个十，"+b+" 是 <b>"+(b/10)+"</b> 个十。</p><p>先算几个十加几个十。</p>"+tail;
+}
+function hintTenSub(a,b){
+  return '<p class="htitle">整十相减</p><p>'+a+" 是 <b>"+(a/10)+"</b> 个十，"+b+" 是 <b>"+(b/10)+"</b> 个十。</p><p>几个十减几个十，还剩几个十？</p><p>得数末尾同样要写 0。</p>";
+}
+function hintHunAdd(a,b){
+  const tail = a+b===1000
+    ? "<p>满了 10 个百，就要进成 1 个千，后面写三个 0。</p>"
+    : "<p>得数是几百，末尾要写两个 0。</p>";
+  return '<p class="htitle">整百相加</p><p>'+a+" 是 <b>"+(a/100)+"</b> 个百，"+b+" 是 <b>"+(b/100)+"</b> 个百。</p><p>先算几个百加几个百。</p>"+tail;
+}
+function hintHunSub(a,b){
+  return '<p class="htitle">整百相减</p><p>'+a+" 是 <b>"+(a/100)+"</b> 个百，"+b+" 是 <b>"+(b/100)+"</b> 个百。</p><p>几个百减几个百，还剩几个百？</p><p>得数末尾同样要写两个 0。</p>";
+}
+function hintAdd1(a,b,carry){
+  const o=a%10, t=Math.floor(a/10);
+  if(!carry) return '<p class="htitle">先加个位</p><p>'+a+" 的个位是 <b>"+o+"</b>，加上 <b>"+b+"</b>。</p><p>个位加起来不满十，不用进位。</p><p>十位的 <b>"+t+"</b> 照原样写下来。</p>";
+  return '<p class="htitle">个位满十要进一</p><p>先算个位：<b>'+o+"</b> 加 <b>"+b+"</b>，满十了。</p><p>个位只写下多出来的，向十位进 1。</p><p>十位的 <b>"+t+"</b> 要加上进上来的 1。</p>";
+}
+function hintSub1(a,b,borrow){
+  const o=a%10, t=Math.floor(a/10);
+  if(!borrow) return '<p class="htitle">先减个位</p><p>'+a+" 的个位是 <b>"+o+"</b>，减去 <b>"+b+"</b>，够减。</p><p>个位不用向十位借。</p><p>十位的 <b>"+t+"</b> 照原样写下来。</p>";
+  return '<p class="htitle">个位不够要退一</p><p>个位 <b>'+o+"</b> 减 <b>"+b+"</b>，不够减。</p><p>向十位借 1 个十，个位加上 10 再减。</p><p>十位的 <b>"+t+"</b> 被借走 1，要少 1。</p>";
+}
+const hintAdd2 = () => '<p class="htitle">个位对个位</p><p>竖着写，个位对个位，十位对十位。</p><p>先加个位，再加十位。</p><p>这一题个位不满十，十位也不满十，都不用进位。</p>';
+const hintSub2 = () => '<p class="htitle">个位对个位</p><p>竖着写，个位对个位，十位对十位。</p><p>先减个位，再减十位。</p><p>这一题个位够减，十位也够减，不用借。</p>';
+function trapsAddTen(a,b){ const ta=a/10, tb=b/10, s=a+b; return [ta+tb,(ta+tb)*100,a+tb,b+ta,s+10,s-10,(ta+tb+1)*10]; }
+function trapsSubTen(a,b){ const ta=a/10, tb=b/10, d=a-b; return [ta-tb,(ta-tb)*100,a-tb,d+10,d-10,a+b,(ta-tb+1)*10]; }
+function trapsAddHun(a,b){ const ha=a/100, hb=b/100, s=a+b; return [ha+hb,(ha+hb)*10,(ha+hb)*1000,a+hb,s+100,s-100]; }
+function trapsSubHun(a,b){ const ha=a/100, hb=b/100, d=a-b; return [ha-hb,(ha-hb)*10,(ha-hb)*1000,a-hb,d+100,d-100,a+b]; }
+function trapsAdd1(a,b,carry){
+  const o=a%10, t=Math.floor(a/10), s=a+b;
+  const forgot=t*10+((o+b)%10), only=o+b, shift=a+b*10;
+  return carry ? [forgot,only,shift,s+10,s-1] : [only,shift,(t+b)*10+o,s+1,s-1,a-b];
+}
+function trapsSub1(a,b,borrow){
+  const o=a%10, t=Math.floor(a/10), d=a-b;
+  const bigSmall=t*10+(b-o), only=borrow?10+o-b:o-b, forgot=t*10+(10+o-b);
+  return borrow ? [bigSmall,only,forgot,d+1,d-1,a+b] : [only,a-b*10,(t>=b?(t-b)*10: (b-t)*10)+o,d+1,d-1,a+b];
+}
+function trapsAdd2(a,b){
+  const s=a+b, o1=a%10, o2=b%10, t1=Math.floor(a/10), t2=Math.floor(b/10);
+  return [(t1+t2)*10,o1+o2,(o1+o2)*10+(t1+t2),s+10,a+o2,a+t2,b+o1,s+1,s-1];
+}
+function trapsSub2(a,b){
+  const d=a-b, o1=a%10, o2=b%10, t1=Math.floor(a/10), t2=Math.floor(b/10);
+  return [(t1-t2)*10,o1-o2,(o1-o2)*10+(t1-t2),d-10,a+b,a-o2,a-t2,d+1,d-1];
+}
 const G = {
   add(max){ const s=ri(2,max), a=ri(1,s-1); return addQ(a,s-a); },
   sub(max){ const a=ri(2,max), b=ri(1,a); return subQ(a,b); },
@@ -223,9 +312,329 @@ const G = {
     steps+='</div>';
     const hint='<p class="htitle">找规律</p><p>每次都'+verb+' <b>'+s+'</b></p>'+steps;
     return mk(parts, "找规律，问号里填几？", seq[pos], hint, {small:true, seq:true});
+  },
+  // 整十：10～90，和不超过 100，差至少 10。整百：100～900，和不超过 1000，差至少 100。
+  addTen(){ const ta=ri(1,9), tb=ri(1,10-ta), a=ta*10, b=tb*10; return placeQ("+",a,b,hintTenAdd(a,b),trapsAddTen(a,b),0,1000); },
+  subTen(){ const ta=ri(2,9), tb=ri(1,ta-1), a=ta*10, b=tb*10; return placeQ("-",a,b,hintTenSub(a,b),trapsSubTen(a,b),0,1000); },
+  addHundred(){ const ha=ri(1,9), hb=ri(1,10-ha), a=ha*100, b=hb*100; return placeQ("+",a,b,hintHunAdd(a,b),trapsAddHun(a,b),0,2000); },
+  subHundred(){ const ha=ri(2,9), hb=ri(1,ha-1), a=ha*100, b=hb*100; return placeQ("-",a,b,hintHunSub(a,b),trapsSubHun(a,b),0,2000); },
+  // 两位数 ± 一位数。不进位/不退位，以及进位/退位。和不超过 100。
+  add1NoCarry(){ const t=ri(1,9), o=ri(0,8), b=ri(1,9-o), a=t*10+o; return placeQ("+",a,b,hintAdd1(a,b,false),trapsAdd1(a,b,false),0,250); },
+  add1Carry(){ const t=ri(1,9), o=ri(1,9), a=t*10+o, b=ri(10-o,Math.min(9,100-a)); return placeQ("+",a,b,hintAdd1(a,b,true),trapsAdd1(a,b,true),0,250); },
+  sub1NoBorrow(){ const t=ri(1,9), o=ri(1,9), b=ri(1,o), a=t*10+o; return placeQ("-",a,b,hintSub1(a,b,false),trapsSub1(a,b,false),0,250); },
+  sub1Borrow(){ const t=ri(1,9), o=ri(0,8), b=ri(o+1,9), a=t*10+o; return placeQ("-",a,b,hintSub1(a,b,true),trapsSub1(a,b,true),0,250); },
+  // 两位数 ± 两位数，个位和十位都不进位、不退位。
+  add2NoCarry(){
+    const t1=ri(1,8), t2=ri(1,9-t1), o1=ri(0,9), o2=ri(0,9-o1), a=t1*10+o1, b=t2*10+o2;
+    return placeQ("+",a,b,hintAdd2(),trapsAdd2(a,b),0,250);
+  },
+  sub2NoBorrow(){
+    const t1=ri(1,9), o1=ri(t1===1?1:0,9);
+    let t2=ri(1,t1), o2, o2Max=t2===t1?o1-1:o1;
+    if(o2Max<0){ t2=ri(1,t1-1); o2=0; } else o2=ri(0,o2Max);
+    const a=t1*10+o1, b=t2*10+o2;
+    return placeQ("-",a,b,hintSub2(),trapsSub2(a,b),0,250);
   }
 };
 const mix = (...fns) => () => pick(fns)();
+
+/* ================= 120 关难度计划（纯数据，还没接入 WORLDS） =================
+   8 个世界，各 15 关，第 15 关是 Boss。
+   mix 每一项是 {g, args?}。接入时：G[item.g](...(item.args||[]))，再用 mix(...) 组合。
+   比大小、连加连减、找规律仍用 G.compare / G.chain / G.pattern，这张表先不排。 */
+const LEVEL_PLAN = [
+  {world:1, id:"add", name:"加法森林", sub:"10 以内加法", levels:[
+    {n:1, mix:[{g:"add",args:[5]}]},
+    {n:2, mix:[{g:"add",args:[5]}]},
+    {n:3, mix:[{g:"add",args:[5]}]},
+    {n:4, mix:[{g:"add",args:[5]},{g:"add",args:[10]}]},
+    {n:5, mix:[{g:"add",args:[10]}]},
+    {n:6, mix:[{g:"add",args:[10]}]},
+    {n:7, mix:[{g:"add",args:[10]}]},
+    {n:8, mix:[{g:"missAdd",args:[5]}]},
+    {n:9, mix:[{g:"missAdd",args:[10]}]},
+    {n:10, mix:[{g:"missAdd",args:[10]}]},
+    {n:11, mix:[{g:"add",args:[10]},{g:"missAdd",args:[10]}]},
+    {n:12, mix:[{g:"make10"}]},
+    {n:13, mix:[{g:"make10"},{g:"add",args:[10]}]},
+    {n:14, mix:[{g:"add",args:[10]},{g:"missAdd",args:[10]},{g:"make10"}]},
+    {n:15, boss:true, mix:[{g:"add",args:[5]},{g:"add",args:[10]},{g:"missAdd",args:[10]},{g:"make10"}]}
+  ]},
+  {world:2, id:"sub", name:"减法洞穴", sub:"10 以内减法", levels:[
+    {n:1, mix:[{g:"sub",args:[5]}]},
+    {n:2, mix:[{g:"sub",args:[5]}]},
+    {n:3, mix:[{g:"sub",args:[5]}]},
+    {n:4, mix:[{g:"sub",args:[5]},{g:"sub",args:[10]}]},
+    {n:5, mix:[{g:"sub",args:[10]}]},
+    {n:6, mix:[{g:"sub",args:[10]}]},
+    {n:7, mix:[{g:"sub",args:[10]}]},
+    {n:8, mix:[{g:"missSub",args:[5]}]},
+    {n:9, mix:[{g:"missSub",args:[10]}]},
+    {n:10, mix:[{g:"missSub",args:[10]}]},
+    {n:11, mix:[{g:"sub",args:[10]},{g:"missSub",args:[10]}]},
+    {n:12, mix:[{g:"sub",args:[10]},{g:"add",args:[10]}]},
+    {n:13, mix:[{g:"missSub",args:[10]},{g:"missAdd",args:[10]}]},
+    {n:14, mix:[{g:"sub",args:[10]},{g:"missSub",args:[10]},{g:"add",args:[10]}]},
+    {n:15, boss:true, mix:[{g:"sub",args:[5]},{g:"sub",args:[10]},{g:"missSub",args:[10]},{g:"add",args:[10]},{g:"missAdd",args:[10]}]}
+  ]},
+  {world:3, id:"ten", name:"凑十火山", sub:"20 以内进位加法", levels:[
+    {n:1, mix:[{g:"make10"}]},
+    {n:2, mix:[{g:"make10"}]},
+    {n:3, mix:[{g:"carry",args:[[9]]}]},
+    {n:4, mix:[{g:"carry",args:[[9]]}]},
+    {n:5, mix:[{g:"carry",args:[[9]]},{g:"make10"}]},
+    {n:6, mix:[{g:"carry",args:[[8,7]]}]},
+    {n:7, mix:[{g:"carry",args:[[8,7]]}]},
+    {n:8, mix:[{g:"carry",args:[[8,7]]},{g:"carry",args:[[9]]}]},
+    {n:9, mix:[{g:"carry",args:[[6,5]]}]},
+    {n:10, mix:[{g:"carryAny"}]},
+    {n:11, mix:[{g:"carryAny"}]},
+    {n:12, mix:[{g:"carryAny"},{g:"make10"}]},
+    {n:13, mix:[{g:"carryAny"},{g:"add",args:[10]}]},
+    {n:14, mix:[{g:"carry",args:[[9]]},{g:"carry",args:[[8,7]]},{g:"carryAny"}]},
+    {n:15, boss:true, mix:[{g:"make10"},{g:"carry",args:[[9]]},{g:"carry",args:[[8,7]]},{g:"carry",args:[[6,5]]},{g:"carryAny"}]}
+  ]},
+  {world:4, id:"ice", name:"冰雪城堡", sub:"20 以内退位减法", levels:[
+    {n:1, mix:[{g:"teenNoBorrow"}]},
+    {n:2, mix:[{g:"teenNoBorrow"}]},
+    {n:3, mix:[{g:"teenNoBorrow"}]},
+    {n:4, mix:[{g:"borrow",args:[[9]]}]},
+    {n:5, mix:[{g:"borrow",args:[[9]]}]},
+    {n:6, mix:[{g:"borrow",args:[[9]]},{g:"teenNoBorrow"}]},
+    {n:7, mix:[{g:"borrow",args:[[8,7]]}]},
+    {n:8, mix:[{g:"borrow",args:[[8,7]]}]},
+    {n:9, mix:[{g:"borrow",args:[[8,7]]},{g:"borrow",args:[[9]]}]},
+    {n:10, mix:[{g:"borrowAny"}]},
+    {n:11, mix:[{g:"borrowAny"}]},
+    {n:12, mix:[{g:"borrowAny"},{g:"teenNoBorrow"}]},
+    {n:13, mix:[{g:"borrowAny"},{g:"carryAny"}]},
+    {n:14, mix:[{g:"borrow",args:[[9]]},{g:"borrowAny"},{g:"carryAny"}]},
+    {n:15, boss:true, mix:[{g:"teenNoBorrow"},{g:"borrow",args:[[9]]},{g:"borrow",args:[[8,7]]},{g:"borrowAny"},{g:"carryAny"}]}
+  ]},
+  {world:5, id:"tens", name:"整十草原", sub:"整十数加减", levels:[
+    {n:1, mix:[{g:"addTen"}]},
+    {n:2, mix:[{g:"addTen"}]},
+    {n:3, mix:[{g:"addTen"}]},
+    {n:4, mix:[{g:"addTen"},{g:"add",args:[10]}]},
+    {n:5, mix:[{g:"subTen"}]},
+    {n:6, mix:[{g:"subTen"}]},
+    {n:7, mix:[{g:"subTen"}]},
+    {n:8, mix:[{g:"subTen"},{g:"sub",args:[10]}]},
+    {n:9, mix:[{g:"addTen"},{g:"subTen"}]},
+    {n:10, mix:[{g:"addTen"},{g:"subTen"}]},
+    {n:11, mix:[{g:"addTen"},{g:"subTen"},{g:"add",args:[10]}]},
+    {n:12, mix:[{g:"addTen"},{g:"subTen"},{g:"sub",args:[10]}]},
+    {n:13, mix:[{g:"addTen"},{g:"subTen"}]},
+    {n:14, mix:[{g:"addTen"},{g:"subTen"},{g:"make10"}]},
+    {n:15, boss:true, mix:[{g:"addTen"},{g:"subTen"},{g:"add",args:[10]},{g:"sub",args:[10]},{g:"carryAny"}]}
+  ]},
+  {world:6, id:"hundreds", name:"整百雪山", sub:"整百数加减", levels:[
+    {n:1, mix:[{g:"addHundred"}]},
+    {n:2, mix:[{g:"addHundred"}]},
+    {n:3, mix:[{g:"addHundred"}]},
+    {n:4, mix:[{g:"addHundred"},{g:"addTen"}]},
+    {n:5, mix:[{g:"subHundred"}]},
+    {n:6, mix:[{g:"subHundred"}]},
+    {n:7, mix:[{g:"subHundred"}]},
+    {n:8, mix:[{g:"subHundred"},{g:"subTen"}]},
+    {n:9, mix:[{g:"addHundred"},{g:"subHundred"}]},
+    {n:10, mix:[{g:"addHundred"},{g:"subHundred"}]},
+    {n:11, mix:[{g:"addHundred"},{g:"subHundred"},{g:"addTen"}]},
+    {n:12, mix:[{g:"addHundred"},{g:"subHundred"},{g:"subTen"}]},
+    {n:13, mix:[{g:"addHundred"},{g:"addTen"},{g:"subTen"}]},
+    {n:14, mix:[{g:"addHundred"},{g:"subHundred"},{g:"addTen"},{g:"subTen"}]},
+    {n:15, boss:true, mix:[{g:"addHundred"},{g:"subHundred"},{g:"addTen"},{g:"subTen"},{g:"add",args:[10]},{g:"sub",args:[10]}]}
+  ]},
+  {world:7, id:"digit1", name:"数字小镇", sub:"两位数与一位数", levels:[
+    {n:1, mix:[{g:"add1NoCarry"}]},
+    {n:2, mix:[{g:"add1NoCarry"}]},
+    {n:3, mix:[{g:"add1NoCarry"}]},
+    {n:4, mix:[{g:"sub1NoBorrow"}]},
+    {n:5, mix:[{g:"sub1NoBorrow"}]},
+    {n:6, mix:[{g:"sub1NoBorrow"}]},
+    {n:7, mix:[{g:"add1NoCarry"},{g:"sub1NoBorrow"}]},
+    {n:8, mix:[{g:"add1Carry"}]},
+    {n:9, mix:[{g:"add1Carry"}]},
+    {n:10, mix:[{g:"add1Carry"}]},
+    {n:11, mix:[{g:"sub1Borrow"}]},
+    {n:12, mix:[{g:"sub1Borrow"}]},
+    {n:13, mix:[{g:"sub1Borrow"},{g:"add1Carry"}]},
+    {n:14, mix:[{g:"add1NoCarry"},{g:"sub1NoBorrow"},{g:"add1Carry"},{g:"sub1Borrow"}]},
+    {n:15, boss:true, mix:[{g:"add1NoCarry"},{g:"sub1NoBorrow"},{g:"add1Carry"},{g:"sub1Borrow"},{g:"addTen"},{g:"subTen"}]}
+  ]},
+  {world:8, id:"digit2", name:"竖式城堡", sub:"两位数加减两位数", levels:[
+    {n:1, mix:[{g:"add2NoCarry"}]},
+    {n:2, mix:[{g:"add2NoCarry"}]},
+    {n:3, mix:[{g:"add2NoCarry"}]},
+    {n:4, mix:[{g:"add2NoCarry"},{g:"add1NoCarry"}]},
+    {n:5, mix:[{g:"sub2NoBorrow"}]},
+    {n:6, mix:[{g:"sub2NoBorrow"}]},
+    {n:7, mix:[{g:"sub2NoBorrow"}]},
+    {n:8, mix:[{g:"sub2NoBorrow"},{g:"sub1NoBorrow"}]},
+    {n:9, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"}]},
+    {n:10, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"}]},
+    {n:11, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"},{g:"add1Carry"}]},
+    {n:12, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"},{g:"sub1Borrow"}]},
+    {n:13, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"},{g:"addTen"},{g:"subTen"}]},
+    {n:14, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"},{g:"addHundred"},{g:"subHundred"}]},
+    {n:15, boss:true, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"},{g:"add1Carry"},{g:"sub1Borrow"},{g:"addTen"},{g:"subTen"},{g:"addHundred"},{g:"subHundred"}]}
+  ]}
+];
+
+/* ================= 120 关世界与玩法（纯数据，还没接入 WORLDS） =================
+   id 跟 LEVEL_PLAN 对齐。WORLDS_V2 是场景和怪兽，LEVEL_MODES 是玩法。
+   match 关沿用该关 LEVEL_PLAN 的 mix 出题，这里不重复生成器。
+   前 3 关固定 battle。这三关是唯一允许的同玩法三连；第 4 关必须换一种。
+   从第 2 关起，任意连续三关不能再是同一种玩法。
+   每个世界至少 2 关 match，另有 1 到 2 关 link 或 blend。第 15 关一定是 battle。 */
+const WORLDS_V2 = [
+  {id:"add", name:"加法森林", sub:"10 以内加法", scene:"森林", levels:[
+    {n:1, emoji:"🐛", name:"毛毛虫"},
+    {n:2, emoji:"🐸", name:"跳跳蛙"},
+    {n:3, emoji:"🦎", name:"小蜥蜴"},
+    {n:4, emoji:"🐍", name:"林蛇"},
+    {n:5, emoji:"🦋", name:"凤蝶"},
+    {n:6, emoji:"🐝", name:"蜜蜂"},
+    {n:7, emoji:"🐞", name:"瓢虫"},
+    {n:8, emoji:"🐜", name:"兵蚁"},
+    {n:9, emoji:"🦟", name:"蚊子"},
+    {n:10, emoji:"🦗", name:"蟋蟀"},
+    {n:11, emoji:"🐌", name:"蜗牛"},
+    {n:12, emoji:"🦜", name:"鹦鹉"},
+    {n:13, emoji:"🐒", name:"灵猴"},
+    {n:14, emoji:"🦊", name:"赤狐"},
+    {n:15, emoji:"🦍", name:"猩猩大王", boss:true}
+  ]},
+  {id:"sub", name:"减法洞穴", sub:"10 以内减法", scene:"洞穴", levels:[
+    {n:1, emoji:"🦇", name:"暗蝠"},
+    {n:2, emoji:"🕷️", name:"结网蛛"},
+    {n:3, emoji:"🦂", name:"尾蝎"},
+    {n:4, emoji:"🐀", name:"灰鼠"},
+    {n:5, emoji:"🦉", name:"夜枭"},
+    {n:6, emoji:"🐺", name:"窟狼"},
+    {n:7, emoji:"🐗", name:"獠牙猪"},
+    {n:8, emoji:"🐻", name:"洞熊"},
+    {n:9, emoji:"🦝", name:"浣熊"},
+    {n:10, emoji:"🦨", name:"臭鼬"},
+    {n:11, emoji:"🦡", name:"蜜獾"},
+    {n:12, emoji:"🦔", name:"刺猬"},
+    {n:13, emoji:"🐢", name:"岩龟"},
+    {n:14, emoji:"👻", name:"游魂"},
+    {n:15, emoji:"🧛", name:"吸血伯爵", boss:true}
+  ]},
+  {id:"ten", name:"凑十火山", sub:"20 以内进位加法", scene:"火山", levels:[
+    {n:1, emoji:"🦀", name:"熔岩蟹"},
+    {n:2, emoji:"🐊", name:"火鳄"},
+    {n:3, emoji:"🦏", name:"铁甲犀"},
+    {n:4, emoji:"🦅", name:"金雕"},
+    {n:5, emoji:"🦖", name:"暴龙"},
+    {n:6, emoji:"🐲", name:"炎龙"},
+    {n:7, emoji:"🦁", name:"火狮"},
+    {n:8, emoji:"🐯", name:"虎仔"},
+    {n:9, emoji:"🐆", name:"花豹"},
+    {n:10, emoji:"🐅", name:"猛虎"},
+    {n:11, emoji:"🐂", name:"蛮牛"},
+    {n:12, emoji:"🐐", name:"岩羊"},
+    {n:13, emoji:"🐏", name:"角羊"},
+    {n:14, emoji:"🦃", name:"火鸟"},
+    {n:15, emoji:"🐉", name:"熔岩龙王", boss:true}
+  ]},
+  {id:"ice", name:"冰雪城堡", sub:"20 以内退位减法", scene:"冰雪", levels:[
+    {n:1, emoji:"🐧", name:"企鹅兵"},
+    {n:2, emoji:"⛄", name:"雪人卫"},
+    {n:3, emoji:"🦢", name:"冰天鹅"},
+    {n:4, emoji:"🕊️", name:"雪鸽"},
+    {n:5, emoji:"🦆", name:"寒鸭"},
+    {n:6, emoji:"🐰", name:"白兔"},
+    {n:7, emoji:"🐑", name:"霜羊"},
+    {n:8, emoji:"🦭", name:"胖海豹"},
+    {n:9, emoji:"🦦", name:"雪獭"},
+    {n:10, emoji:"🐤", name:"冰雏"},
+    {n:11, emoji:"🐔", name:"雪鸡"},
+    {n:12, emoji:"🐓", name:"霜公鸡"},
+    {n:13, emoji:"🐦", name:"雪雀"},
+    {n:14, emoji:"🦚", name:"霜孔雀"},
+    {n:15, emoji:"🦈", name:"冰鲨王", boss:true}
+  ]},
+  {id:"tens", name:"整十草原", sub:"整十数加减", scene:"草原", levels:[
+    {n:1, emoji:"🐴", name:"野马"},
+    {n:2, emoji:"🦓", name:"斑马"},
+    {n:3, emoji:"🦒", name:"长颈鹿"},
+    {n:4, emoji:"🦌", name:"梅花鹿"},
+    {n:5, emoji:"🐘", name:"大象"},
+    {n:6, emoji:"🦛", name:"河马"},
+    {n:7, emoji:"🐄", name:"奶牛"},
+    {n:8, emoji:"🐃", name:"水牛"},
+    {n:9, emoji:"🐖", name:"拱地猪"},
+    {n:10, emoji:"🐕", name:"牧羊犬"},
+    {n:11, emoji:"🐈", name:"草地猫"},
+    {n:12, emoji:"🐇", name:"长耳兔"},
+    {n:13, emoji:"🐿️", name:"松鼠"},
+    {n:14, emoji:"🐁", name:"田鼠"},
+    {n:15, emoji:"🦄", name:"独角兽王", boss:true}
+  ]},
+  {id:"hundreds", name:"整百雪山", sub:"整百数加减", scene:"雪山", levels:[
+    {n:1, emoji:"🦙", name:"雪羊驼"},
+    {n:2, emoji:"🦣", name:"小猛犸"},
+    {n:3, emoji:"🦬", name:"霜野牛"},
+    {n:4, emoji:"🐼", name:"竹熊猫"},
+    {n:5, emoji:"🐵", name:"崖猴"},
+    {n:6, emoji:"🦧", name:"雪猩猩"},
+    {n:7, emoji:"🦫", name:"冰河狸"},
+    {n:8, emoji:"🐭", name:"山鼠"},
+    {n:9, emoji:"🐣", name:"雪蛋雀"},
+    {n:10, emoji:"🐥", name:"绒雪雀"},
+    {n:11, emoji:"🐦‍⬛", name:"黑乌鸦"},
+    {n:12, emoji:"🐎", name:"雪山骏马"},
+    {n:13, emoji:"🦥", name:"崖树懒"},
+    {n:14, emoji:"🦘", name:"岩袋鼠"},
+    {n:15, emoji:"🐻‍❄️", name:"北极熊王", boss:true}
+  ]},
+  {id:"digit1", name:"数字小镇", sub:"两位数与一位数", scene:"小镇", levels:[
+    {n:1, emoji:"🐹", name:"仓鼠"},
+    {n:2, emoji:"🐶", name:"看门狗"},
+    {n:3, emoji:"🐱", name:"花猫"},
+    {n:4, emoji:"🐷", name:"小胖猪"},
+    {n:5, emoji:"🐮", name:"小奶牛"},
+    {n:6, emoji:"🐩", name:"卷毛狗"},
+    {n:7, emoji:"🦮", name:"领路犬"},
+    {n:8, emoji:"🐈‍⬛", name:"夜黑猫"},
+    {n:9, emoji:"🪲", name:"甲虫"},
+    {n:10, emoji:"🪳", name:"蟑螂"},
+    {n:11, emoji:"🪰", name:"苍蝇"},
+    {n:12, emoji:"🪱", name:"蚯蚓"},
+    {n:13, emoji:"🐨", name:"树袋熊"},
+    {n:14, emoji:"🦕", name:"小恐龙"},
+    {n:15, emoji:"🐙", name:"章鱼大王", boss:true}
+  ]},
+  {id:"digit2", name:"竖式城堡", sub:"两位数加减两位数", scene:"城堡", levels:[
+    {n:1, emoji:"🧙", name:"小巫师"},
+    {n:2, emoji:"🧚", name:"小仙子"},
+    {n:3, emoji:"🧟", name:"僵尸"},
+    {n:4, emoji:"💀", name:"骷髅兵"},
+    {n:5, emoji:"👽", name:"外星客"},
+    {n:6, emoji:"👾", name:"像素魔"},
+    {n:7, emoji:"👺", name:"面具鬼"},
+    {n:8, emoji:"🧞", name:"灯神"},
+    {n:9, emoji:"🎃", name:"南瓜怪"},
+    {n:10, emoji:"🧝", name:"精灵"},
+    {n:11, emoji:"🧜", name:"人鱼卫"},
+    {n:12, emoji:"🤖", name:"铁卫兵"},
+    {n:13, emoji:"👿", name:"小恶魔"},
+    {n:14, emoji:"☠️", name:"十字骨"},
+    {n:15, emoji:"👹", name:"城堡魔王", boss:true}
+  ]}
+];
+const LEVEL_MODES = [
+  {id:"add", modes:["battle","battle","battle","match","battle","match","battle","link","battle","battle","match","battle","battle","match","battle"]},
+  {id:"sub", modes:["battle","battle","battle","match","battle","battle","match","blend","battle","battle","match","battle","link","battle","battle"]},
+  {id:"ten", modes:["battle","battle","battle","match","battle","link","battle","match","battle","blend","battle","battle","match","battle","battle"]},
+  {id:"ice", modes:["battle","battle","battle","blend","battle","match","battle","battle","match","link","battle","battle","match","battle","battle"]},
+  {id:"tens", modes:["battle","battle","battle","match","battle","battle","link","match","battle","battle","blend","battle","match","battle","battle"]},
+  {id:"hundreds", modes:["battle","battle","battle","match","link","battle","match","battle","battle","blend","match","battle","battle","match","battle"]},
+  {id:"digit1", modes:["battle","battle","battle","match","battle","blend","battle","match","battle","battle","link","battle","match","battle","battle"]},
+  {id:"digit2", modes:["battle","battle","battle","match","battle","battle","match","link","battle","blend","battle","battle","match","battle","battle"]}
+];
 
 /* ================= pinyin (语文) ================= */
 // [字, 无调拼音(ü 写作 v), 声调, 图]
@@ -550,8 +959,8 @@ function wordOpts(ans, traps){
   return [...set].sort((a,b)=>a-b);
 }
 function wq(o){
-  return {kind:"word", html:o.html, speak:strip(o.html), answer:o.answer, options:wordOpts(o.answer,o.traps),
-    steps:o.steps, key:o.key, rec:strip(o.html), pic:o.pic||"🤔"};
+  return {kind:"word", html:o.html, speak:o.speak||strip(o.html), answer:o.answer, options:wordOpts(o.answer,o.traps),
+    steps:o.steps, key:o.key, rec:o.rec||strip(o.html), pic:o.pic||"🤔"};
 }
 function bars(rows, max){
   max = max || Math.max(...rows.map(r=>r.segs.reduce((a,s)=>a+s.v,0)));
@@ -742,21 +1151,22 @@ const WP = {
   ageConst(){
     const [big,small] = pick([["哥哥","弟弟"],["姐姐","妹妹"]]);
     const a = ri(7,12), b = ri(3,a-2), k = ri(2,5), d = a-b;
-    const now = hl => [{l:big,segs:[{v:b,t:""},{v:d,c:"d"+(hl?" hl":""),t:d}]},{l:small,segs:[{v:b,c:"b",t:""}]}];
-    const later = [{l:big,segs:[{v:b,t:""},{v:d,c:"d hl",t:d},{v:k,c:"c",t:"+"+k}]},{l:small,segs:[{v:b,c:"b",t:""},{v:k,c:"c",t:"+"+k}]}];
+    const now = hl => [{l:big,segs:[{v:b,t:""},{v:d,c:"d"+(hl?" hl":""),t:"?"}]},{l:small,segs:[{v:b,c:"b",t:""}]}];
+    const later = [{l:big,segs:[{v:b,t:""},{v:d,c:"d hl",t:"?"},{v:k,c:"c",t:"+"+k}]},{l:small,segs:[{v:b,c:"b",t:""},{v:k,c:"c",t:"+"+k}]}];
     return wq({key:"age"+a+b+k, pic:"🎂", answer:d, traps:[d+k,k,d+k+k],
       html:big+"今年"+N(a)+"岁，"+small+"今年"+N(b)+"岁。"+N(k)+"年以后，"+big+"比"+small+"大几岁？",
       steps:[
-        {t:"今年 "+big+" 比 "+small+" 大：<b>"+a+" − "+b+" = "+d+"</b> 岁。", v:bars(now(true),a+k)},
+        {t:"今年 "+big+" 比 "+small+" 大多少？用大的减去小的：<b>"+a+" − "+b+" = ?</b>", v:bars(now(true),a+k)},
         {t:"过了 <b>"+k+"</b> 年，两个人<b>都</b>长了 "+k+" 岁，两条线段一起加长（绿色）。", v:bars(later,a+k)},
         {t:"⚠️ 加长的一样多，所以相差的那段<b>一点都没变</b>！还是 ? 岁。", v:bars(later,a+k)}
       ]});
   },
   exchange(){
-    const [x,y] = pick([["🍉","🍎"],["🍎","🍓"],["🐟","🦐"],["🍔","🍪"]]);
+    const [x,xn,y,yn] = pick([["🍉","西瓜","🍎","苹果"],["🍎","苹果","🍓","草莓"],["🐟","鱼","🦐","虾"],["🍔","汉堡","🍪","饼干"]]);
     const k = pick([2,3]), n = k===3 ? ri(2,3) : ri(2,4), ans = k*n;
     const rowV = m => [...Array(m)].map(()=>'<div class="xrow">'+x+'<span class="eq">=</span>'+y.repeat(k)+'</div>').join("");
-    return wq({key:"ex"+x+k+n, pic:"⚖️", answer:ans, traps:[k+n,n,ans+1],
+    const said = "1个"+xn+"能换"+k+"个"+yn+"。"+n+"个"+xn+"能换几个"+yn+"？";
+    return wq({key:"ex"+x+k+n, pic:"⚖️", answer:ans, traps:[k+n,n,ans+1], speak:said, rec:said,
       html:"1 个"+x+"能换"+N(k)+"个"+y+"。"+N(n)+"个"+x+"能换几个"+y+"？",
       steps:[
         {t:"1 个"+x+"换 <b>"+k+"</b> 个"+y+"：", v:rowV(1)},
@@ -836,6 +1246,16 @@ const STK = {
 const STK_N = STK.n.list, STK_R = STK.r.list, STK_L = STK.l.list;
 const ALLSTK = STK_N.length + STK_R.length + STK_L.length;
 const MAXSTARS = WORLDS.length*5*3;
+const setOwned = k => (STK[k] && S.stickers) ? STK[k].list.filter(e=>S.stickers[e]).length : 0;
+const setDone = k => STK[k] ? setOwned(k)===STK[k].list.length : false;
+
+/* 当天难度递增（家长 10-21 决定）：每题固定 15 秒（应用题 40 秒），按当天第几次通关加码
+   第 1–15 次：正常；16–30：怪兽每次攻击扣 2 心、每题 10 秒；31–45：扣 3 心、8 秒；46 起：扣 3 心、6 秒 */
+const Q_TIME = 15, WORD_TIME = 40, WORD_MIN = 20;
+const RAGE = [{dmg:1,t:15},{dmg:2,t:10},{dmg:3,t:8},{dmg:3,t:6}];
+const today = () => { const d = new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+function daily(){ const d = today(); if(!S.daily || S.daily.date!==d) S.daily = {date:d, n:0}; return S.daily; }
+const rageLevel = () => Math.min(RAGE.length-1, Math.floor(daily().n/15));
 
 // progress used to be keyed by world position; key it by world id so new worlds can be inserted
 (function migrate(){
@@ -846,6 +1266,59 @@ const MAXSTARS = WORLDS.length*5*3;
   S.tier = S.tier || {}; S.shiny = S.shiny || {}; S.items = S.items || {heal:1,time:1,ice:1};
   // a level already cleared with 3 stars counts as a mastered gold tier
   for(const k in S.stars) if(S.stars[k]===3 && !(k in S.tier)){ S.tier[k] = 1; changed = true; }
+
+  // 装备系统新增字段与默认值（正式存档 math-hero-v1 结构兼容）
+  if(!Array.isArray(S.bag)) { S.bag = []; changed = true; }
+  if(!S.equipped || typeof S.equipped !== "object"){
+    S.equipped = {weapon:null, helmet:null, armor:null, shield:null};
+    changed = true;
+  } else {
+    for(const slot of ["weapon","helmet","armor","shield"]){
+      if(!(slot in S.equipped)){ S.equipped[slot] = null; changed = true; }
+    }
+  }
+  if(typeof S.chests !== "number"){ S.chests = 0; changed = true; }
+  // 当天通关次数（跨天自动归零，见 daily()）
+  if(!S.daily || typeof S.daily !== "object" || typeof S.daily.n !== "number"){ S.daily = {date:"", n:0}; changed = true; }
+  if(S.daily.date !== today()){ daily(); changed = true; }
+
+  // 旧贴纸折算宝箱规则（保证孩子绝不吃亏）：
+  // 1. 每张普通贴纸折算 1 个宝箱
+  // 2. 每张稀有贴纸折算 3 个宝箱（对应 3:1 合成）
+  // 3. 每张传说贴纸折算 9 个宝箱（对应 9:1 合成）
+  // 4. 每张闪光贴纸额外奖励 2 个宝箱
+  // 5. 达成集齐奖励（全部普通+5、全部稀有+10、全部传说+20）
+  // 6. 保底机制：只要原有贴纸，折算不少于 3 个宝箱
+  // 7. 旧贴纸数据（S.stickers、S.shiny）完整保留，不删除不改名
+  if(!S.stickerMigrated){
+    const stkEntries = Object.entries(S.stickers || {});
+    if(stkEntries.length > 0){
+      let bonus = 0;
+      const rareSet = new Set(STK.r.list);
+      const legSet = new Set(STK.l.list);
+      for(const [e, count] of stkEntries){
+        const cnt = typeof count === "number" ? count : 1;
+        if(legSet.has(e)) bonus += cnt * 9;
+        else if(rareSet.has(e)) bonus += cnt * 3;
+        else bonus += cnt * 1;
+      }
+      if(S.shiny){
+        for(const e in S.shiny){
+          if(S.shiny[e]) bonus += 2;
+        }
+      }
+      if(setDone("n")) bonus += 5;
+      if(setDone("r")) bonus += 10;
+      if(setDone("l")) bonus += 20;
+
+      bonus = Math.max(3, bonus);
+      S.chests = (S.chests || 0) + bonus;
+      changed = true;
+    }
+    S.stickerMigrated = true;
+    changed = true;
+  }
+
   if(changed) save();
 })();
 
@@ -860,10 +1333,855 @@ const isFinal = (w,l) => w===WORLDS.length-1 && l===4;
 const mastery = (w,l) => S.tier[lvKey(w,l)]||0;
 const diffOf = (w,l) => isFinal(w,l) ? 0 : Math.min(mastery(w,l),3);
 const ITEMS = {heal:{e:"💖",tip:"💖 加一颗心"}, time:{e:"⏳",tip:"⏳ 多 10 秒时间"}, ice:{e:"🧊",tip:"🧊 冻住怪兽 10 秒"}};
-const setOwned = k => STK[k].list.filter(e=>S.stickers[e]).length;
-const setDone = k => setOwned(k)===STK[k].list.length;
 const goldAura = () => setDone("r");
 const heroUnlocked = i => { const h = HEROES[i]; return h.set ? setDone(h.set) : totalStars()>=h.need; };
 const stickerCount = () => Object.keys(S.stickers).length;
 function hero(){ if(!heroUnlocked(S.hero)) S.hero=0; return HEROES[S.hero]; }
+
+/* ================= gear system (装备系统) ================= */
+// 1. 六种品质：白、蓝、粉、紫、橙、红（颜色、掉落权重，红最稀有）
+const GEAR_QUALITIES = [
+  { key: "white",  name: "白", title: "白·普通", col: "#94a3b8", bg: "#f1f5f9", weight: 500, affixes: 1 },
+  { key: "blue",   name: "蓝", title: "蓝·优秀", col: "#3b82f6", bg: "#dbeafe", weight: 280, affixes: 2 },
+  { key: "pink",   name: "粉", title: "粉·精致", col: "#ec4899", bg: "#fce7f3", weight: 130, affixes: 2 },
+  { key: "purple", name: "紫", title: "紫·稀有", col: "#a855f7", bg: "#f3e8ff", weight: 60,  affixes: 3 },
+  { key: "orange", name: "橙", title: "橙·史诗", col: "#f97316", bg: "#ffedd5", weight: 24,  affixes: 4 },
+  { key: "red",    name: "红", title: "红·传说", col: "#ef4444", bg: "#fee2e2", weight: 6,   affixes: 5 }
+];
+const GEAR_QUALITY_MAP = Object.fromEntries(GEAR_QUALITIES.map(q => [q.key, q]));
+
+// 品质前缀
+const GEAR_PREFIXES = {
+  white:  ["初学者", "训练", "简易", "生铁", "练习"],
+  blue:   ["精铁", "灵巧", "冒险者", "疾风", "坚韧"],
+  pink:   ["幻彩", "晶莹", "璀璨", "星芒", "魔力"],
+  purple: ["秘银", "暗夜", "符文", "狂澜", "圣殿"],
+  orange: ["烈焰", "风暴", "极光", "不朽", "炽天使"],
+  red:    ["创世", "真龙", "至尊", "弑神", "宇宙"]
+};
+
+// 2. 四个部位：武器、头盔、盔甲、盾牌
+const GEAR_SLOTS = {
+  weapon: {
+    key: "weapon",
+    name: "武器",
+    e: "⚔️",
+    pool: [
+      { name: "短剑", e: "🗡️" },
+      { name: "双剑", e: "⚔️" },
+      { name: "长弓", e: "🏹" },
+      { name: "法杖", e: "🪄" },
+      { name: "战斧", e: "🪓" },
+      { name: "巨锤", e: "🔨" }
+    ]
+  },
+  helmet: {
+    key: "helmet",
+    name: "头盔",
+    e: "🪖",
+    pool: [
+      { name: "铁盔", e: "🪖" },
+      { name: "王冠", e: "👑" },
+      { name: "战帽", e: "🧢" },
+      { name: "法帽", e: "🎩" }
+    ]
+  },
+  armor: {
+    key: "armor",
+    name: "盔甲",
+    e: "🥋",
+    pool: [
+      { name: "战袍", e: "🥋" },
+      { name: "护甲", e: "🦺" },
+      { name: "战衣", e: "👕" },
+      { name: "披风", e: "🧥" }
+    ]
+  },
+  shield: {
+    key: "shield",
+    name: "盾牌",
+    e: "🛡️",
+    pool: [
+      { name: "坚盾", e: "🛡️" },
+      { name: "重盾", e: "🛡️" },
+      { name: "法球", e: "🔮" },
+      { name: "晶壁", e: "💎" }
+    ]
+  }
+};
+
+// 3. 词缀池：每条词缀有图标 emoji 和数值范围，品质越高词缀越多、数值越大
+const GEAR_AFFIXES = {
+  atk: {
+    id: "atk",
+    name: "攻击",
+    e: "⚔️",
+    format: v => "攻击 +" + v,
+    ranges: {
+      white:  [1, 1],
+      blue:   [1, 2],
+      pink:   [2, 3],
+      purple: [3, 4],
+      orange: [4, 6],
+      red:    [6, 8]
+    }
+  },
+  critRate: {
+    id: "critRate",
+    name: "暴击率",
+    e: "🎯",
+    format: v => "暴击率 +" + v + "%",
+    ranges: {
+      white:  [3, 5],
+      blue:   [6, 10],
+      pink:   [11, 15],
+      purple: [16, 22],
+      orange: [23, 30],
+      red:    [32, 45]
+    }
+  },
+  time: {
+    id: "time",
+    name: "答题时间",
+    e: "⏳",
+    format: v => "答题时间 +" + v + "秒",
+    ranges: {
+      white:  [1, 2],
+      blue:   [2, 3],
+      pink:   [3, 4],
+      purple: [4, 6],
+      orange: [6, 8],
+      red:    [8, 12]
+    }
+  },
+  shield: {
+    id: "shield",
+    name: "每关护盾",
+    e: "🛡️",
+    format: v => "每关护盾 " + v + "次",
+    ranges: {
+      white:  [1, 1],
+      blue:   [1, 1],
+      pink:   [1, 2],
+      purple: [2, 2],
+      orange: [2, 3],
+      red:    [3, 4]
+    }
+  },
+  comboHeal: {
+    id: "comboHeal",
+    name: "连对回心",
+    e: "💖",
+    format: v => v === 1 ? "连对 5 题回 1 颗心" : "连对 5 题回 " + v + " 颗心",
+    ranges: {
+      white:  [1, 1],
+      blue:   [1, 1],
+      pink:   [1, 2],
+      purple: [2, 2],
+      orange: [2, 3],
+      red:    [3, 4]
+    }
+  },
+  critDmg: {
+    id: "critDmg",
+    name: "暴击伤害",
+    e: "💥",
+    format: v => "暴击伤害 +" + v,
+    ranges: {
+      white:  [1, 1],
+      blue:   [1, 1],
+      pink:   [1, 2],
+      purple: [2, 2],
+      orange: [2, 3],
+      red:    [3, 4]
+    }
+  },
+  lucky: {
+    id: "lucky",
+    name: "幸运免伤",
+    e: "🍀",
+    format: v => "每关答错免伤 " + v + "次",
+    ranges: {
+      white:  [1, 1],
+      blue:   [1, 1],
+      pink:   [1, 1],
+      purple: [1, 2],
+      orange: [2, 2],
+      red:    [2, 3]
+    }
+  },
+  slow: {
+    id: "slow",
+    name: "怪兽减速",
+    e: "❄️",
+    format: v => "怪兽蓄力慢 " + v + "%",
+    ranges: {
+      white:  [5, 10],
+      blue:   [10, 15],
+      pink:   [15, 20],
+      purple: [20, 25],
+      orange: [25, 35],
+      red:    [35, 50]
+    }
+  }
+};
+
+// 纯函数：根据关卡和是否Boss计算各品质掉落权重
+function getQualityWeights(stage = 1, isBoss = false){
+  if(isBoss){
+    return [
+      { key: "white",  w: 0 },
+      { key: "blue",   w: 300 },
+      { key: "pink",   w: 360 },
+      { key: "purple", w: 220 },
+      { key: "orange", w: 90 },
+      { key: "red",    w: 30 }
+    ];
+  }
+  const s = Math.max(1, stage || 1);
+  const bonus = Math.min(Math.floor((s - 1) / 5) * 5, 50);
+  return [
+    { key: "white",  w: Math.max(350, 500 - bonus * 2) },
+    { key: "blue",   w: 280 },
+    { key: "pink",   w: 130 + Math.floor(bonus * 1.0) },
+    { key: "purple", w: 60  + Math.floor(bonus * 0.6) },
+    { key: "orange", w: 24  + Math.floor(bonus * 0.3) },
+    { key: "red",    w: 6   + Math.floor(bonus * 0.1) }
+  ];
+}
+
+// 抽取品质
+function rollQuality(stage = 1, isBoss = false){
+  const weights = getQualityWeights(stage, isBoss);
+  const total = weights.reduce((sum, item) => sum + item.w, 0);
+  let rnd = Math.random() * total;
+  for(const item of weights){
+    if(rnd < item.w) return item.key;
+    rnd -= item.w;
+  }
+  return weights[weights.length - 1].key;
+}
+
+// 词缀数量：品质越高词缀越多
+function getAffixCount(qKey){
+  switch(qKey){
+    case "white":  return 1;
+    case "blue":   return 2;
+    case "pink":   return Math.random() < 0.5 ? 2 : 3;
+    case "purple": return 3;
+    case "orange": return 4;
+    case "red":    return 5;
+    default:       return 1;
+  }
+}
+
+// 纯函数：rollGear(关卡号, 是否Boss) 生成一件装备
+function rollGear(stage = 1, isBoss = false){
+  const qKey = rollQuality(stage, isBoss);
+  const qDef = GEAR_QUALITY_MAP[qKey] || GEAR_QUALITIES[0];
+  const slotKeys = ["weapon", "helmet", "armor", "shield"];
+  const slotKey = slotKeys[Math.floor(Math.random() * slotKeys.length)];
+  const slotDef = GEAR_SLOTS[slotKey];
+  const baseItem = slotDef.pool[Math.floor(Math.random() * slotDef.pool.length)];
+  const prefixes = GEAR_PREFIXES[qKey] || ["简易"];
+  const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+  const name = prefix + "·" + baseItem.name;
+
+  const count = getAffixCount(qKey);
+  const affixKeys = Object.keys(GEAR_AFFIXES);
+  const shuffledKeys = [...affixKeys];
+  for(let i = shuffledKeys.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffledKeys[i], shuffledKeys[j]] = [shuffledKeys[j], shuffledKeys[i]];
+  }
+  const chosenKeys = shuffledKeys.slice(0, count);
+
+  const affixes = chosenKeys.map(k => {
+    const aDef = GEAR_AFFIXES[k];
+    const range = aDef.ranges[qKey] || aDef.ranges.white;
+    const [min, max] = range;
+    const val = min + Math.floor(Math.random() * (max - min + 1));
+    return {
+      id: aDef.id,
+      name: aDef.name,
+      e: aDef.e,
+      val: val,
+      text: aDef.format(val)
+    };
+  });
+
+  const id = "g_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 7);
+
+  return {
+    id,
+    slot: slotKey,
+    slotName: slotDef.name,
+    quality: qKey,
+    qualityName: qDef.name,
+    col: qDef.col,
+    bg: qDef.bg,
+    name,
+    e: baseItem.e,
+    stage: stage || 1,
+    affixes
+  };
+}
+
+// 纯函数：gearStats(已穿戴) 汇总成战斗可用的数值
+function gearStats(equipped){
+  const stats = {
+    atk: 0,
+    critRate: 0,
+    critDmg: 0,
+    time: 0,
+    shield: 0,
+    comboHeal: 0,
+    lucky: 0,
+    slow: 0,
+    affixesCount: 0,
+    list: []
+  };
+  if(!equipped) return stats;
+  const items = Array.isArray(equipped) ? equipped : Object.values(equipped);
+  for(const item of items){
+    if(!item || !item.affixes) continue;
+    for(const a of item.affixes){
+      if(typeof stats[a.id] === "number"){
+        stats[a.id] += (a.val || 0);
+      }
+      stats.affixesCount++;
+      stats.list.push(a);
+    }
+  }
+  return stats;
+}
+
+// 背包增删、穿戴、卸下
+function addGear(gear, state){
+  const s = state || S;
+  if(!s.bag) s.bag = [];
+  if(gear){
+    s.bag.push(gear);
+    if(s === S) save();
+  }
+  return gear;
+}
+
+function removeGear(gearId, state){
+  const s = state || S;
+  if(!s.bag) return null;
+  const idx = s.bag.findIndex(g => g && g.id === gearId);
+  if(idx === -1) return null;
+  const [removed] = s.bag.splice(idx, 1);
+  if(s === S) save();
+  return removed;
+}
+
+function equipGear(gearOrId, state){
+  const s = state || S;
+  if(!s.bag) s.bag = [];
+  if(!s.equipped) s.equipped = {weapon:null, helmet:null, armor:null, shield:null};
+  const gear = typeof gearOrId === "string" ? s.bag.find(g => g && g.id === gearOrId) : gearOrId;
+  if(!gear || !gear.slot || !(gear.slot in s.equipped)){
+    return {success: false, error: "invalid_gear"};
+  }
+  const bagIdx = s.bag.findIndex(g => g && g.id === gear.id);
+  if(bagIdx !== -1) s.bag.splice(bagIdx, 1);
+
+  const prev = s.equipped[gear.slot];
+  if(prev){
+    s.bag.push(prev);
+  }
+  s.equipped[gear.slot] = gear;
+  if(s === S) save();
+  return {success: true, equipped: gear, unequipped: prev || null};
+}
+
+function unequipGear(slot, state){
+  const s = state || S;
+  if(!s.equipped || !s.equipped[slot]){
+    return {success: false, error: "empty_slot"};
+  }
+  if(!s.bag) s.bag = [];
+  const gear = s.equipped[slot];
+  s.equipped[slot] = null;
+  s.bag.push(gear);
+  if(s === S) save();
+  return {success: true, unequipped: gear};
+}
+
+function openGearChest(stage, isBoss, state){
+  const s = state || S;
+  if((s.chests || 0) <= 0) return null;
+  s.chests--;
+  const gear = rollGear(stage || 1, isBoss || false);
+  addGear(gear, s);
+  if(s === S) save();
+  return gear;
+}
+
+// 挂载到 window，方便测试和 UI 调用
+if(typeof window !== "undefined"){
+  window.GEAR_QUALITIES = GEAR_QUALITIES;
+  window.GEAR_QUALITY_MAP = GEAR_QUALITY_MAP;
+  window.GEAR_SLOTS = GEAR_SLOTS;
+  window.GEAR_AFFIXES = GEAR_AFFIXES;
+  window.rollGear = rollGear;
+  window.gearStats = gearStats;
+  window.addGear = addGear;
+  window.removeGear = removeGear;
+  window.equipGear = equipGear;
+  window.unequipGear = unequipGear;
+  window.openGearChest = openGearChest;
+}
+
+/* ================= arithmetic match (算术消除棋盘) ================= */
+function makeMatchBoard(gen, opts = {}){
+  const layers = (opts && opts.layers === 2) ? 2 : 1;
+  const cols = (opts && opts.cols === 4) ? 4 : 3;
+
+  // 安全调用生成器函数
+  const callGen = () => {
+    try {
+      if (gen === G.add) return G.add(10);
+      const q = typeof gen === "function" ? gen() : null;
+      if (q && typeof q.answer === "number" && !isNaN(q.answer)) return q;
+      if (typeof gen === "function") {
+        const q2 = gen(10);
+        if (q2 && typeof q2.answer === "number" && !isNaN(q2.answer)) return q2;
+      }
+    } catch(e) {
+      try {
+        const q2 = gen(10);
+        if (q2 && typeof q2.answer === "number" && !isNaN(q2.answer)) return q2;
+      } catch(e2) {}
+    }
+    return G.add(10);
+  };
+
+  // 提取算式文本与读音
+  const formatText = q => {
+    if (q.text) return String(q.text).trim();
+    if (Array.isArray(q.parts)) {
+      return q.parts.filter(p => p !== "=" && p !== "?").join(" ").trim();
+    }
+    return String(q.answer);
+  };
+
+  // 收集候选得数，每个得数需至少有 2 道不同算式
+  const pool = new Map();
+  let attempts = 0;
+  while(attempts < 3000){
+    attempts++;
+    const q = callGen();
+    if(!q || typeof q.answer !== "number" || isNaN(q.answer)) continue;
+    const val = q.answer;
+    const text = formatText(q);
+    if(!pool.has(val)) pool.set(val, new Map());
+    const m = pool.get(val);
+    if(!m.has(text)) m.set(text, q);
+
+    if(pool.size >= 8){
+      const ready = [...pool.values()].filter(x => x.size >= 2).length;
+      if(ready >= 6 && attempts >= 40) break;
+    }
+  }
+
+  let validValues = [...pool.keys()].filter(v => pool.get(v).size >= 2);
+  // 保底：若生成器产生的得数不足 6 个，补齐简单加法题
+  if(validValues.length < 6){
+    let fVal = 20;
+    while(validValues.length < 6){
+      while(pool.has(fVal)) fVal++;
+      const m = new Map();
+      m.set("1 + " + (fVal - 1), { answer: fVal, speak: "1加" + (fVal - 1) + "等于几？", parts: [1, "+", fVal - 1, "=", "?"] });
+      m.set("2 + " + (fVal - 2), { answer: fVal, speak: "2加" + (fVal - 2) + "等于几？", parts: [2, "+", fVal - 2, "=", "?"] });
+      pool.set(fVal, m);
+      validValues.push(fVal);
+      fVal++;
+    }
+  }
+
+  // 随机选取 6 个互不相同的得数
+  const chosenValues = shuffle(validValues.slice()).slice(0, 6);
+
+  // 为每个得数选取恰好 2 道不同算式
+  const pairs = chosenValues.map(val => {
+    const list = [...pool.get(val).values()];
+    return shuffle(list).slice(0, 2);
+  });
+
+  // 生成 12 张卡牌
+  let cardSeq = 1;
+  const cards = [];
+
+  if(layers === 1){
+    // 单层：12 张卡平铺在 3 列或 4 列网格中，无覆盖
+    const rows = Math.ceil(12 / cols);
+    const slots = [];
+    for(let r = 0; r < rows; r++){
+      for(let c = 0; c < cols; c++){
+        if(slots.length < 12){
+          slots.push({
+            c,
+            r,
+            x: cols > 1 ? Number((c / (cols - 1)).toFixed(4)) : 0,
+            y: rows > 1 ? Number((r / (rows - 1)).toFixed(4)) : 0
+          });
+        }
+      }
+    }
+    const shuffledSlots = shuffle(slots.slice());
+
+    pairs.forEach(pair => {
+      pair.forEach(q => {
+        const slot = shuffledSlots[cards.length];
+        const text = formatText(q);
+        cards.push({
+          id: "c_" + (cardSeq++),
+          text,
+          speak: q.speak || (text + "等于几？"),
+          value: q.answer,
+          layer: 1,
+          x: slot.x,
+          y: slot.y,
+          col: slot.c,
+          row: slot.r,
+          coveredBy: []
+        });
+      });
+    });
+  } else {
+    // 双层：前 3 对在顶层（layer 2），后 3 对在底层（layer 1）被其覆盖
+    // 保证消除顶层任意一对即可露出对应底层的完整伴侣对，全程至少有一对两张完全露在外面
+    const slotCount = 6;
+    const rows = Math.ceil(slotCount / cols);
+    const slots = [];
+    for(let r = 0; r < rows; r++){
+      for(let c = 0; c < cols; c++){
+        if(slots.length < slotCount){
+          slots.push({
+            c,
+            r,
+            x: cols > 1 ? Number((c / (cols - 1)).toFixed(4)) : 0,
+            y: rows > 1 ? Number((r / (rows - 1)).toFixed(4)) : 0
+          });
+        }
+      }
+    }
+    const shuffledSlots = shuffle(slots.slice());
+
+    // 顶层 3 对 (pairs[0..2])，底层 3 对 (pairs[3..5])
+    // 6 个槽位各放置 1 张底层卡 + 1 张顶层卡
+    for(let i = 0; i < 3; i++){
+      const topPair = pairs[i];
+      const bottomPair = pairs[i + 3];
+
+      for(let j = 0; j < 2; j++){
+        const slotIdx = i * 2 + j;
+        const slot = shuffledSlots[slotIdx];
+
+        const topQ = topPair[j];
+        const topText = formatText(topQ);
+        const topId = "c_" + (cardSeq++);
+
+        const botQ = bottomPair[j];
+        const botText = formatText(botQ);
+        const botId = "c_" + (cardSeq++);
+
+        const topCard = {
+          id: topId,
+          text: topText,
+          speak: topQ.speak || (topText + "等于几？"),
+          value: topQ.answer,
+          layer: 2,
+          x: slot.x,
+          y: slot.y,
+          col: slot.c,
+          row: slot.r,
+          coveredBy: []
+        };
+
+        const bottomCard = {
+          id: botId,
+          text: botText,
+          speak: botQ.speak || (botText + "等于几？"),
+          value: botQ.answer,
+          layer: 1,
+          x: slot.x,
+          y: slot.y,
+          col: slot.c,
+          row: slot.r,
+          coveredBy: [topId]
+        };
+
+        cards.push(bottomCard);
+        cards.push(topCard);
+      }
+    }
+  }
+
+  const result = shuffle(cards);
+  result.cards = result;
+  result.layers = layers;
+  result.cols = cols;
+  return result;
+}
+
+function matchPick(board, idA, idB, execute = true){
+  if(!board || idA === idB) return false;
+  const cards = Array.isArray(board) ? board : (board && board.cards ? board.cards : []);
+  const cardA = cards.find(c => c && c.id === idA);
+  const cardB = cards.find(c => c && c.id === idB);
+  if(!cardA || !cardB) return false;
+
+  // 两张都没被压住
+  if(Array.isArray(cardA.coveredBy) && cardA.coveredBy.length > 0) return false;
+  if(Array.isArray(cardB.coveredBy) && cardB.coveredBy.length > 0) return false;
+
+  // 得数相同
+  if(cardA.value !== cardB.value) return false;
+
+  if(execute){
+    // 从其他卡牌的 coveredBy 中移除 idA 和 idB
+    for(const c of cards){
+      if(c && Array.isArray(c.coveredBy)){
+        c.coveredBy = c.coveredBy.filter(id => id !== idA && id !== idB);
+      }
+    }
+    // 从棋盘中移除被消除的两张卡
+    const idxA = cards.findIndex(c => c && c.id === idA);
+    if(idxA !== -1) cards.splice(idxA, 1);
+    const idxB = cards.findIndex(c => c && c.id === idB);
+    if(idxB !== -1) cards.splice(idxB, 1);
+  }
+  return true;
+}
+
+function matchSolvable(board){
+  const rawCards = Array.isArray(board) ? board : (board && board.cards ? board.cards : []);
+  if(!rawCards || rawCards.length === 0) return true;
+
+  // 克隆卡牌状态，确保校验函数是纯函数、不破坏原棋盘
+  const simCards = rawCards.map(c => ({
+    id: c.id,
+    value: c.value,
+    coveredBy: Array.isArray(c.coveredBy) ? [...c.coveredBy] : []
+  }));
+
+  function solve(cards){
+    if(cards.length === 0) return true;
+
+    // 找出所有露在外面（未被压住）的卡牌
+    const uncovered = cards.filter(c => c.coveredBy.length === 0);
+    if(uncovered.length < 2) return false;
+
+    // 按得数分组
+    const byVal = new Map();
+    for(const c of uncovered){
+      if(!byVal.has(c.value)) byVal.set(c.value, []);
+      byVal.get(c.value).push(c);
+    }
+
+    // 寻找可消除对
+    const pairs = [];
+    for(const list of byVal.values()){
+      if(list.length >= 2){
+        for(let i = 0; i < list.length - 1; i++){
+          for(let j = i + 1; j < list.length; j++){
+            pairs.push([list[i].id, list[j].id]);
+          }
+        }
+      }
+    }
+
+    if(pairs.length === 0) return false;
+
+    // 深度优先回溯验证
+    for(const [idA, idB] of pairs){
+      const nextCards = cards
+        .filter(c => c.id !== idA && c.id !== idB)
+        .map(c => ({
+          id: c.id,
+          value: c.value,
+          coveredBy: c.coveredBy.filter(id => id !== idA && id !== idB)
+        }));
+      if(solve(nextCards)) return true;
+    }
+    return false;
+  }
+
+  return solve(simCards);
+}
+
+// 挂载到 window，方便测试和 UI 调用
+if(typeof window !== "undefined"){
+  window.makeMatchBoard = makeMatchBoard;
+  window.matchPick = matchPick;
+  window.matchSolvable = matchSolvable;
+}
+
+/* ================= character-pinyin linking (汉字-拼音连连看) ================= */
+// 内置示例数组（人教版一年级上册常见字，拼音准确，带 Fluent 3D emoji）
+const DEFAULT_LINK_PAIRS = [
+  { hz: "日", py: "rì",  e: "☀️" },
+  { hz: "月", py: "yuè", e: "🌙" },
+  { hz: "水", py: "shuǐ", e: "💧" },
+  { hz: "火", py: "huǒ", e: "🔥" },
+  { hz: "山", py: "shān", e: "⛰️" },
+  { hz: "石", py: "shí",  e: "🪨" },
+  { hz: "田", py: "tián", e: "🌾" },
+  { hz: "禾", py: "hé",   e: "🌱" }
+];
+
+// 生成无任何元素留在原位的错排序列（保证右列无横向对齐）
+function makeDerangement(n){
+  if(n <= 1) return [0];
+  const indices = Array.from({ length: n }, (_, i) => i);
+  let perm;
+  let attempts = 0;
+  do {
+    attempts++;
+    perm = shuffle(indices.slice());
+  } while (perm.some((v, i) => v === i) && attempts < 50);
+
+  if(perm.some((v, i) => v === i)){
+    // 确定性移位保底（(i + 1) % n 一定错排）
+    perm = indices.map(i => (i + 1) % n);
+  }
+  return perm;
+}
+
+// 棋盘生成纯逻辑
+function makeLinkBoard(pairs, opts = {}){
+  const source = (Array.isArray(pairs) && pairs.length > 0) ? pairs : DEFAULT_LINK_PAIRS;
+  const targetN = Math.max(2, (opts && typeof opts.n === "number") ? opts.n : 4);
+
+  // 筛选互不相同且无同音字的字对
+  const selected = [];
+  const seenHz = new Set();
+  const seenPy = new Set();
+
+  for(const p of shuffle(source.slice())){
+    if(!p || !p.hz || !p.py) continue;
+    if(!seenHz.has(p.hz) && !seenPy.has(p.py)){
+      seenHz.add(p.hz);
+      seenPy.add(p.py);
+      selected.push(p);
+      if(selected.length === targetN) break;
+    }
+  }
+
+  // 若传入的数据池不足，用内置人教版字表安全补齐
+  if(selected.length < targetN){
+    for(const p of DEFAULT_LINK_PAIRS){
+      if(!seenHz.has(p.hz) && !seenPy.has(p.py)){
+        seenHz.add(p.hz);
+        seenPy.add(p.py);
+        selected.push(p);
+        if(selected.length === targetN) break;
+      }
+    }
+  }
+
+  const n = selected.length;
+
+  // 左列汉字（0 ~ n-1）
+  const left = [];
+  for(let i = 0; i < n; i++){
+    left.push({
+      id: "l_" + (i + 1),
+      hz: selected[i].hz,
+      py: selected[i].py,
+      e: selected[i].e || null,
+      side: "left",
+      row: i,
+      matched: false,
+      matchedWith: null
+    });
+  }
+
+  // 右列带调拼音，错排打乱（无横向直连对齐）
+  const derange = makeDerangement(n);
+  const right = [];
+  for(let r = 0; r < n; r++){
+    const origIdx = derange[r];
+    const item = selected[origIdx];
+    right.push({
+      id: "r_" + (r + 1),
+      hz: item.hz,
+      py: item.py,
+      e: item.e || null,
+      side: "right",
+      row: r,
+      matched: false,
+      matchedWith: null
+    });
+  }
+
+  return {
+    n,
+    left,
+    right,
+    connections: [],
+    matchedCount: 0
+  };
+}
+
+// 配对连线逻辑
+function linkPick(board, leftId, rightId){
+  if(!board || !board.left || !board.right || !leftId || !rightId || leftId === rightId) return false;
+
+  const allCards = [...board.left, ...board.right];
+  const item1 = allCards.find(c => c && c.id === leftId);
+  const item2 = allCards.find(c => c && c.id === rightId);
+  if(!item1 || !item2) return false;
+
+  let leftItem, rightItem;
+  if(item1.side === "left" && item2.side === "right"){
+    leftItem = item1; rightItem = item2;
+  } else if(item1.side === "right" && item2.side === "left"){
+    leftItem = item2; rightItem = item1;
+  } else {
+    return false; // 同侧不可连线
+  }
+
+  // 已连过不可重复连
+  if(leftItem.matched || rightItem.matched) return false;
+
+  // 判定汉字与拼音是否配对正确
+  if(leftItem.hz !== rightItem.hz && leftItem.py !== rightItem.py) return false;
+
+  // 连线成功，记录状态
+  leftItem.matched = true;
+  leftItem.matchedWith = rightItem.id;
+  rightItem.matched = true;
+  rightItem.matchedWith = leftItem.id;
+
+  board.connections = board.connections || [];
+  board.connections.push({
+    leftId: leftItem.id,
+    rightId: rightItem.id,
+    hz: leftItem.hz,
+    py: leftItem.py
+  });
+  board.matchedCount = (board.matchedCount || 0) + 1;
+
+  return true;
+}
+
+// 判定是否全部连完
+function linkDone(board){
+  if(!board || !Array.isArray(board.left) || !Array.isArray(board.right)) return false;
+  if(board.left.length === 0) return true;
+  return board.left.every(c => c && c.matched) && board.right.every(c => c && c.matched);
+}
+
+// 挂载到 window，方便测试和 UI 调用
+if(typeof window !== "undefined"){
+  window.DEFAULT_LINK_PAIRS = DEFAULT_LINK_PAIRS;
+  window.makeLinkBoard = makeLinkBoard;
+  window.linkPick = linkPick;
+  window.linkDone = linkDone;
+}
 
