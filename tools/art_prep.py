@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turn the painted art (white-background PNGs) into small transparent WebPs for src/art/.
 
-    python3 tools/art_prep.py <原图文件夹> src/art/ [--map 文件名=输出名 ...]
+    python3 tools/art_prep.py <原图文件夹> src/art/ [--map 文件名=输出名 ...] [--grid 文件名=列x行 ...]
 
 Needs Pillow (pip install --no-cache-dir pillow). Safe to run again: outputs are overwritten, sources are only read.
 
@@ -13,6 +13,10 @@ Which output name a source file gets:
       shields.png        → shield_white … shield_red
       mon_<世界id>_a.png → mon_<世界id>_2 … _5,  _b → _6 … _9,  _c → _10 … _13,  _d → _14
     (bosses and level 1 come as single files: mon_<世界id>_1.png, mon_<世界id>_15.png)
+    When objects touch each other they merge into one connected area and too few are found. Then the sheet is cut as an
+    even grid instead (weapons / shields: N×1, mon_*_a/b/c: 2×2): the content box (all non-background pixels) is split into
+    equal cells, each cell gets its own background removal and keeps only the blob overlapping the cell's centre most.
+  - --grid 文件名=列x行 (e.g. --grid shields.png=6x1) always cuts that file as a grid.
   - anything else is skipped (and listed).
 
 What happens to each picture:
@@ -118,7 +122,38 @@ def rows_then_columns(comps):
             rows.append({"cy": cy, "h": ch, "items": [c]})
     return [c for r in rows for c in sorted(r["items"], key=lambda c: c["box"][0])]
 
-def process(path, names, out_dir):
+def longest_for(name):
+    return SIZE["gear" if name.startswith(("weapon_", "shield_", "helmet_")) else "char"]
+
+def default_grid(path, names):
+    """(cols, rows) to fall back on when touching objects merge, or None"""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    if stem in ("weapons", "shields"):
+        return (len(names), 1)
+    if re.fullmatch(r"mon_[a-z0-9]+_[a-c]", stem):
+        return (2, 2)
+    return None
+
+def centre_blob(lab, grid, comps, split_x, split_y):
+    """the component covering most of the cell's centre (middle half along each split axis); biggest one if none does"""
+    sw, sh = grid
+    x0, x1 = (sw // 4, sw - sw // 4) if split_x else (0, sw)
+    y0, y1 = (sh // 4, sh - sh // 4) if split_y else (0, sh)
+    hits = {}
+    for y in range(y0, y1):
+        for l in lab[y * sw + x0:y * sw + x1]:
+            if l:
+                hits[l] = hits.get(l, 0) + 1
+    return max(comps, key=lambda c: (hits.get(c["id"], 0), c["area"]))
+
+def save_figure(rgb, alpha, lab, grid, scale, comps, main, name, out_dir):
+    """keep the main blob (plus blobs inside its box, e.g. a gap under an arm), crop and save"""
+    bx = main["box"]
+    inside = [c for c in comps if c["box"][0] >= bx[0] and c["box"][1] >= bx[1] and c["box"][2] <= bx[2] and c["box"][3] <= bx[3]]
+    rgba = rgb.copy(); rgba.putalpha(keep_only(alpha, lab, grid, scale, {c["id"] for c in inside}))
+    return crop_save(rgba, bx, scale, longest_for(name), os.path.join(out_dir, name + ".webp"))
+
+def process(path, names, out_dir, force_grid=None):
     src = Image.open(path)
     if names[0].startswith("map_"):
         im = src.convert("RGB")
@@ -134,25 +169,50 @@ def process(path, names, out_dir):
     comps = [c for c in comps if c["area"] >= SPECK * total]
     if not comps:
         return ["%s: nothing found, skipped" % os.path.basename(path)]
-    gear = names[0].startswith(("weapon_", "shield_", "helmet_"))
-    longest = SIZE["gear" if gear else "char"]
     done = []
-    if len(names) == 1:
+    if len(names) == 1 and not force_grid:
+        done.append("切法：单张，保留最大的连通区域")
         main = max(comps, key=lambda c: c["area"])
-        bx = main["box"]
-        inside = [c for c in comps if c["box"][0] >= bx[0] and c["box"][1] >= bx[1] and c["box"][2] <= bx[2] and c["box"][3] <= bx[3]]
-        ids = {c["id"] for c in inside}
-        rgba = rgb.copy(); rgba.putalpha(keep_only(alpha, lab, grid, scale, ids))
-        size = crop_save(rgba, bx, scale, longest, os.path.join(out_dir, names[0] + ".webp"))
+        size = save_figure(rgb, alpha, lab, grid, scale, comps, main, names[0], out_dir)
         done.append("%s %dx%d" % (names[0], *size))
+        return done
+    objs = [] if force_grid else rows_then_columns(sorted(comps, key=lambda c: -c["area"])[:len(names)])
+    cols_rows = force_grid or default_grid(path, names)
+    if force_grid:
+        done.append("切法：按 %dx%d 网格等分（--grid 指定）" % cols_rows)
+    elif len(objs) >= len(names):
+        done.append("切法：连通区域（找到 %d 个物体）" % len(objs))
+    elif cols_rows:
+        done.append("切法：按 %dx%d 网格等分（兜底：连通区域只找到 %d 个，需要 %d 个）" % (*cols_rows, len(objs), len(names)))
     else:
-        objs = rows_then_columns(sorted(comps, key=lambda c: -c["area"])[:len(names)])
-        if len(objs) < len(names):
-            done.append("%s: found %d objects for %d names" % (os.path.basename(path), len(objs), len(names)))
+        done.append("切法：连通区域（只找到 %d 个物体，需要 %d 个；可用 --grid 文件名=列x行 强制按网格切）" % (len(objs), len(names)))
+    if objs and len(objs) >= len(names) or not cols_rows:
         for name, c in zip(names, objs):
             rgba = rgb.copy(); rgba.putalpha(keep_only(alpha, lab, grid, scale, {c["id"]}))
-            size = crop_save(rgba, c["box"], scale, SIZE["gear"] if name.startswith(("weapon_", "shield_", "helmet_")) else SIZE["char"], os.path.join(out_dir, name + ".webp"))
+            size = crop_save(rgba, c["box"], scale, longest_for(name), os.path.join(out_dir, name + ".webp"))
             done.append("%s %dx%d" % (name, *size))
+        return done
+    cols, rows = cols_rows
+    if cols * rows != len(names):
+        done.append("注意：网格 %dx%d 有 %d 格，输出名有 %d 个，只输出前 %d 个" % (cols, rows, cols * rows, len(names), min(cols * rows, len(names))))
+    content = alpha.point(lambda v: 255 if v > 96 else 0).getbbox()
+    if not content:
+        return done + ["%s: nothing found, skipped" % os.path.basename(path)]
+    cx0, cy0, cx1, cy1 = content
+    cells = [(cx0 + (cx1 - cx0) * i // cols, cy0 + (cy1 - cy0) * j // rows,
+              cx0 + (cx1 - cx0) * (i + 1) // cols, cy0 + (cy1 - cy0) * (j + 1) // rows)
+             for j in range(rows) for i in range(cols)]
+    for name, cell in zip(names, cells):
+        c_rgb = rgb.crop(cell)
+        c_alpha = alpha.crop(cell) if src.mode == "RGBA" else white_bg_alpha(c_rgb)
+        c_lab, c_grid, c_scale, c_comps = components(c_alpha)
+        c_comps = [c for c in c_comps if c["area"] >= SPECK * c_grid[0] * c_grid[1]]
+        if not c_comps:
+            done.append("%s: 这一格是空的，跳过" % name)
+            continue
+        main = centre_blob(c_lab, c_grid, c_comps, cols > 1, rows > 1)
+        size = save_figure(c_rgb, c_alpha, c_lab, c_grid, c_scale, c_comps, main, name, out_dir)
+        done.append("%s %dx%d" % (name, *size))
     return done
 
 def main():
@@ -160,13 +220,20 @@ def main():
     if len(args) < 2:
         sys.exit(__doc__)
     src_dir, out_dir, rest = args[0], args[1], args[2:]
-    mapping = {}
+    mapping, grids = {}, {}
     while rest:
         a = rest.pop(0)
         if a == "--map" and rest:
             while rest and not rest[0].startswith("--"):
                 k, _, v = rest.pop(0).partition("=")
                 mapping[k] = v
+        elif a == "--grid" and rest:
+            while rest and not rest[0].startswith("--"):
+                k, _, v = rest.pop(0).partition("=")
+                m = re.fullmatch(r"(\d+)[x×X*](\d+)", v.strip())
+                if not m or int(m.group(1)) < 1 or int(m.group(2)) < 1:
+                    sys.exit("--grid 要写成 文件名=列x行，例如 shields.png=6x1：" + k + "=" + v)
+                grids[k] = (int(m.group(1)), int(m.group(2)))
         else:
             sys.exit("unknown argument: " + a)
     os.makedirs(out_dir, exist_ok=True)
@@ -179,7 +246,7 @@ def main():
         if not names:
             skipped.append(f)
             continue
-        for line in process(os.path.join(src_dir, f), names, out_dir):
+        for line in process(os.path.join(src_dir, f), names, out_dir, grids.get(f)):
             print("  " + f + " → " + line)
     if skipped:
         print("skipped (no output name; use --map 文件名=输出名): " + ", ".join(skipped))
