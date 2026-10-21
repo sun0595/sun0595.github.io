@@ -1466,3 +1466,289 @@ if(typeof window !== "undefined"){
   window.openGearChest = openGearChest;
 }
 
+/* ================= arithmetic match (算术消除棋盘) ================= */
+function makeMatchBoard(gen, opts = {}){
+  const layers = (opts && opts.layers === 2) ? 2 : 1;
+  const cols = (opts && opts.cols === 4) ? 4 : 3;
+
+  // 安全调用生成器函数
+  const callGen = () => {
+    try {
+      if (gen === G.add) return G.add(10);
+      const q = typeof gen === "function" ? gen() : null;
+      if (q && typeof q.answer === "number" && !isNaN(q.answer)) return q;
+      if (typeof gen === "function") {
+        const q2 = gen(10);
+        if (q2 && typeof q2.answer === "number" && !isNaN(q2.answer)) return q2;
+      }
+    } catch(e) {
+      try {
+        const q2 = gen(10);
+        if (q2 && typeof q2.answer === "number" && !isNaN(q2.answer)) return q2;
+      } catch(e2) {}
+    }
+    return G.add(10);
+  };
+
+  // 提取算式文本与读音
+  const formatText = q => {
+    if (q.text) return String(q.text).trim();
+    if (Array.isArray(q.parts)) {
+      return q.parts.filter(p => p !== "=" && p !== "?").join(" ").trim();
+    }
+    return String(q.answer);
+  };
+
+  // 收集候选得数，每个得数需至少有 2 道不同算式
+  const pool = new Map();
+  let attempts = 0;
+  while(attempts < 3000){
+    attempts++;
+    const q = callGen();
+    if(!q || typeof q.answer !== "number" || isNaN(q.answer)) continue;
+    const val = q.answer;
+    const text = formatText(q);
+    if(!pool.has(val)) pool.set(val, new Map());
+    const m = pool.get(val);
+    if(!m.has(text)) m.set(text, q);
+
+    if(pool.size >= 8){
+      const ready = [...pool.values()].filter(x => x.size >= 2).length;
+      if(ready >= 6 && attempts >= 40) break;
+    }
+  }
+
+  let validValues = [...pool.keys()].filter(v => pool.get(v).size >= 2);
+  // 保底：若生成器产生的得数不足 6 个，补齐简单加法题
+  if(validValues.length < 6){
+    let fVal = 20;
+    while(validValues.length < 6){
+      while(pool.has(fVal)) fVal++;
+      const m = new Map();
+      m.set("1 + " + (fVal - 1), { answer: fVal, speak: "1加" + (fVal - 1) + "等于几？", parts: [1, "+", fVal - 1, "=", "?"] });
+      m.set("2 + " + (fVal - 2), { answer: fVal, speak: "2加" + (fVal - 2) + "等于几？", parts: [2, "+", fVal - 2, "=", "?"] });
+      pool.set(fVal, m);
+      validValues.push(fVal);
+      fVal++;
+    }
+  }
+
+  // 随机选取 6 个互不相同的得数
+  const chosenValues = shuffle(validValues.slice()).slice(0, 6);
+
+  // 为每个得数选取恰好 2 道不同算式
+  const pairs = chosenValues.map(val => {
+    const list = [...pool.get(val).values()];
+    return shuffle(list).slice(0, 2);
+  });
+
+  // 生成 12 张卡牌
+  let cardSeq = 1;
+  const cards = [];
+
+  if(layers === 1){
+    // 单层：12 张卡平铺在 3 列或 4 列网格中，无覆盖
+    const rows = Math.ceil(12 / cols);
+    const slots = [];
+    for(let r = 0; r < rows; r++){
+      for(let c = 0; c < cols; c++){
+        if(slots.length < 12){
+          slots.push({
+            c,
+            r,
+            x: cols > 1 ? Number((c / (cols - 1)).toFixed(4)) : 0,
+            y: rows > 1 ? Number((r / (rows - 1)).toFixed(4)) : 0
+          });
+        }
+      }
+    }
+    const shuffledSlots = shuffle(slots.slice());
+
+    pairs.forEach(pair => {
+      pair.forEach(q => {
+        const slot = shuffledSlots[cards.length];
+        const text = formatText(q);
+        cards.push({
+          id: "c_" + (cardSeq++),
+          text,
+          speak: q.speak || (text + "等于几？"),
+          value: q.answer,
+          layer: 1,
+          x: slot.x,
+          y: slot.y,
+          col: slot.c,
+          row: slot.r,
+          coveredBy: []
+        });
+      });
+    });
+  } else {
+    // 双层：前 3 对在顶层（layer 2），后 3 对在底层（layer 1）被其覆盖
+    // 保证消除顶层任意一对即可露出对应底层的完整伴侣对，全程至少有一对两张完全露在外面
+    const slotCount = 6;
+    const rows = Math.ceil(slotCount / cols);
+    const slots = [];
+    for(let r = 0; r < rows; r++){
+      for(let c = 0; c < cols; c++){
+        if(slots.length < slotCount){
+          slots.push({
+            c,
+            r,
+            x: cols > 1 ? Number((c / (cols - 1)).toFixed(4)) : 0,
+            y: rows > 1 ? Number((r / (rows - 1)).toFixed(4)) : 0
+          });
+        }
+      }
+    }
+    const shuffledSlots = shuffle(slots.slice());
+
+    // 顶层 3 对 (pairs[0..2])，底层 3 对 (pairs[3..5])
+    // 6 个槽位各放置 1 张底层卡 + 1 张顶层卡
+    for(let i = 0; i < 3; i++){
+      const topPair = pairs[i];
+      const bottomPair = pairs[i + 3];
+
+      for(let j = 0; j < 2; j++){
+        const slotIdx = i * 2 + j;
+        const slot = shuffledSlots[slotIdx];
+
+        const topQ = topPair[j];
+        const topText = formatText(topQ);
+        const topId = "c_" + (cardSeq++);
+
+        const botQ = bottomPair[j];
+        const botText = formatText(botQ);
+        const botId = "c_" + (cardSeq++);
+
+        const topCard = {
+          id: topId,
+          text: topText,
+          speak: topQ.speak || (topText + "等于几？"),
+          value: topQ.answer,
+          layer: 2,
+          x: slot.x,
+          y: slot.y,
+          col: slot.c,
+          row: slot.r,
+          coveredBy: []
+        };
+
+        const bottomCard = {
+          id: botId,
+          text: botText,
+          speak: botQ.speak || (botText + "等于几？"),
+          value: botQ.answer,
+          layer: 1,
+          x: slot.x,
+          y: slot.y,
+          col: slot.c,
+          row: slot.r,
+          coveredBy: [topId]
+        };
+
+        cards.push(bottomCard);
+        cards.push(topCard);
+      }
+    }
+  }
+
+  const result = shuffle(cards);
+  result.cards = result;
+  result.layers = layers;
+  result.cols = cols;
+  return result;
+}
+
+function matchPick(board, idA, idB, execute = true){
+  if(!board || idA === idB) return false;
+  const cards = Array.isArray(board) ? board : (board && board.cards ? board.cards : []);
+  const cardA = cards.find(c => c && c.id === idA);
+  const cardB = cards.find(c => c && c.id === idB);
+  if(!cardA || !cardB) return false;
+
+  // 两张都没被压住
+  if(Array.isArray(cardA.coveredBy) && cardA.coveredBy.length > 0) return false;
+  if(Array.isArray(cardB.coveredBy) && cardB.coveredBy.length > 0) return false;
+
+  // 得数相同
+  if(cardA.value !== cardB.value) return false;
+
+  if(execute){
+    // 从其他卡牌的 coveredBy 中移除 idA 和 idB
+    for(const c of cards){
+      if(c && Array.isArray(c.coveredBy)){
+        c.coveredBy = c.coveredBy.filter(id => id !== idA && id !== idB);
+      }
+    }
+    // 从棋盘中移除被消除的两张卡
+    const idxA = cards.findIndex(c => c && c.id === idA);
+    if(idxA !== -1) cards.splice(idxA, 1);
+    const idxB = cards.findIndex(c => c && c.id === idB);
+    if(idxB !== -1) cards.splice(idxB, 1);
+  }
+  return true;
+}
+
+function matchSolvable(board){
+  const rawCards = Array.isArray(board) ? board : (board && board.cards ? board.cards : []);
+  if(!rawCards || rawCards.length === 0) return true;
+
+  // 克隆卡牌状态，确保校验函数是纯函数、不破坏原棋盘
+  const simCards = rawCards.map(c => ({
+    id: c.id,
+    value: c.value,
+    coveredBy: Array.isArray(c.coveredBy) ? [...c.coveredBy] : []
+  }));
+
+  function solve(cards){
+    if(cards.length === 0) return true;
+
+    // 找出所有露在外面（未被压住）的卡牌
+    const uncovered = cards.filter(c => c.coveredBy.length === 0);
+    if(uncovered.length < 2) return false;
+
+    // 按得数分组
+    const byVal = new Map();
+    for(const c of uncovered){
+      if(!byVal.has(c.value)) byVal.set(c.value, []);
+      byVal.get(c.value).push(c);
+    }
+
+    // 寻找可消除对
+    const pairs = [];
+    for(const list of byVal.values()){
+      if(list.length >= 2){
+        for(let i = 0; i < list.length - 1; i++){
+          for(let j = i + 1; j < list.length; j++){
+            pairs.push([list[i].id, list[j].id]);
+          }
+        }
+      }
+    }
+
+    if(pairs.length === 0) return false;
+
+    // 深度优先回溯验证
+    for(const [idA, idB] of pairs){
+      const nextCards = cards
+        .filter(c => c.id !== idA && c.id !== idB)
+        .map(c => ({
+          id: c.id,
+          value: c.value,
+          coveredBy: c.coveredBy.filter(id => id !== idA && id !== idB)
+        }));
+      if(solve(nextCards)) return true;
+    }
+    return false;
+  }
+
+  return solve(simCards);
+}
+
+// 挂载到 window，方便测试和 UI 调用
+if(typeof window !== "undefined"){
+  window.makeMatchBoard = makeMatchBoard;
+  window.matchPick = matchPick;
+  window.matchSolvable = matchSolvable;
+}
+
