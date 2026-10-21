@@ -4,7 +4,7 @@ const MAIN_KEY = "math-hero-v1";  // 正式版存档，kept so existing progress
 // on its first run it copies the 正式版 save once, after that it only reads/writes "math-hero-beta".
 const KEY = IS_BETA ? "math-hero-beta" : MAIN_KEY;
 if(IS_BETA) try { if(localStorage.getItem(KEY)===null){ const v1 = localStorage.getItem(MAIN_KEY); if(v1!==null) localStorage.setItem(KEY, v1); } } catch(e){}
-const DEFAULT = {stars:{}, hero:0, voice:true, sound:true, timer:true, py:0.25, openAll:false, voiceName:"", rate:0.9, stats:{}, mistakes:[], stickers:{}, medals:{}, tier:{}, shiny:{}, items:{heal:1,time:1,ice:1}, bag:[], equipped:{weapon:null,helmet:null,armor:null,shield:null}, chests:0};
+const DEFAULT = {stars:{}, hero:0, voice:true, sound:true, timer:true, py:0.25, openAll:false, voiceName:"", rate:0.9, stats:{}, mistakes:[], stickers:{}, medals:{}, tier:{}, shiny:{}, items:{heal:1,time:1,ice:1}, bag:[], equipped:{weapon:null,helmet:null,armor:null,shield:null}, chests:0, daily:{date:"",n:0}};
 let S;
 try { S = Object.assign({}, DEFAULT, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch(e){ S = Object.assign({}, DEFAULT); }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
@@ -980,6 +980,14 @@ const MAXSTARS = WORLDS.length*5*3;
 const setOwned = k => (STK[k] && S.stickers) ? STK[k].list.filter(e=>S.stickers[e]).length : 0;
 const setDone = k => STK[k] ? setOwned(k)===STK[k].list.length : false;
 
+/* 当天难度递增（家长 10-21 决定）：每题固定 15 秒（应用题 40 秒），按当天第几次通关加码
+   第 1–15 次：正常；16–30：怪兽每次攻击扣 2 心、每题 10 秒；31–45：扣 3 心、8 秒；46 起：扣 3 心、6 秒 */
+const Q_TIME = 15, WORD_TIME = 40, WORD_MIN = 20;
+const RAGE = [{dmg:1,t:15},{dmg:2,t:10},{dmg:3,t:8},{dmg:3,t:6}];
+const today = () => { const d = new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+function daily(){ const d = today(); if(!S.daily || S.daily.date!==d) S.daily = {date:d, n:0}; return S.daily; }
+const rageLevel = () => Math.min(RAGE.length-1, Math.floor(daily().n/15));
+
 // progress used to be keyed by world position; key it by world id so new worlds can be inserted
 (function migrate(){
   const OLD = ["add","sub","ten","ice","tower"]; let changed = false;
@@ -1001,6 +1009,9 @@ const setDone = k => STK[k] ? setOwned(k)===STK[k].list.length : false;
     }
   }
   if(typeof S.chests !== "number"){ S.chests = 0; changed = true; }
+  // 当天通关次数（跨天自动归零，见 daily()）
+  if(!S.daily || typeof S.daily !== "object" || typeof S.daily.n !== "number"){ S.daily = {date:"", n:0}; changed = true; }
+  if(S.daily.date !== today()){ daily(); changed = true; }
 
   // 旧贴纸折算宝箱规则（保证孩子绝不吃亏）：
   // 1. 每张普通贴纸折算 1 个宝箱
