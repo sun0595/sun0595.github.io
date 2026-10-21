@@ -600,8 +600,8 @@ const WORLDS_V2 = [
     {n:7, emoji:"🦮", name:"领路犬"},
     {n:8, emoji:"🐈‍⬛", name:"夜黑猫"},
     {n:9, emoji:"🪲", name:"甲虫"},
-    {n:10, emoji:"🪳", name:"蟑螂"},
-    {n:11, emoji:"🪰", name:"苍蝇"},
+    {n:10, emoji:"🐡", name:"气鼓鱼"},
+    {n:11, emoji:"🦩", name:"火烈鸟"},
     {n:12, emoji:"🪱", name:"蚯蚓"},
     {n:13, emoji:"🐨", name:"树袋熊"},
     {n:14, emoji:"🦕", name:"小恐龙"},
@@ -1236,8 +1236,9 @@ const HEROES = [
   {e:"👨‍🚀",n:"宇航员",need:30,shot:"🚀",fx:"💫",col:"#60a5fa",skill:"时间减速：怪兽蓄力慢 30%",slow:1.3},
   {e:"🦖",n:"霸王龙",need:45,shot:"🔥",fx:"🔥",col:"#f97316",skill:"烈焰暴击：暴击一次打掉 3 滴血",critDmg:3},
   {e:"🐲",n:"神龙",need:65,shot:"🌈",fx:"🌈",col:"#ec4899",skill:"龙之恢复：每连对 5 题回 1 颗心",heal:5},
-  {e:"🦄",n:"独角兽",set:"n",shot:"✨",fx:"🌟",col:"#f0abfc",skill:"幸运光环：每关第 1 次答错不扣心",lucky:1},
-  {e:"🤴",n:"贴纸国王",set:"l",shot:"👑",fx:"🎆",col:"#facc15",skill:"全能：护盾 + 连对 2 题暴击 + 时间减速",shield:1,critAt:2,slow:1.3}
+  // gear: 获得过这个品质（或更高）的装备就解锁；set: 旧存档里集齐过贴纸的孩子照样保留
+  {e:"🦄",n:"独角兽",gear:"purple",set:"n",shot:"✨",fx:"🌟",col:"#f0abfc",skill:"幸运光环：每关第 1 次答错不扣心",lucky:1},
+  {e:"🤴",n:"装备国王",gear:"red",set:"l",shot:"👑",fx:"🎆",col:"#facc15",skill:"全能：护盾 + 连对 2 题暴击 + 时间减速",shield:1,critAt:2,slow:1.3}
 ];
 const STK = {
   n:{name:"普通", list:["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🐔","🐧","🐤","🦉","🐝","🐞","🦋","🐢","🐙","🐬","🐳","🦖","🦕","🚗","🚓","🚒","🚑","🚜","🏎️","🚀","🛸","🚁","⛵","🚂","⚽"]},
@@ -1246,7 +1247,7 @@ const STK = {
 };
 const STK_N = STK.n.list, STK_R = STK.r.list, STK_L = STK.l.list;
 const ALLSTK = STK_N.length + STK_R.length + STK_L.length;
-const MAXSTARS = WORLDS.length*5*3;
+const MAXSTARS = WORLDS_V2.length*15*3;
 const setOwned = k => (STK[k] && S.stickers) ? STK[k].list.filter(e=>S.stickers[e]).length : 0;
 const setDone = k => STK[k] ? setOwned(k)===STK[k].list.length : false;
 
@@ -1323,19 +1324,70 @@ const rageLevel = () => Math.min(RAGE.length-1, Math.floor(daily().n/15));
   if(changed) save();
 })();
 
-const starOf = (w,l) => S.stars[WORLDS[w].id+"-"+l]||0;
-const totalStars = () => Object.values(S.stars).reduce((a,b)=>a+b,0);
-const worldOpen = w => S.openAll || w===0 || starOf(w-1,4)>0;
-const levelOpen = (w,l) => S.openAll || (worldOpen(w) && (l===0 || starOf(w,l-1)>0));
+/* ================= 120 关线性地图：关卡定义与进度 =================
+   世界 w = 0..7（WORLDS_V2），关卡 l = 0..14（第 l+1 关）。新进度存在 S.lv = {stars:{}, tier:{}}，键是 "add-1" … "digit2-15"；
+   旧的 S.stars / S.tier（"add-0" … "tower-4"）原样保留，只在 migrateV2() 里读一次。 */
+const NLV = 15;
+const gIndex = (w,l) => w*NLV + l;                       // 全局关卡序号，0 起
+const lvKey = (w,l) => WORLDS_V2[w].id+"-"+(l+1);
+const LEGACY_IDS = ["think","tower"];                    // 旧应用题、魔王塔：不映射到关卡，但星星仍算进总数
+const legacyStars = () => Object.keys(S.stars||{}).filter(k=>LEGACY_IDS.includes(k.split("-")[0])).reduce((a,k)=>a+(S.stars[k]||0),0);
+const starOf = (w,l) => (S.lv && S.lv.stars[lvKey(w,l)])||0;
+const totalStars = () => Object.values((S.lv||{}).stars||{}).reduce((a,b)=>a+b,0) + legacyStars();
+// 当前关 = 按顺序第一个还没通过的关；全通了就停在最后一关
+function curLevel(){ for(let w=0;w<WORLDS_V2.length;w++) for(let l=0;l<NLV;l++) if(!starOf(w,l)) return [w,l]; return [WORLDS_V2.length-1, NLV-1]; }
+const levelOpen = (w,l) => S.openAll || starOf(w,l)>0 || gIndex(w,l) <= gIndex(...curLevel());
+const worldOpen = w => S.openAll || w <= curLevel()[0] || WORLDS_V2[w].levels.some((_,l)=>starOf(w,l)>0);
 /* Replaying a 3-star level moves it up a tier: a little harder, new star colour, up to diamond */
 const TIERS = [{n:"金星",c:"#f5b400",f:""},{n:"蓝星",c:"#3b82f6",f:"hue-rotate(185deg) saturate(1.8)"},{n:"紫星",c:"#a855f7",f:"hue-rotate(235deg) saturate(1.5)"},{n:"钻石",c:"#06b6d4",f:""}];
-const lvKey = (w,l) => WORLDS[w].id+"-"+l;
-const isFinal = (w,l) => w===WORLDS.length-1 && l===4;
-const mastery = (w,l) => S.tier[lvKey(w,l)]||0;
-const diffOf = (w,l) => isFinal(w,l) ? 0 : Math.min(mastery(w,l),3);
+const isFinal = () => false;                             // 没有"只能连闯"的关了：每个世界第 15 关 Boss 都能直接打
+const mastery = (w,l) => (S.lv && S.lv.tier[lvKey(w,l)])||0;
+const diffOf = (w,l) => Math.min(mastery(w,l),3);
+// 应用题混进 battle 关：第 3 个世界起，比例 12%；前两个世界之后先用简单题型，第 5 个世界起加入排队、植树等
+const WP_EASY = ["joinResult","compareDiff","compareBigger","joinChange","separateStart"];
+const WP_MORE = WP_EASY.concat(["queue","queuePos","between","compareTrap","gaps"]);
+const WP_RATE = 0.12;
+const planFn = it => () => G[it.g](...(it.args||[]));
+/* 一关的全部信息。怪兽血量 = 10 + floor(全局关卡序号 / 10)，Boss 再 +5（星级档位另加，见 ui.js startLevel）。
+   blend（拼读）关暂时用 pyQ 出拼音题。TODO: 有了专门的拼读生成器（b + ā → bā）后换掉 */
+function levelDef(w,l){
+  const W2 = WORLDS_V2[w], lv = W2.levels[l], plan = LEVEL_PLAN[w].levels[l];
+  const mode = lv.boss ? "battle" : (LEVEL_MODES[w].modes[l] || "battle");
+  const math = mix(...plan.mix.map(planFn));
+  let g = math;
+  if(mode==="blend") g = pyQ;
+  else if(mode==="battle" && w>=2){ const pool = (w>=4 ? WP_MORE : WP_EASY).filter(k=>WP[k]); g = () => Math.random()<WP_RATE ? WP[pick(pool)]() : math(); }
+  const i = gIndex(w,l);
+  return {w, l, m:lv.emoji, n:lv.name, boss:!!lv.boss, mode, g, math, hp:10 + Math.floor(i/10) + (lv.boss?5:0)};
+}
+/* 算术消除用的出题器：只要"算式 = ?"这种直接算的题（不要填空题），而且至少 6 个得数各有 2 道不同算式，
+   这样 makeMatchBoard 永远不会走"补 20 以上加法"的保底。先试本关 mix 里得数最多的那个，不够就用整关 mix，
+   再不够用同世界 Boss 关（最宽）的 mix，最后用整个世界所有出题器。 */
+const plainQ = q => q && typeof q.answer==="number" && Array.isArray(q.parts) && q.parts[q.parts.length-1]==="?" && q.parts[q.parts.length-2]==="=";
+function matchPoolOK(gen){
+  const pool = new Map();
+  for(let i=0;i<400;i++){ const q = gen(); if(!plainQ(q)) return false; const t = q.parts.slice(0,-2).join(" "); if(!pool.has(q.answer)) pool.set(q.answer, new Set()); pool.get(q.answer).add(t); }
+  return [...pool.values()].filter(x=>x.size>=2).length >= 6;
+}
+function matchGenFor(w,l){
+  const items = LEVEL_PLAN[w].levels[l].mix, all = LEVEL_PLAN[w].levels.flatMap(x=>x.mix);
+  const distinct = it => { const f = planFn(it), v = new Set(); for(let i=0;i<60;i++){ const q = f(); if(plainQ(q)) v.add(q.answer); } return v.size; };
+  const cands = items.slice().sort((a,b)=>distinct(b)-distinct(a)).map(it=>[it])
+    .concat([items, LEVEL_PLAN[w].levels[NLV-1].mix, all]);
+  for(const c of cands){
+    const fns = c.map(planFn).filter(f=>plainQ(f()));
+    if(!fns.length) continue;
+    const gen = mix(...fns);
+    if(matchPoolOK(gen)) return gen;
+  }
+  return null;
+}
 const ITEMS = {heal:{e:"💖",tip:"💖 加一颗心"}, time:{e:"⏳",tip:"⏳ 多 10 秒时间"}, ice:{e:"🧊",tip:"🧊 冻住怪兽 10 秒"}};
-const goldAura = () => setDone("r");
-const heroUnlocked = i => { const h = HEROES[i]; return h.set ? setDone(h.set) : totalStars()>=h.need; };
+// 获得过的最高品质记在 S.bestQ（品质 key，"" = 还没有）；金色光环 = 获得过橙色装备（旧存档集齐稀有贴纸的也保留）
+const qRank = k => ["white","blue","pink","purple","orange","red"].indexOf(k);
+const hasBest = k => qRank(S.bestQ||"") >= qRank(k);
+const goldAura = () => hasBest("orange") || setDone("r");
+const heroUnlocked = i => { const h = HEROES[i]; return h.gear ? (hasBest(h.gear) || setDone(h.set)) : totalStars()>=h.need; };
 const stickerCount = () => Object.keys(S.stickers).length;
 function hero(){ if(!heroUnlocked(S.hero)) S.hero=0; return HEROES[S.hero]; }
 
@@ -1663,6 +1715,7 @@ function addGear(gear, state){
   if(!s.bag) s.bag = [];
   if(gear){
     s.bag.push(gear);
+    if(qRank(gear.quality) > qRank(s.bestQ||"")) s.bestQ = gear.quality;   // 获得过的最高品质（勇士解锁用）
     if(s === S) save();
   }
   return gear;
@@ -1735,6 +1788,28 @@ if(typeof window !== "undefined"){
   window.unequipGear = unequipGear;
   window.openGearChest = openGearChest;
 }
+
+// 线性地图迁移：旧 add/sub/ten/ice 第 l 关（0–4）→ 新同 id 世界第 l+1 关，星星和档位照搬；旧 think/tower 不映射
+// （星星仍算进 totalStars）。另外补上 S.bestQ（从背包和身上的装备算出来）。旧字段一个不删。
+(function migrateV2(){
+  let changed = false;
+  if(!S.lv || typeof S.lv!=="object"){ S.lv = {stars:{}, tier:{}}; changed = true; }
+  S.lv.stars = S.lv.stars || {}; S.lv.tier = S.lv.tier || {};
+  if(!S.lvMigrated){
+    for(const id of ["add","sub","ten","ice"]) for(let l=0;l<5;l++){
+      const o = id+"-"+l, n = id+"-"+(l+1);
+      if(S.stars[o]) S.lv.stars[n] = Math.max(S.lv.stars[n]||0, S.stars[o]);
+      if(S.tier[o]) S.lv.tier[n] = Math.max(S.lv.tier[n]||0, S.tier[o]);
+    }
+    S.lvMigrated = true; changed = true;
+  }
+  if(typeof S.bestQ!=="string"){
+    S.bestQ = "";
+    for(const g of (S.bag||[]).concat(Object.values(S.equipped||{}))) if(g && qRank(g.quality) > qRank(S.bestQ)) S.bestQ = g.quality;
+    changed = true;
+  }
+  if(changed) save();
+})();
 
 /* ================= arithmetic match (算术消除棋盘) ================= */
 function makeMatchBoard(gen, opts = {}){
