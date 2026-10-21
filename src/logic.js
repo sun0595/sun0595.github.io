@@ -4,7 +4,7 @@ const MAIN_KEY = "math-hero-v1";  // 正式版存档，kept so existing progress
 // on its first run it copies the 正式版 save once, after that it only reads/writes "math-hero-beta".
 const KEY = IS_BETA ? "math-hero-beta" : MAIN_KEY;
 if(IS_BETA) try { if(localStorage.getItem(KEY)===null){ const v1 = localStorage.getItem(MAIN_KEY); if(v1!==null) localStorage.setItem(KEY, v1); } } catch(e){}
-const DEFAULT = {stars:{}, hero:0, voice:true, sound:true, timer:true, py:0.25, openAll:false, voiceName:"", rate:0.9, stats:{}, mistakes:[], stickers:{}, medals:{}, tier:{}, shiny:{}, items:{heal:1,time:1,ice:1}, bag:[], equipped:{weapon:null,helmet:null,armor:null,shield:null}, chests:0, daily:{date:"",n:0}};
+const DEFAULT = {stars:{}, hero:0, voice:true, sound:true, timer:true, py:0.25, openAll:false, voiceName:"", rate:0.9, stats:{}, mistakes:[], stickers:{}, medals:{}, tier:{}, shiny:{}, items:{heal:1,time:1,ice:1}, bag:[], equipped:{weapon:null,helmet:null,armor:null,shield:null}, chests:0, daily:{date:"",n:0}, exp:0, heroLv:1, stones:0, spareExp:0};
 let S;
 try { S = Object.assign({}, DEFAULT, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch(e){ S = Object.assign({}, DEFAULT); }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
@@ -1340,6 +1340,21 @@ const rageLevel = () => Math.min(RAGE.length-1, Math.floor(daily().n/15));
     changed = true;
   }
 
+  // 勇士等级和装备成长。S.lv 仍是关卡进度，这里用 S.heroLv，互不覆盖。
+  let rawSave = {};
+  try { rawSave = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch(e){ rawSave = {}; }
+  if(typeof rawSave.exp !== "number"){ S.exp = 0; changed = true; }
+  if(typeof rawSave.heroLv !== "number" || rawSave.heroLv < 1){ S.heroLv = 1; changed = true; }
+  if(typeof rawSave.stones !== "number"){ S.stones = 0; changed = true; }
+  if(typeof rawSave.spareExp !== "number"){ S.spareExp = 0; changed = true; }
+  const touchGear = g => {
+    if(!g || typeof g !== "object") return;
+    if(typeof g.lv !== "number"){ g.lv = 1; changed = true; }
+    if(typeof g.exp !== "number"){ g.exp = 0; changed = true; }
+  };
+  for(const g of (S.bag || [])) touchGear(g);
+  for(const g of Object.values(S.equipped || {})) touchGear(g);
+
   if(changed) save();
 })();
 
@@ -1623,15 +1638,20 @@ function getQualityWeights(stage = 1, isBoss = false){
 }
 
 // 抽取品质
-function rollQuality(stage = 1, isBoss = false){
-  const weights = getQualityWeights(stage, isBoss);
-  const total = weights.reduce((sum, item) => sum + item.w, 0);
+function rollQuality(stage = 1, isBoss = false, minQuality = null, weights = null){
+  let list = (weights || getQualityWeights(stage, isBoss)).map(it => ({key:it.key, w:it.w}));
+  if(minQuality){
+    const min = qRank(minQuality);
+    list = list.map(it => qRank(it.key) < min ? {key:it.key, w:0} : it);
+  }
+  const total = list.reduce((sum, item) => sum + item.w, 0);
+  if(total <= 0) return minQuality || "white";
   let rnd = Math.random() * total;
-  for(const item of weights){
+  for(const item of list){
     if(rnd < item.w) return item.key;
     rnd -= item.w;
   }
-  return weights[weights.length - 1].key;
+  return list[list.length - 1].key;
 }
 
 // 词缀数量：品质越高词缀越多
@@ -1647,12 +1667,21 @@ function getAffixCount(qKey){
   }
 }
 
-// 纯函数：rollGear(关卡号, 是否Boss) 生成一件装备
-function rollGear(stage = 1, isBoss = false){
-  const qKey = rollQuality(stage, isBoss);
+// rollGear(关卡号, 是否Boss, 品质下限或 {minQuality, quality, slot, weights})
+// quality 指定死品质；minQuality 是下限；slot 指定部位。旧的两参调用不变。
+function rollGear(stage = 1, isBoss = false, opt){
+  let minQuality = null, forceQuality = null, slotKey = null, weights = null;
+  if(typeof opt === "string") minQuality = opt;
+  else if(opt && typeof opt === "object"){
+    minQuality = opt.minQuality || null;
+    forceQuality = opt.quality || null;
+    slotKey = opt.slot || null;
+    weights = opt.weights || null;
+  }
+  const qKey = forceQuality || rollQuality(stage, isBoss, minQuality, weights);
   const qDef = GEAR_QUALITY_MAP[qKey] || GEAR_QUALITIES[0];
   const slotKeys = ["weapon", "helmet", "armor", "shield"];
-  const slotKey = slotKeys[Math.floor(Math.random() * slotKeys.length)];
+  if(!slotKey || !GEAR_SLOTS[slotKey]) slotKey = slotKeys[Math.floor(Math.random() * slotKeys.length)];
   const slotDef = GEAR_SLOTS[slotKey];
   const baseItem = slotDef.pool[Math.floor(Math.random() * slotDef.pool.length)];
   const prefixes = GEAR_PREFIXES[qKey] || ["简易"];
@@ -1695,6 +1724,8 @@ function rollGear(stage = 1, isBoss = false){
     name,
     e: baseItem.e,
     stage: stage || 1,
+    lv: 1,
+    exp: 0,
     affixes
   };
 }
@@ -1717,12 +1748,13 @@ function gearStats(equipped){
   const items = Array.isArray(equipped) ? equipped : Object.values(equipped);
   for(const item of items){
     if(!item || !item.affixes) continue;
+    const mul = 1 + 0.2 * (((item.lv) || 1) - 1);
     for(const a of item.affixes){
-      if(typeof stats[a.id] === "number"){
-        stats[a.id] += (a.val || 0);
-      }
+      const shown = Math.round((a.val || 0) * mul);
+      if(typeof stats[a.id] === "number") stats[a.id] += shown;
       stats.affixesCount++;
-      stats.list.push(a);
+      const aDef = GEAR_AFFIXES[a.id];
+      stats.list.push({id:a.id, name:a.name, e:a.e, val:shown, base:a.val || 0, text:aDef ? aDef.format(shown) : a.text});
     }
   }
   return stats;
@@ -1766,7 +1798,7 @@ function equipGear(gearOrId, state){
     s.bag.push(prev);
   }
   s.equipped[gear.slot] = gear;
-  if(s === S) save();
+  if(s === S){ applySpareExp(); save(); }
   return {success: true, equipped: gear, unequipped: prev || null};
 }
 
@@ -1829,6 +1861,322 @@ if(typeof window !== "undefined"){
   }
   if(changed) save();
 })();
+
+/* ================= 奖励：经验、稀缺掉落、装备成长（界面稍后接入） =================
+   家长要调的数字都在这一段最上面。
+   结算画面目前还是旧的「点宝箱」，接上 applyDrops 之后才改用这里。
+   不再新发宝箱。旧存档里的 S.chests 留着，用 openAllChests() 一次开完。 */
+const HERO_EXP_NORMAL = 10;     // 普通关 1 星
+const HERO_EXP_PER_STAR = 5;    // 每多一颗星 +5（2 星 15，3 星 20）
+const HERO_EXP_BOSS = 40;       // Boss 固定 40，星星和狂暴都不加
+const HERO_EXP_BASE_NEED = 50;  // 1 级升 2 级
+const HERO_EXP_NEED_STEP = 25;  // 每高一级，升级经验 +25
+const DROP_SLOTS = ["weapon", "helmet", "armor", "shield"];
+const DROP_CHANCE_BY_WORLD = [0.20, 0.21, 0.23, 0.24, 0.26, 0.27, 0.29, 0.30];
+const ITEM_DROP_RATE = 0.15;
+const ITEM_CAP = 5;
+const ITEM_OVERFLOW_EXP = 10;   // 道具满了，换成这么多装备经验
+const ITEM_KEYS = ["heal", "time", "ice"];
+const STONE_RATE = 0.10;
+const BOSS_STONE_RATE = 0.50;
+const GEAR_EXP_GAIN = 10;       // 普通关，身上每件装备
+const BOSS_GEAR_EXP = 30;
+const GEAR_LV_MAX = 5;
+const GEAR_EXP_NEED = [0, 30, 60, 100, 150]; // 下标是当前等级；5 级不再涨
+const AFFIX_CAP = {white:1, blue:2, pink:3, purple:3, orange:4, red:5};
+const SALVAGE_EXP = {white:10, blue:20, pink:35, purple:50, orange:80, red:120};
+const Q_ORDER = ["white", "blue", "pink", "purple", "orange", "red"];
+// Boss 掉落：没有白装，橙+红 = 100/1000 = 10%
+const BOSS_DROP_WEIGHTS = [
+  {key:"blue", w:450}, {key:"pink", w:300}, {key:"purple", w:150}, {key:"orange", w:80}, {key:"red", w:20}
+];
+const FLEE_RATE = 0.7;
+const FLEE_EXP_LOSS = 10;
+let FLEE_LOSE_BAG_ITEM = false;  // 为 true 时，逃跑成功会随机丢掉背包里一件没穿的装备
+
+const nextQuality = q => { const i = Q_ORDER.indexOf(q); return i >= 0 && i < Q_ORDER.length - 1 ? Q_ORDER[i + 1] : null; };
+const wornList = () => S.equipped ? Object.values(S.equipped).filter(g => g && typeof g === "object") : [];
+function gearById(id){
+  const inBag = (S.bag || []).find(g => g && g.id === id);
+  if(inBag) return inBag;
+  return wornList().find(g => g.id === id) || null;
+}
+function progressStage(){
+  let stage = 1;
+  const stars = (S.lv && S.lv.stars) || {};
+  WORLDS_V2.forEach((w, wi) => {
+    for(let n = 1; n <= 15; n++) if(stars[w.id + "-" + n]) stage = Math.max(stage, wi * 15 + n);
+  });
+  return stage;
+}
+function worldById(id){
+  const i = WORLDS_V2.findIndex(w => w.id === id);
+  return i < 0 ? null : {i, w: WORLDS_V2[i]};
+}
+
+// 普通怪的「可能掉落」。不改 WORLDS_V2。Boss 关 chance 为 1，部位随机（slot 为空）。
+function monsterDrop(worldId, levelNum){
+  const found = worldById(worldId);
+  const n = levelNum | 0;
+  if(!found || n < 1 || n > 15) return null;
+  if(n === 15) return {slot:null, chance:1, boss:true};
+  const chance = DROP_CHANCE_BY_WORLD[found.i] != null ? DROP_CHANCE_BY_WORLD[found.i] : 0.20;
+  return {slot: DROP_SLOTS[(n - 1) % DROP_SLOTS.length], chance, boss:false};
+}
+
+// 一次胜利的勇士经验。连闯每场照普通关或 Boss 算，狂暴不加。
+function gainExp(info){
+  const stars = Math.max(1, Math.min(3, (info && info.stars) || 1));
+  if(info && info.boss) return HERO_EXP_BOSS;
+  return HERO_EXP_NORMAL + HERO_EXP_PER_STAR * (stars - 1);
+}
+function expNeed(lv){
+  return HERO_EXP_BASE_NEED + HERO_EXP_NEED_STEP * ((lv || 1) - 1);
+}
+// 升到这一级时直接发装备（5 的倍数保底紫及以上）。不增加宝箱。
+function levelReward(lv){
+  const gear = rollGear(progressStage(), false, lv % 5 === 0 ? "purple" : null);
+  addGear(gear);
+  return [{type:"gear", gear, guarantee: lv % 5 === 0}];
+}
+// 加上经验，可能连升多级。返回 {levels, rewards}。
+function addExp(n){
+  n = Math.max(0, Math.floor(n || 0));
+  const levels = [], rewards = [];
+  S.exp = (S.exp || 0) + n;
+  let guard = 0;
+  while(S.exp >= expNeed(S.heroLv) && guard++ < 1000){
+    const need = expNeed(S.heroLv);
+    if(need <= 0) break;
+    S.exp -= need;
+    S.heroLv = (S.heroLv || 1) + 1;
+    levels.push(S.heroLv);
+    rewards.push({lv: S.heroLv, items: levelReward(S.heroLv)});
+  }
+  save();
+  return {levels, rewards};
+}
+
+function gearExpNeed(lv){ return GEAR_EXP_NEED[lv] || 0; }
+function addGearExp(gear, n){
+  const levels = [];
+  if(!gear || n <= 0) return {levels, gained:0};
+  if((gear.lv || 1) >= GEAR_LV_MAX) return {levels, gained:0};
+  gear.lv = gear.lv || 1;
+  gear.exp = (gear.exp || 0) + n;
+  while(gear.lv < GEAR_LV_MAX && gear.exp >= gearExpNeed(gear.lv)){
+    const need = gearExpNeed(gear.lv);
+    if(need <= 0) break;
+    gear.exp -= need;
+    gear.lv++;
+    levels.push(gear.lv);
+  }
+  if(gear.lv >= GEAR_LV_MAX) gear.exp = 0;
+  return {levels, gained:n};
+}
+// 把装备经验平均分给还能升级的身上装备；一件都没穿（或都满级）就存进 S.spareExp。
+function distributeGearExp(amount){
+  amount = Math.max(0, Math.floor(amount || 0));
+  const worn = wornList().filter(g => (g.lv || 1) < GEAR_LV_MAX);
+  if(!amount) return {spare:0, pieces:[]};
+  if(!worn.length){
+    S.spareExp = (S.spareExp || 0) + amount;
+    return {spare:amount, pieces:[]};
+  }
+  const base = Math.floor(amount / worn.length);
+  let extra = amount % worn.length;
+  const pieces = worn.map(g => {
+    const gain = base + (extra > 0 ? 1 : 0);
+    if(extra > 0) extra--;
+    const up = addGearExp(g, gain);
+    return {id:g.id, gain, lv:g.lv, exp:g.exp, levels:up.levels};
+  });
+  return {spare:0, pieces};
+}
+function applySpareExp(){
+  const n = S.spareExp || 0;
+  if(n <= 0 || !wornList().some(g => (g.lv || 1) < GEAR_LV_MAX)) return null;
+  S.spareExp = 0;
+  return distributeGearExp(n);
+}
+
+function rollOneAffix(qKey, exclude){
+  const keys = Object.keys(GEAR_AFFIXES).filter(k => !exclude || !exclude.has(k));
+  if(!keys.length) return null;
+  const k = keys[Math.floor(Math.random() * keys.length)];
+  const aDef = GEAR_AFFIXES[k];
+  const range = aDef.ranges[qKey] || aDef.ranges.white;
+  const val = range[0] + Math.floor(Math.random() * (range[1] - range[0] + 1));
+  return {id:aDef.id, name:aDef.name, e:aDef.e, val, text:aDef.format(val)};
+}
+function canAscend(gear){
+  return !!(gear && (gear.lv || 1) >= GEAR_LV_MAX && nextQuality(gear.quality) && (S.stones || 0) >= 1);
+}
+function ascendGear(gearId){
+  const gear = gearById(gearId);
+  if(!gear) return {ok:false, error:"missing"};
+  if((gear.lv || 1) < GEAR_LV_MAX) return {ok:false, error:"level"};
+  const nq = nextQuality(gear.quality);
+  if(!nq) return {ok:false, error:"max_quality"};
+  if((S.stones || 0) < 1) return {ok:false, error:"no_stone"};
+  S.stones--;
+  const qDef = GEAR_QUALITY_MAP[nq];
+  const name = gear.name, slot = gear.slot;
+  gear.quality = nq;
+  gear.qualityName = qDef.name;
+  gear.col = qDef.col;
+  gear.bg = qDef.bg;
+  gear.lv = 1;
+  gear.exp = 0;
+  gear.affixes = gear.affixes || [];
+  const cap = AFFIX_CAP[nq] || 1;
+  if(gear.affixes.length < cap){
+    const extra = rollOneAffix(nq, new Set(gear.affixes.map(a => a.id)));
+    if(extra) gear.affixes.push(extra);
+  }
+  if(qRank(nq) > qRank(S.bestQ || "")) S.bestQ = nq;
+  save();
+  return {ok:true, gear, nameSame: gear.name === name, slotSame: gear.slot === slot};
+}
+function bagOf(quality){
+  const worn = new Set(wornList().map(g => g.id));
+  return (S.bag || []).filter(g => g && g.quality === quality && !worn.has(g.id));
+}
+function canSynth(quality){
+  return !!(quality && nextQuality(quality) && bagOf(quality).length >= 3);
+}
+function synthGear(ids){
+  if(!Array.isArray(ids) || ids.length !== 3 || new Set(ids).size !== 3) return {ok:false, error:"need_3"};
+  const gears = ids.map(id => (S.bag || []).find(g => g && g.id === id));
+  if(gears.some(g => !g)) return {ok:false, error:"not_in_bag"};
+  const worn = new Set(wornList().map(g => g.id));
+  if(ids.some(id => worn.has(id))) return {ok:false, error:"equipped"};
+  const q = gears[0].quality;
+  if(gears.some(g => g.quality !== q)) return {ok:false, error:"quality"};
+  const nq = nextQuality(q);
+  if(!nq) return {ok:false, error:"max_quality"};
+  ids.forEach(id => removeGear(id));
+  const made = rollGear(progressStage(), false, {quality:nq});
+  addGear(made);
+  save();
+  return {ok:true, gear:made};
+}
+
+function salvageValue(gear){ return SALVAGE_EXP[gear && gear.quality] || 0; }
+function discardDrop(gear){
+  if(!gear) return {ok:false, error:"missing"};
+  if(gear.id && gearById(gear.id)) return {ok:false, error:"already_kept"};
+  const exp = salvageValue(gear);
+  const dist = distributeGearExp(exp);
+  save();
+  return {ok:true, exp, dist};
+}
+function salvageGear(gearId){
+  if(wornList().some(g => g.id === gearId)) return {ok:false, error:"equipped"};
+  const gear = (S.bag || []).find(g => g && g.id === gearId);
+  if(!gear) return {ok:false, error:"not_in_bag"};
+  removeGear(gearId);
+  const exp = salvageValue(gear);
+  const dist = distributeGearExp(exp);
+  save();
+  return {ok:true, exp, dist};
+}
+
+// 只掷出这一次胜利拿到什么，不写存档。gearExp 是身上每件装备要加的经验。
+function rollVictoryDrops(worldId, levelNum, isBoss, stars){
+  const info = monsterDrop(worldId, levelNum);
+  const found = worldById(worldId);
+  const stage = found ? found.i * 15 + Math.max(1, levelNum | 0) : progressStage();
+  let gear = null;
+  if(isBoss) gear = rollGear(stage, true, {minQuality:"blue", weights:BOSS_DROP_WEIGHTS});
+  else if(info && Math.random() < info.chance) gear = rollGear(stage, false, {slot:info.slot});
+  const item = Math.random() < ITEM_DROP_RATE ? ITEM_KEYS[Math.floor(Math.random() * ITEM_KEYS.length)] : null;
+  const stone = Math.random() < (isBoss ? BOSS_STONE_RATE : STONE_RATE) ? 1 : 0;
+  return {exp: gainExp({boss:!!isBoss, stars, run:false}), gear, item, stone, gearExp: isBoss ? BOSS_GEAR_EXP : GEAR_EXP_GAIN};
+}
+function applyDrops(drops){
+  const result = {exp:0, levels:[], rewards:[], gear:null, item:null, itemNote:null, stone:0, gearExp:[], overflowExp:null};
+  if(!drops) return result;
+  if(drops.gearExp){
+    result.gearExp = wornList().map(g => {
+      const up = addGearExp(g, drops.gearExp);
+      return {id:g.id, gain:up.gained, lv:g.lv, exp:g.exp, levels:up.levels};
+    });
+  }
+  if(drops.exp){
+    const up = addExp(drops.exp);
+    result.exp = drops.exp;
+    result.levels = up.levels;
+    result.rewards = up.rewards;
+  }
+  if(drops.gear){ addGear(drops.gear); result.gear = drops.gear; }
+  if(drops.item && ITEM_KEYS.includes(drops.item)){
+    S.items = S.items || {heal:0, time:0, ice:0};
+    if((S.items[drops.item] || 0) >= ITEM_CAP){
+      result.itemNote = "已满，换成经验";
+      result.overflowExp = distributeGearExp(ITEM_OVERFLOW_EXP);
+    } else {
+      S.items[drops.item] = (S.items[drops.item] || 0) + 1;
+      result.item = drops.item;
+    }
+  }
+  if(drops.stone){ S.stones = (S.stones || 0) + drops.stone; result.stone = drops.stone; }
+  save();
+  return result;
+}
+function openAllChests(){
+  const got = [];
+  const stage = progressStage();
+  while((S.chests || 0) > 0){
+    S.chests--;
+    const gear = rollGear(stage, false);
+    addGear(gear);
+    got.push(gear);
+  }
+  save();
+  return got;
+}
+
+// 狂暴档不改变成功率。成功之后由界面再调 fleePenalty()。
+function tryFlee(rageTier){
+  return {ok: Math.random() < FLEE_RATE, rage: rageTier || 0};
+}
+function fleePenalty(){
+  let lost = 0;
+  const pieces = [];
+  wornList().forEach(g => {
+    const before = g.exp || 0;
+    const dec = Math.min(FLEE_EXP_LOSS, before);
+    g.exp = before - dec;
+    lost += dec;
+    pieces.push({id:g.id, lv:g.lv || 1, exp:g.exp, lost:dec});
+  });
+  let removed = null;
+  if(FLEE_LOSE_BAG_ITEM){
+    const worn = new Set(wornList().map(g => g.id));
+    const bag = (S.bag || []).filter(g => g && !worn.has(g.id));
+    if(bag.length){
+      removed = bag[Math.floor(Math.random() * bag.length)];
+      removeGear(removed.id);
+    }
+  }
+  save();
+  return {lost, pieces, removed};
+}
+
+if(typeof window !== "undefined"){
+  window.gainExp = gainExp; window.expNeed = expNeed; window.addExp = addExp; window.levelReward = levelReward;
+  window.monsterDrop = monsterDrop; window.rollVictoryDrops = rollVictoryDrops; window.applyDrops = applyDrops;
+  window.gearExpNeed = gearExpNeed; window.addGearExp = addGearExp; window.canAscend = canAscend; window.ascendGear = ascendGear;
+  window.canSynth = canSynth; window.synthGear = synthGear; window.discardDrop = discardDrop; window.salvageGear = salvageGear;
+  window.openAllChests = openAllChests; window.tryFlee = tryFlee; window.fleePenalty = fleePenalty;
+  window.FLEE_RATE = FLEE_RATE; window.FLEE_EXP_LOSS = FLEE_EXP_LOSS;
+  window.DROP_CHANCE_BY_WORLD = DROP_CHANCE_BY_WORLD; window.ITEM_DROP_RATE = ITEM_DROP_RATE;
+  window.HERO_EXP_BOSS = HERO_EXP_BOSS;
+  Object.defineProperty(window, "FLEE_LOSE_BAG_ITEM", {
+    get(){ return FLEE_LOSE_BAG_ITEM; }, set(v){ FLEE_LOSE_BAG_ITEM = !!v; }, configurable:true
+  });
+}
 
 /* ================= arithmetic match (算术消除棋盘) ================= */
 function makeMatchBoard(gen, opts = {}){
