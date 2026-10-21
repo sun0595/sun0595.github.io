@@ -22,6 +22,8 @@ const V1 = 'math-hero-v1', BETA = 'math-hero-beta';
 const stars = { 'think-1': 3 }; for (const w of ['add', 'sub', 'ten']) for (let l = 0; l < 5; l++) stars[w + '-' + l] = 3; stars['add-2'] = 2;
 const SAVE = { stars, stickers: { '🐶': 3, '🐱': 2, '💎': 2 }, medals: { add: 1, sub: 1, ten: 1 }, tier: { 'add-1': 2 }, py: 0, sound: false, voice: false, world: 0 };
 // buttons, titles and panels that must stay fully on screen and out of the safe areas
+// a page (openPage) must leave at least this much height free, see shotCheck
+const SPARE = 16;
 const KEY_UI = 'button, .btn, .ibtn, .ribbon, .ttl, .wintitle, .pill, .tab, .ans, .item, .node, .wtitle, .nexthero, #bTitle, .qcard, .hint, .note, .page, .mboard, .lboard, .wview';
 
 async function newPage(view) {
@@ -42,13 +44,27 @@ async function newPage(view) {
 // screenshot + layout check: nothing scrolls, key UI stays on screen and out of the safe areas
 async function shotCheck(p, view, dir, name) {
   await p.screenshot({ path: path.join(dir, name + '.png') });
-  const bad = await p.evaluate(({ top, bottom, sel }) => {
+  const bad = await p.evaluate(({ top, bottom, sel, spare }) => {
     const W = innerWidth, H = innerHeight, out = [];
     const se = document.scrollingElement;
     if (se.scrollHeight > H + 1 || se.scrollWidth > W + 1) out.push(`document scrolls (${se.scrollWidth}x${se.scrollHeight})`);
     for (const id of ['map', 'battle']) { const s = document.getElementById(id); if (!s.hidden && s.scrollHeight > s.clientHeight + 2) out.push(`#${id} needs scrolling (${s.scrollHeight}>${s.clientHeight})`); }
-    const m = document.querySelector('.pbody');
-    if (m && m.scrollHeight > m.clientHeight + 2) out.push(`page needs scrolling (${m.scrollHeight}>${m.clientHeight})`);
+    // pages must fit with SPARE px to spare: fonts on macOS / iOS are a little taller than on Linux, so a page that only
+    // just fits here scrolls there. need = the page body's natural height (laid out once with no height limit);
+    // room = the most the body can get (the page grown to the full height of the modal, which is its max-height).
+    const md = document.getElementById('modal'), m = md && !md.hidden && md.querySelector('.pbody');
+    if (m) {
+      if (m.scrollHeight > m.clientHeight + 2) out.push(`page needs scrolling (${m.scrollHeight}>${m.clientHeight})`);
+      const pg = m.parentElement, mcs = getComputedStyle(md);
+      const room = m.clientHeight + (md.clientHeight - parseFloat(mcs.paddingTop) - parseFloat(mcs.paddingBottom) - pg.offsetHeight);
+      const keep = m.getAttribute('style'), st = m.scrollTop;
+      m.style.flex = 'none'; m.style.height = 'auto'; m.style.overflow = 'visible';
+      const need = m.offsetHeight;
+      if (keep === null) m.removeAttribute('style'); else m.setAttribute('style', keep);
+      m.scrollTop = st;
+      if (need > room - spare) out.push(`page has less than ${spare}px to spare (content ${need} > ${Math.round(room)} - ${spare})`);
+      window.__spare = Math.round(room - need);
+    }
     const bt = document.getElementById('battle');
     if (!bt.hidden) {
       const a = document.getElementById('answers').getBoundingClientRect(); if (a.bottom > H - bottom + 1) out.push(`answers bottom ${Math.round(a.bottom)} > ${H - bottom}`);
@@ -73,9 +89,10 @@ async function shotCheck(p, view, dir, name) {
       if (why.length) out.push(desc(el) + ': ' + why.join(', '));
     }
     return out;
-  }, { ...view.safe, sel: KEY_UI });
+  }, { ...view.safe, sel: KEY_UI, spare: SPARE });
   for (const x of bad) problems.push(`[${view.name}] ${name}: ${x}`);
-  console.log(bad.length ? 'BAD' : 'ok ', view.name, name);
+  const spare = await p.evaluate(() => { const v = window.__spare; window.__spare = undefined; return v; });
+  console.log(bad.length ? 'BAD' : 'ok ', view.name, name, spare === undefined ? '' : `(page spare ${spare}px)`);
 }
 
 async function playAll(view) {
@@ -462,11 +479,9 @@ async function playAll(view) {
   const ab = await p.evaluate(() => ({ hero: document.querySelector('#heroSprite .av.lay img.art')?.getAttribute('src') === __t.art('hero_base'), mon: document.querySelector('#monSprite img.art')?.getAttribute('src') === __t.art('mon_add_1') }));
   await p.evaluate(() => __t.toMap()); await tapNode(0, 14); await p.waitForTimeout(2700); await shot('32-art-boss');
   ab.boss = await p.evaluate(() => document.querySelector('#monSprite img.art')?.getAttribute('src') === __t.art('mon_add_15'));
-  // armour quality → whole look (hero_purple); a weapon picture sits in the hand (test picture; no real weapon art yet)
+  // armour quality → whole look (hero_purple); the purple sword picture sits in the hand, no shield worn → no left-hand picture
   await p.evaluate(() => {
     __t.toMap();
-    const c = document.createElement('canvas'); c.width = 40; c.height = 80; const g = c.getContext('2d'); g.fillStyle = '#ccc'; g.fillRect(16, 0, 8, 60); g.fillStyle = '#a5f'; g.fillRect(6, 56, 28, 8);
-    __t.setArt('weapon_purple', c.toDataURL('image/png'));
     equipGear({ id: 'art_a', slot: 'armor', quality: 'purple', name: '紫甲', e: '🥋', affixes: [{ id: 'atk', val: 1 }] });
     equipGear({ id: 'art_w', slot: 'weapon', quality: 'purple', name: '紫剑', e: '🗡️', affixes: [{ id: 'atk', val: 1 }] });
     __t.openBag('armor');
@@ -475,13 +490,71 @@ async function playAll(view) {
   Object.assign(ab, await p.evaluate(() => ({ purple: document.querySelector('.bagav .av.lay img.art')?.getAttribute('src') === __t.art('hero_purple'), hand: !!document.querySelector('.bagav .av.lay .hand.rh'), noShield: !document.querySelector('.bagav .hand.lh') })));
   await tap('#pgBack');
   if (!ab.hero || !ab.mon || !ab.boss || !ab.purple || !ab.hand || !ab.noShield) problems.push(`[${view.name}] hero / monster art not used as expected: ${JSON.stringify(ab)}`);
+  // 背包：武器、盾牌的图标用原画 weapon_<品质> / shield_<品质>；头盔、盔甲仍是 3D 图
+  await p.evaluate(() => {
+    for (const q of ['white', 'blue', 'pink', 'purple', 'orange', 'red']) {
+      addGear({ id: 'aw_' + q, slot: 'weapon', quality: q, name: '原画剑·' + q, e: '🗡️', lv: 1, exp: 0, affixes: [{ id: 'atk', val: 1 }] });
+      addGear({ id: 'as_' + q, slot: 'shield', quality: q, name: '原画盾·' + q, e: '🛡️', lv: 1, exp: 0, affixes: [{ id: 'shield', val: 1 }] });
+    }
+    equipGear('aw_orange'); equipGear('as_orange'); __t.openBag('weapon');
+  });
+  await p.waitForTimeout(400); await shot('35-art-bag-weapons');
+  const bagArt = slot => p.evaluate(slot => {
+    const bad = [];
+    for (const q of ['white', 'blue', 'pink', 'purple', 'orange', 'red']) {
+      const t = document.querySelector(`.gt[data-id="a${slot[0]}_${q}"] img`);
+      if (t && t.getAttribute('src') !== __t.art(slot + '_' + q)) bad.push(q);
+    }
+    const card = document.querySelector('.gcard .gicon img'); if (!card || !card.classList.contains('art')) bad.push('card');
+    return bad;
+  }, slot);
+  const bw = await bagArt('weapon');
+  await tap('.tab[data-s="shield"]'); await p.waitForTimeout(300); await shot('36-art-bag-shields');
+  const bs = await bagArt('shield');
+  await tap('.tab[data-s="helmet"]'); await p.waitForTimeout(200);
+  const hArt = await p.evaluate(() => !!document.querySelector('.ggrid img.art, .gcard .gicon img.art'));
+  if (bw.length || bs.length || hArt) problems.push(`[${view.name}] bag icons: weapons / shields should use their painted pictures, helmets the 3D icon: ${JSON.stringify({ bw, bs, hArt })}`);
+  await tap('#pgBack');
+  // 6 套盔甲各一张战斗图：整套外观换成 hero_<品质>，同品质的剑和盾拿在两只手上
+  for (const q of ['white', 'blue', 'pink', 'purple', 'orange', 'red']) {
+    await p.evaluate(q => { __t.toMap(); equipGear({ id: 'aa_' + q, slot: 'armor', quality: q, name: '原画甲·' + q, e: '🥋', affixes: [{ id: 'atk', val: 1 }] }); equipGear('aw_' + q); equipGear('as_' + q); }, q);
+    await tapNode(0, 0); await p.waitForTimeout(1900); await shot('37-art-armor-' + q);
+    const ar = await p.evaluate(q => { const av = document.querySelector('#heroSprite .av.lay'); return { look: av?.querySelector('img.art')?.getAttribute('src') === __t.art('hero_' + q), rh: av?.querySelector('.hand.rh')?.getAttribute('src') === __t.art('weapon_' + q), lh: av?.querySelector('.hand.lh')?.getAttribute('src') === __t.art('shield_' + q) }; }, q);
+    if (!ar.look || !ar.rh || !ar.lh) problems.push(`[${view.name}] ${q} armour in battle: whole look + sword + shield pictures expected: ${JSON.stringify(ar)}`);
+  }
+  await p.evaluate(() => { for (const k of ['weapon', 'helmet', 'armor', 'shield']) __t.S.equipped[k] = null; for (const g of [...__t.S.bag]) if (/^a[wsa]_/.test(g.id)) removeGear(g.id); equipGear('art_a'); equipGear('art_w'); __t.toMap(); });   // back in purple for the broken-art check
+  // 4 个世界 Boss 的原画（减法洞穴、凑十火山、冰雪城堡、整十草原）
+  for (const [w, id] of [[1, 'sub'], [2, 'ten'], [3, 'ice'], [4, 'tens']]) {
+    await p.evaluate(() => __t.toMap()); await tapNode(w, 14); await p.waitForTimeout(2700); await shot('38-art-boss-' + id);
+    if (!(await p.evaluate(id => document.querySelector('#monSprite img.art')?.getAttribute('src') === __t.art('mon_' + id + '_15'), id))) problems.push(`[${view.name}] ${id} Boss should show its painted picture`);
+  }
+  await p.evaluate(() => __t.toMap());
+  // 地图：雪山段沿原画小路排 15 关、Boss 在顶端；加法森林 15 只怪兽全是原画（全部关卡开放时）
+  await p.evaluate(() => { __t.S.openAll = true; __t.renderMap(); });
+  const roadCheck = w => p.evaluate(w => {
+    const ns = [...Array(15)].map((_, l) => document.querySelector(`.node[data-w="${w}"][data-l="${l}"]`).getBoundingClientRect());
+    let gap = 1e9; for (let l = 1; l < 15; l++) gap = Math.min(gap, Math.hypot(ns[l].x - ns[l - 1].x, ns[l].y - ns[l - 1].y));
+    const box = document.getElementById('lscroll').getBoundingClientRect();
+    return { band: document.querySelector(`.band[data-w="${w}"]`).classList.contains('art'), gap: Math.round(gap), bossTop: ns[14].top <= Math.min(...ns.map(r => r.top)) + 1,
+      inside: ns.every(r => r.left >= box.left - 1 && r.right <= box.right + 1), art: [...Array(15)].map((_, l) => !!document.querySelector(`.node[data-w="${w}"][data-l="${l}"] img.art`)).filter(Boolean).length };
+  }, w);
+  const showBand = async (w, part) => { await p.evaluate(([w, part]) => { const b = document.querySelector(`.band[data-w="${w}"]`), s = document.getElementById('lscroll'); s.scrollTop = b.offsetTop + b.offsetHeight * part - s.clientHeight / 2; }, [w, part]); await p.waitForTimeout(300); };
+  await showBand(5, 0.62); await shot('39-art-map-snow');
+  await showBand(5, 0.3); await shot('39b-art-map-snow-top');
+  const snow = await roadCheck(5);
+  if (!snow.band || snow.gap < 52 || !snow.bossTop || !snow.inside) problems.push(`[${view.name}] 雪山 levels should follow the painted road, Boss on top, all on screen: ${JSON.stringify(snow)}`);
+  await showBand(0, 0.62); await shot('40-art-map-forest-all');
+  await showBand(0, 0.3); await shot('40b-art-map-forest-all-top');
+  const forest = await roadCheck(0);
+  if (forest.art !== 15) problems.push(`[${view.name}] 加法森林 should show all 15 monster pictures: ${JSON.stringify(forest)}`);
+  await p.evaluate(() => { __t.S.openAll = false; __t.renderMap(); });
   // a broken picture must fall back to the 3D emoji instead of leaving a blank (monster, hero, map band); then restore
-  const keep = await p.evaluate(() => Object.fromEntries(['map_add', 'hero_purple', 'mon_add_1'].map(k => [k, __t.art(k)])));
+  const keep = await p.evaluate(() => Object.fromEntries(['map_add', 'hero_purple', 'mon_add_1', 'weapon_purple'].map(k => [k, __t.art(k)])));
   await p.evaluate(() => { for (const k of ['map_add', 'hero_purple', 'mon_add_1', 'weapon_purple']) __t.setArt(k, 'data:image/png;base64,AAAA'); __t.toMap(); });
   await tapNode(0, 0); await p.waitForTimeout(1900); await shot('29c-art-broken');
   const brk = await p.evaluate(() => ({ art: document.querySelectorAll('#heroSprite img.art, #heroSprite .hand, #monSprite img.art').length, mon: !!document.querySelector('#monSprite img.ei'), hero: !!document.querySelector('#heroSprite img.ei'), nodeArt: !!document.querySelector('.node[data-w="0"][data-l="0"] img.art'), band: document.querySelector('.band[data-w="0"]').style.backgroundImage.includes('svg') }));
   if (brk.art || !brk.mon || !brk.hero || brk.nodeArt || !brk.band) problems.push(`[${view.name}] broken art should fall back to the 3D emoji / painted map: ${JSON.stringify(brk)}`);
-  await p.evaluate(keep => { for (const k in keep) __t.setArt(k, keep[k]); __t.setArt('weapon_purple', null); for (const k of ['weapon', 'helmet', 'armor', 'shield']) __t.S.equipped[k] = null; __t.toMap(); }, keep);
+  await p.evaluate(keep => { for (const k in keep) __t.setArt(k, keep[k]); for (const k of ['weapon', 'helmet', 'armor', 'shield']) __t.S.equipped[k] = null; __t.toMap(); }, keep);
   // a world without any art keeps the drawn island
   if (await p.evaluate(() => document.querySelector('.band[data-w="1"]').classList.contains('art') || !document.querySelector('.band[data-w="1"] .cliff'))) problems.push(`[${view.name}] worlds without map art should keep the drawn island`);
   if (await p.evaluate(k => localStorage.getItem(k), BETA) !== null) problems.push(`[${view.name}] 正式版 wrote the 试玩版 save "${BETA}"`);
