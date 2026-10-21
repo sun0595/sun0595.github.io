@@ -1,7 +1,12 @@
-// Smoke test: plays through every screen on a small phone (375x667) and fails on
+// Smoke test: plays through every screen twice and fails on
 //   - any JS error, any request to the network (the game must be 100% offline),
-//   - any page whose content needs scrolling (everything must fit one screen).
-// Screenshots go to build/shots/ — look at them after UI changes.
+//   - any page whose content needs scrolling (everything must fit one screen),
+//   - any button / title / panel that sticks out of the screen or into the iPhone safe areas.
+// Round 1: 375x667 (iPhone SE, no safe areas)              -> build/shots/375/
+// Round 2: 393x852 @3x with a simulated Dynamic Island (59px) and home bar (34px)
+//          (CSS override of --sat/--sab, which the layout uses instead of env())  -> build/shots/393/
+// Then the 试玩版 (build/test-beta.html) is checked: it copies the 正式版 save once and never writes it.
+// Look at the screenshots after UI changes.
 //
 //   python3 tools/build.py --test && node tools/smoke_test.mjs
 // Needs: npm i playwright  (and `npx playwright install chromium`, or set CHROMIUM_PATH)
@@ -10,46 +15,133 @@ import { mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const SHOTS = path.join(ROOT, 'build', 'shots'); mkdirSync(SHOTS, { recursive: true });
 const b = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
-const ctx = await b.newContext({ viewport: { width: 375, height: 667 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
 const problems = [];
-await ctx.route(/^https?:/, r => { problems.push('network request: ' + r.request().url()); r.abort(); });
-const p = await ctx.newPage();
-p.on('pageerror', e => problems.push('JS error: ' + e.message));
-await p.goto('file://' + path.join(ROOT, 'build', 'test.html'));
+const V1 = 'math-hero-v1', BETA = 'math-hero-beta';
 const stars = {}; for (const w of ['add', 'sub', 'ten']) for (let l = 0; l < 5; l++) stars[w + '-' + l] = 3;
-await p.evaluate(s => localStorage.setItem('math-hero-v1', JSON.stringify({ stars: s, stickers: { '🐶': 3, '🐱': 2, '💎': 2 }, medals: { add: 1, sub: 1, ten: 1 }, tier: { 'add-1': 2 }, py: 0, sound: false, voice: false, world: 0 })), stars);
-await p.reload(); await p.waitForTimeout(600);
-const shot = async name => {
-  await p.screenshot({ path: path.join(SHOTS, name + '.png') });
-  const o = await p.evaluate(() => { const m = document.querySelector('.pbody'); return m && m.scrollHeight > m.clientHeight + 2 ? m.scrollHeight + '>' + m.clientHeight : null; });
-  const h = await p.evaluate(() => { const bt = document.getElementById('battle'); if (bt.hidden) return null; const a = document.getElementById('answers').getBoundingClientRect(); return a.bottom > innerHeight + 1 ? 'answers bottom ' + Math.round(a.bottom) + ' > ' + innerHeight : null; });
-  if (o) problems.push(name + ': page needs scrolling (' + o + ')');
-  if (h) problems.push(name + ': ' + h);
-  console.log('ok', name);
-};
-const tap = sel => p.click(sel, { force: true });
-const winLevel = async () => { for (let i = 0; i < 30; i++) { if (await p.isVisible('#modal')) return; const a = await p.evaluate(() => { const B = __t.B; if (!B || !B.q || B.busy) return null; B.hp = Math.min(B.hp, 1); return String(B.q.answer); }); if (a) await tap(`.ans[data-v="${a}"]`).catch(() => {}); await p.waitForTimeout(450); } };
-await shot('01-map');
-await tap('#wNext'); await p.waitForTimeout(300); await shot('02-map-world2'); await tap('#wPrev');
-await tap('.node[data-l="1"]'); await p.waitForTimeout(1700); await shot('03-battle');
-await p.evaluate(() => __t.useItem('ice')); await p.waitForTimeout(800); await shot('04-freeze');
-const wrong = await p.evaluate(() => { const a = String(__t.B.q.answer); return [...document.querySelectorAll('.ans')].map(b => b.dataset.v).find(v => v !== a); });
-await tap(`.ans[data-v="${wrong}"]`); await p.waitForTimeout(900); await shot('05-hint');
-await winLevel(); await p.waitForTimeout(1500); await shot('06-win');
-await tap('#chest'); await p.waitForTimeout(1200); await shot('07-chest');
-await tap('#rMap'); await p.waitForTimeout(300);
-await tap('#albumBtn'); await p.waitForTimeout(500); await shot('08-album');
-await tap('.tab[data-t="craft"]'); await p.waitForTimeout(300); await shot('09-craft');
-await tap('#pgBack'); await tap('#heroBtn'); await p.waitForTimeout(300); await shot('10-heroes');
-await tap('#pgBack'); await tap('#parentBtn'); await p.waitForTimeout(300); await shot('11-parent');
-await tap('.tab[data-t="rep"]'); await shot('12-report'); await tap('#pgBack');
-await p.evaluate(() => { const s = JSON.parse(localStorage.getItem('math-hero-v1')); s.openAll = true; s.world = 4; localStorage.setItem('math-hero-v1', JSON.stringify(s)); });
-await p.reload(); await p.waitForTimeout(500);
-await tap('.node[data-l="4"]'); await p.waitForTimeout(2700); await shot('13-word-boss');
-await tap('#hintBtn'); await p.waitForTimeout(300); await tap('#stNext').catch(() => {}); await tap('#stNext').catch(() => {}); await p.waitForTimeout(300); await shot('14-word-hint');
-await tap('#bBack'); await p.evaluate(() => __t.showRunReward({ run: { mode: 'epic' }, firstMedal: true })); await p.waitForTimeout(400); await shot('15-run-reward');
+const SAVE = { stars, stickers: { '🐶': 3, '🐱': 2, '💎': 2 }, medals: { add: 1, sub: 1, ten: 1 }, tier: { 'add-1': 2 }, py: 0, sound: false, voice: false, world: 0 };
+// buttons, titles and panels that must stay fully on screen and out of the safe areas
+const KEY_UI = 'button, .btn, .ibtn, .ribbon, .ttl, .wintitle, .pill, .tab, .ans, .item, .node, .wsub, .nexthero, #bTitle, .qcard, .hint, .note, .page';
+
+async function newPage(view) {
+  const ctx = await b.newContext({ viewport: view.viewport, deviceScaleFactor: view.dpr, isMobile: true, hasTouch: true });
+  await ctx.route(/^https?:/, r => { problems.push(`[${view.name}] network request: ` + r.request().url()); r.abort(); });
+  if (view.safe.top || view.safe.bottom) {
+    // simulate a notched iPhone: the layout reads the safe areas from these variables
+    const css = `:root{--sat:${view.safe.top}px!important;--sab:${view.safe.bottom}px!important}`;
+    await ctx.addInitScript(css => document.addEventListener('DOMContentLoaded', () => {
+      const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
+    }), css);
+  }
+  const p = await ctx.newPage();
+  p.on('pageerror', e => problems.push(`[${view.name}] JS error: ` + e.message));
+  return { ctx, p };
+}
+
+async function playAll(view) {
+  const SHOTS = path.join(ROOT, 'build', 'shots', view.name); mkdirSync(SHOTS, { recursive: true });
+  const { ctx, p } = await newPage(view);
+  await p.goto('file://' + path.join(ROOT, 'build', 'test.html'));
+  await p.evaluate(([k, s]) => localStorage.setItem(k, JSON.stringify(s)), [V1, SAVE]);
+  await p.reload(); await p.waitForTimeout(600);
+  const shot = async name => {
+    await p.screenshot({ path: path.join(SHOTS, name + '.png') });
+    const bad = await p.evaluate(({ top, bottom, sel }) => {
+      const W = innerWidth, H = innerHeight, out = [];
+      const se = document.scrollingElement;
+      if (se.scrollHeight > H + 1 || se.scrollWidth > W + 1) out.push(`document scrolls (${se.scrollWidth}x${se.scrollHeight})`);
+      for (const id of ['map', 'battle']) { const s = document.getElementById(id); if (!s.hidden && s.scrollHeight > s.clientHeight + 2) out.push(`#${id} needs scrolling (${s.scrollHeight}>${s.clientHeight})`); }
+      const m = document.querySelector('.pbody');
+      if (m && m.scrollHeight > m.clientHeight + 2) out.push(`page needs scrolling (${m.scrollHeight}>${m.clientHeight})`);
+      const bt = document.getElementById('battle');
+      if (!bt.hidden) { const a = document.getElementById('answers').getBoundingClientRect(); if (a.bottom > H - bottom + 1) out.push(`answers bottom ${Math.round(a.bottom)} > ${H - bottom}`); }
+      const desc = el => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\s+/).join('.') : '') + (el.textContent.trim() ? ` "${el.textContent.trim().slice(0, 12)}"` : '');
+      for (const el of document.querySelectorAll(sel)) {
+        if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) continue;
+        const why = [];
+        if (r.top < top - 0.5) why.push(`top ${Math.round(r.top)} < ${top}`);
+        if (r.bottom > H - bottom + 0.5) why.push(`bottom ${Math.round(r.bottom)} > ${H - bottom}`);
+        if (r.left < -0.5) why.push(`left ${Math.round(r.left)} < 0`);
+        if (r.right > W + 0.5) why.push(`right ${Math.round(r.right)} > ${W}`);
+        if (why.length) out.push(desc(el) + ': ' + why.join(', '));
+      }
+      return out;
+    }, { ...view.safe, sel: KEY_UI });
+    for (const x of bad) problems.push(`[${view.name}] ${name}: ${x}`);
+    console.log(bad.length ? 'BAD' : 'ok ', view.name, name);
+  };
+  const tap = sel => p.click(sel, { force: true });
+  const winLevel = async () => { for (let i = 0; i < 30; i++) { if (await p.isVisible('#modal')) return; const a = await p.evaluate(() => { const B = __t.B; if (!B || !B.q || B.busy) return null; B.hp = Math.min(B.hp, 1); return String(B.q.answer); }); if (a) await tap(`.ans[data-v="${a}"]`).catch(() => {}); await p.waitForTimeout(450); } };
+  await shot('01-map');
+  await tap('#wNext'); await p.waitForTimeout(300); await shot('02-map-world2'); await tap('#wPrev');
+  await tap('.node[data-l="1"]'); await p.waitForTimeout(1700); await shot('03-battle');
+  await p.evaluate(() => __t.useItem('ice')); await p.waitForTimeout(800); await shot('04-freeze');
+  const wrong = await p.evaluate(() => { const a = String(__t.B.q.answer); return [...document.querySelectorAll('.ans')].map(b => b.dataset.v).find(v => v !== a); });
+  await tap(`.ans[data-v="${wrong}"]`); await p.waitForTimeout(900); await shot('05-hint');
+  await winLevel(); await p.waitForTimeout(1500); await shot('06-win');
+  await tap('#chest'); await p.waitForTimeout(1200); await shot('07-chest');
+  await tap('#rMap'); await p.waitForTimeout(300);
+  await tap('#albumBtn'); await p.waitForTimeout(500); await shot('08-album');
+  await tap('.tab[data-t="craft"]'); await p.waitForTimeout(300); await shot('09-craft');
+  await tap('#pgBack'); await tap('#heroBtn'); await p.waitForTimeout(300); await shot('10-heroes');
+  await tap('#pgBack'); await tap('#parentBtn'); await p.waitForTimeout(300); await shot('11-parent');
+  await tap('.tab[data-t="rep"]'); await shot('12-report'); await tap('#pgBack');
+  await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.openAll = true; s.world = 4; localStorage.setItem(k, JSON.stringify(s)); }, V1);
+  await p.reload(); await p.waitForTimeout(500);
+  await tap('.node[data-l="4"]'); await p.waitForTimeout(2700); await shot('13-word-boss');
+  await tap('#hintBtn'); await p.waitForTimeout(300); await tap('#stNext').catch(() => {}); await tap('#stNext').catch(() => {}); await p.waitForTimeout(300); await shot('14-word-hint');
+  await tap('#bBack'); await p.evaluate(() => __t.showRunReward({ run: { mode: 'epic' }, firstMedal: true })); await p.waitForTimeout(400); await shot('15-run-reward');
+  if (await p.evaluate(k => localStorage.getItem(k), BETA) !== null) problems.push(`[${view.name}] 正式版 wrote the 试玩版 save "${BETA}"`);
+  await ctx.close();
+}
+
+// 试玩版: first run copies the 正式版 save; afterwards only "math-hero-beta" is read/written
+async function betaCheck() {
+  const view = { name: 'beta', viewport: { width: 393, height: 852 }, dpr: 3, safe: { top: 59, bottom: 34 } };
+  const SHOTS = path.join(ROOT, 'build', 'shots', '393'); mkdirSync(SHOTS, { recursive: true });
+  const { ctx, p } = await newPage(view);
+  const fail = msg => problems.push('[beta] ' + msg);
+  await p.goto('file://' + path.join(ROOT, 'build', 'test-beta.html'));
+  // a real-looking 正式版 save, pretty-printed so that even a re-serialisation would be noticed
+  const v1 = JSON.stringify({ ...SAVE, stats: {}, mistakes: [] }, null, 1);
+  await p.evaluate(([k1, kb, v]) => { localStorage.clear(); localStorage.setItem(k1, v); }, [V1, BETA, v1]);
+  await p.reload(); await p.waitForTimeout(600);
+  if (!(await p.title()).includes('试玩版')) fail('title does not say 试玩版: ' + await p.title());
+  if (!(await p.isVisible('#betaTag'))) fail('「试玩版」 tag not shown on the map');
+  await p.screenshot({ path: path.join(SHOTS, '16-beta-map.png') });
+  const first = await p.evaluate(k => localStorage.getItem(k), BETA);
+  let fs = null; try { fs = JSON.parse(first); } catch (e) {}
+  if (!fs || fs.stars['sub-3'] !== 3 || fs.stickers['🐶'] !== 3) fail('first run did not copy the 正式版 save into ' + BETA);
+  // play one level
+  await p.click('.node[data-l="0"]', { force: true }); await p.waitForTimeout(1700);
+  for (let i = 0; i < 30; i++) {
+    if (await p.isVisible('#modal')) break;
+    const a = await p.evaluate(() => { const B = __t.B; if (!B || !B.q || B.busy) return null; B.hp = Math.min(B.hp, 1); return String(B.q.answer); });
+    if (a) await p.click(`.ans[data-v="${a}"]`, { force: true }).catch(() => {});
+    await p.waitForTimeout(450);
+  }
+  await p.waitForTimeout(1500);
+  const after = await p.evaluate(([k1, kb]) => [localStorage.getItem(k1), localStorage.getItem(kb)], [V1, BETA]);
+  if (after[0] !== v1) fail(`${V1} was changed by the 试玩版`);
+  let bs = null; try { bs = JSON.parse(after[1]); } catch (e) { fail(`${BETA} missing or not JSON`); }
+  if (bs) {
+    if (bs.stars['sub-3'] !== 3 || bs.stickers['🐶'] !== 3) fail(`${BETA} lacks the copied 正式版 progress`);
+    if (after[1] === first) fail(`${BETA} was not updated after playing a level`);
+  }
+  // reopening must not copy again (the 试玩版 keeps its own progress)
+  await p.reload(); await p.waitForTimeout(500);
+  const again = await p.evaluate(([k1, kb]) => [localStorage.getItem(k1), localStorage.getItem(kb)], [V1, BETA]);
+  if (again[0] !== v1) fail(`${V1} was changed after reopening the 试玩版`);
+  if (again[1] !== after[1]) fail(`${BETA} was overwritten on reopen`);
+  console.log('ok ', 'beta save isolation');
+  await ctx.close();
+}
+
+await playAll({ name: '375', viewport: { width: 375, height: 667 }, dpr: 2, safe: { top: 0, bottom: 0 } });
+await playAll({ name: '393', viewport: { width: 393, height: 852 }, dpr: 3, safe: { top: 59, bottom: 34 } });
+await betaCheck();
 await b.close();
 if (problems.length) { console.error('\nFAILED:\n- ' + problems.join('\n- ')); process.exit(1); }
-console.log('\nALL GOOD — screenshots in build/shots/');
+console.log('\nALL GOOD — screenshots in build/shots/375/ and build/shots/393/');
