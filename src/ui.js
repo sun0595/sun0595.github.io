@@ -377,8 +377,8 @@ function startLevel(w,l,run){
   const diff = run ? 0 : diffOf(w,l), rage = rageLevel();
   const maxH = run ? 5 : (L.boss ? 5 : 3);
   const h = hero(), gs = gearStats(S.equipped);
-  // 消除 / 连连看：怪兽血量 = 要配的对数（每配对一对打 1 滴），配完就赢
-  const hp = mode==="match" ? 6 : mode==="link" ? LINK_N : L.hp + 2*diff;
+  // 消除 / 连连看：怪兽血量固定（BOARD_HP），连击打得快就能提前打倒；慢慢配完最后一对也一定赢
+  const hp = BOARD_HP[mode] || L.hp + 2*diff;
   B = {w,l,W:Wd,L,h,mode,board:null,sel:null,diff,run:run||null,hp,maxHp:hp,rage,dmg:RAGE[rage].dmg,maxH,hearts:run?run.hearts:maxH,combo:0,q:null,busy:true,charge:0,over:false,recent:[],enraged:false,hintOpen:false,step:0,lastTick:0,wrongThisQ:false,
        gs, shield:(h.shield||0)+gs.shield, lucky:(h.lucky||0)+gs.lucky, frozenUntil:0};
   const cur = B, bt = $("battle");
@@ -443,6 +443,13 @@ function drawHP(){
 const SLOW_CAP = 60, CRIT_CAP = 60;
 // 消除、连连看是整盘限时（狂暴档按比例缩短）；超时怪兽打一下，计时重来
 const BOARD_TIME = {match:60, link:45}, LINK_N = 4;
+const BOARD_HP = {match:10, link:6};
+/* 消除 / 连连看的快速连击（时间窗口可调）：上一对配成后
+   - COMBO_FAST 秒内又配成：闪电连击，这一下 +2（装备暴击率还有机会再 +1）
+   - COMBO_WINDOW 秒内配成：连击数 +1，伤害 = 1 + floor(连击数 / 2)
+   - 超过 COMBO_WINDOW 秒或点错：连击归零，伤害回到 1
+   装备攻击仍不加到这里。 */
+const COMBO_FAST = 1.0, COMBO_WINDOW = 2.5;
 function qTime(){
   // fixed 15 s per question (word problems 40 s), shortened by the day's rage level
   const t = RAGE[B.rage].t;
@@ -640,17 +647,17 @@ function tint(col){ const t = $("tint"); t.style.setProperty("--tc", col); resta
    消除 / 连连看（board）每配对一对固定打 1 滴。 */
 const atkBonus = () => Math.floor(B.gs.atk/3);
 const hitCap = () => Math.max(1, Math.floor(B.maxHp/4));
-function heroAttack(board){
+function heroAttack(board){   // board = {dmg, crit} for 消除 / 连连看
   const cur = B, h = B.h;
   const gs = B.gs;
-  const crit = !board && (B.combo >= (h.critAt||3) || Math.random()*100 < Math.min(CRIT_CAP, gs.critRate));
-  const dmg = board ? 1 : Math.min(B.hp, hitCap(), crit ? (h.critDmg||2)+(goldAura()?1:0)+gs.critDmg+atkBonus() : 1+atkBonus());
+  const crit = board ? !!board.crit : (B.combo >= (h.critAt||3) || Math.random()*100 < Math.min(CRIT_CAP, gs.critRate));
+  const dmg = board ? board.dmg : Math.min(B.hp, hitCap(), crit ? (h.critDmg||2)+(goldAura()?1:0)+gs.critDmg+atkBonus() : 1+atkBonus());
   crit ? sfx.crit() : sfx.right();
   play($("heroSprite"),"attack");
   const shot = document.createElement("span"); shot.className = "shot"; shot.innerHTML = img(h.shot);
   shot.style.setProperty("--sc", h.col); if(crit) shot.style.transform = "scale(1.3)";
   $("arena").appendChild(shot);
-  if(B.combo>=2) setCombo(crit ? "连击 ×"+B.combo+" 暴击！" : "连击 ×"+B.combo);
+  if(!board && B.combo>=2) setCombo(crit ? "连击 ×"+B.combo+" 暴击！" : "连击 ×"+B.combo);
   setTimeout(()=>{
     shot.remove();
     if(B!==cur || B.over) return;   // level already won (e.g. last pairs tapped fast): don't hit or win() again
@@ -658,7 +665,7 @@ function heroAttack(board){
     fxAt(h.fx, crit); tint(h.col);
     popAt("mon"+(crit?" big":""), "-"+dmg);
     if(crit){ burst(8,[h.fx,"✨"]); restart($("battle"),"quake"); }
-    B.hp -= dmg; drawHP();
+    B.hp = Math.max(0, B.hp - dmg); drawHP();
     // 神龙 heals 1 every h.heal combo; gear 💖 heals gs.comboHeal every 5 combo; both add up
     const heal = (h.heal && B.combo>0 && B.combo%h.heal===0 ? 1 : 0) + (gs.comboHeal && B.combo>0 && B.combo%5===0 ? gs.comboHeal : 0);
     if(heal && B.hearts<B.maxH){
@@ -716,7 +723,7 @@ function monsterAttack(reason){
 // 连连看：makeLinkBoard / linkPick / linkDone（logic.js），字对取自连连看题库 LLK_SETS（按世界往后翻课本）。
 const linkPairs = w => llkPairs(w, LINK_N);
 function startBoard(){
-  B.charge = 0; B.lastTick = 0; B.sel = null;
+  B.charge = 0; B.lastTick = 0; B.sel = null; B.bcombo = 0; B.lastPair = -1e9;
   // speak = the board's one-line instruction, so the 🔊 button repeats it
   if(B.mode==="match"){
     const layers = B.l >= 7 ? 2 : 1;
@@ -767,14 +774,21 @@ function drawLinks(){
   }).join("");
 }
 function boardRight(){
-  B.combo++;
+  const now = performance.now(), dt = (now - B.lastPair)/1000; B.lastPair = now;
+  const fast = dt <= COMBO_FAST;
+  B.bcombo = dt <= COMBO_WINDOW ? B.bcombo+1 : 0;
+  let dmg = 1 + Math.floor(B.bcombo/2) + (fast ? 2 + (Math.random()*100 < Math.min(CRIT_CAP, B.gs.critRate) ? 1 : 0) : 0);
+  const cleared = B.mode==="match" ? !(B.board.cards || B.board).length : linkDone(B.board);
+  if(cleared) dmg = Math.max(dmg, B.hp);   // last pair: always the finishing blow
+  B.lastHit = dmg; B.combo = B.bcombo + 1;
+  if(B.bcombo>0){ setCombo((fast ? "⚡闪电连击 ×" : "连击 ×")+(B.bcombo+1)); if(fast) restart($("battle"),"quake"); }
   const st = S.stats[B.W.id] || (S.stats[B.W.id]={r:0,w:0}); st.r++; save();
-  heroAttack(true);
+  heroAttack({dmg, crit:fast});
 }
 function boardWrong(els){
   const cur = B;
   els.forEach(el=>{ if(el){ el.classList.remove("shake"); void el.offsetWidth; el.classList.add("shake","bad"); } });
-  sfx.wrong(); B.combo = 0; $("combo").textContent = "";
+  sfx.wrong(); B.combo = 0; B.bcombo = 0; B.lastPair = -1e9; $("combo").textContent = "";
   const st = S.stats[B.W.id] || (S.stats[B.W.id]={r:0,w:0}); st.w++; save();
   setTimeout(()=>els.forEach(el=>{ if(el && B===cur) el.classList.remove("shake","bad"); }), 600);
   if(B.lucky>0){ B.lucky--; B.charge = 0; B.lastTick = 0; sfx.shield(); toast("🍀","幸运光环！不扣心"); }

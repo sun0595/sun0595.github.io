@@ -219,7 +219,7 @@ async function playAll(view) {
   const playMatch = async (name) => {
     for (let i = 0; i < 20; i++) {
       if (await p.isVisible('#modal')) break;
-      if (await p.evaluate(() => __t.B.busy)) { await p.waitForTimeout(300); continue; }
+      if (await p.evaluate(() => __t.B.over)) { await p.waitForTimeout(300); continue; }
       const cs = await unc(); const pair = cs.find((c, j) => cs.some((d, k) => k !== j && d.v === c.v)); if (!pair) break;
       const mate = cs.find(d => d.id !== pair.id && d.v === pair.v);
       await tap(`.mcard[data-id="${pair.id}"]`); await tap(`.mcard[data-id="${mate.id}"]`); await p.waitForTimeout(700);
@@ -235,18 +235,35 @@ async function playAll(view) {
   const mLost = mw.h - await p.evaluate(() => __t.B.hearts);
   if (mLost !== mw.d) problems.push(`[${view.name}] a wrong pair in 算术消除 should cost ${mw.d} heart(s), cost ${mLost}`);
   await playMatch('24c-match-pair');
-  // 手感：配对成功后马上点下一对也能配上（动画不锁输入）；最后两对快速连点只结算一次胜利
+  // 手感：配对成功后马上点下一对也能配上（动画不锁输入）
+  // 快速连击：0.5 秒内连着配成两对，第二下 ≥3；隔 3 秒再配，伤害回到 1；血量打到 0 就提前胜利，快速连点只结算一次
   await p.evaluate(() => __t.startLevel(0, 3)); await p.waitForTimeout(1800);
+  await p.evaluate(() => { __t.B.hp = __t.B.maxHp = 99; });
   const prs = await p.evaluate(() => { const by = {}; (__t.B.board.cards || __t.B.board).forEach(c => (by[c.value] = by[c.value] || []).push(c.id)); return Object.values(by); });
   const tapPair = async pr => { await tap(`.mcard[data-id="${pr[0]}"]`); await tap(`.mcard[data-id="${pr[1]}"]`); };
   await tapPair(prs[0]); await p.waitForTimeout(50); await tapPair(prs[1]); await p.waitForTimeout(80);
   const left = await p.evaluate(() => (__t.B.board.cards || __t.B.board).length);
   if (left !== 8) problems.push(`[${view.name}] a second pair tapped 50 ms after the first should match too (cards left ${left}, expected 8)`);
-  await tapPair(prs[2]); await p.waitForTimeout(50); await tapPair(prs[3]); await p.waitForTimeout(50);
-  const before = await p.evaluate(() => ({ n: __t.S.daily.n, hp: __t.B.hp }));
-  await tapPair(prs[4]); await tapPair(prs[5]); await p.waitForTimeout(3000);
+  await shot('24d-match-lightning');
+  const fastHit = await p.evaluate(() => ({ d: __t.B.lastHit, txt: document.getElementById('combo').textContent }));
+  if (!(fastHit.d >= 3) || !fastHit.txt.includes('闪电连击')) problems.push(`[${view.name}] two pairs within 0.5 s should be a 闪电连击 hitting ≥3: ${JSON.stringify(fastHit)}`);
+  await p.waitForTimeout(3000); await tapPair(prs[2]); await p.waitForTimeout(100);
+  const slowHit = await p.evaluate(() => __t.B.lastHit);
+  if (slowHit !== 1) problems.push(`[${view.name}] a pair 3 s later should hit 1 again, hit ${slowHit}`);
+  await p.waitForTimeout(500);
+  await p.evaluate(() => { __t.B.hp = 2; });
+  const before = await p.evaluate(() => __t.S.daily.n);
+  await tapPair(prs[3]); await tapPair(prs[4]); await tapPair(prs[5]); await p.waitForTimeout(3000);
   const fin = await p.evaluate(() => ({ n: __t.S.daily.n, hp: __t.B.hp, over: __t.B.over, pages: document.querySelectorAll('#modal .page').length, cards: (__t.B.board.cards || __t.B.board).length }));
-  if (fin.n !== before.n + 1 || !fin.over || fin.pages !== 1 || fin.hp !== 0 || fin.cards !== 0) problems.push(`[${view.name}] tapping the last two pairs fast must win exactly once: ${JSON.stringify({ before, fin })}`);
+  if (fin.n !== before + 1 || !fin.over || fin.pages !== 1 || fin.hp !== 0) problems.push(`[${view.name}] tapping the last pairs fast must win exactly once: ${JSON.stringify({ before, fin })}`);
+  await p.evaluate(() => { document.getElementById('modal').hidden = true; __t.toMap(); });
+  // monster at 0 HP wins at once, the rest of the cards don't have to be cleared
+  await p.evaluate(() => __t.startLevel(0, 5)); await p.waitForTimeout(1800);
+  await p.evaluate(() => { __t.B.hp = 1; });
+  const one = await p.evaluate(() => { const cs = (__t.B.board.cards || __t.B.board); const a = cs[0]; return [a.id, cs.find(c => c.id !== a.id && c.value === a.value).id]; });
+  await tapPair(one); await p.waitForTimeout(1500);
+  const early = await p.evaluate(() => ({ over: __t.B.over, cards: (__t.B.board.cards || __t.B.board).length }));
+  if (!early.over || !(early.cards > 0)) problems.push(`[${view.name}] knocking the monster out should win before the board is empty: ${JSON.stringify(early)}`);
   await p.evaluate(() => { document.getElementById('modal').hidden = true; __t.toMap(); });
   // 算术消除（2 层，世界后半段）
   await p.evaluate(() => __t.startLevel(0, 10)); await p.waitForTimeout(1800); await shot('25-match-2layers');
@@ -280,9 +297,9 @@ async function playAll(view) {
   const lLost = lw.h - await p.evaluate(() => __t.B.hearts);
   if (lLost !== lw.d) problems.push(`[${view.name}] a wrong link should cost ${lw.d} heart(s), cost ${lLost}`);
   for (let i = 0; i < 4; i++) {
-    const pr = await p.evaluate(() => { const bd = __t.B.board, l = bd.left.find(x => !x.matched); if (!l) return null; return { l: l.id, r: bd.right.find(x => x.hz === l.hz).id }; });
+    const pr = await p.evaluate(() => { const bd = __t.B.board, l = bd.left.find(x => !x.matched); if (!l || __t.B.over) return null; return { l: l.id, r: bd.right.find(x => x.hz === l.hz).id }; });
     if (!pr) break;
-    while (await p.evaluate(() => __t.B.busy)) await p.waitForTimeout(200);
+    if (await p.evaluate(() => __t.B.over)) break;   // combos can knock the monster out before every pair is linked
     await tap(`.lnk[data-id="${pr.l}"]`); await tap(`.lnk[data-id="${pr.r}"]`); await p.waitForTimeout(700);
     if (i === 1) await shot('26b-link-lines');
   }
