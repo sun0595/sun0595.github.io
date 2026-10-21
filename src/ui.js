@@ -77,30 +77,56 @@ sfx.freeze = ()=>{ tone([1800,2400,3000],.05,"sine",.08); noise(.35,.25,7000); }
 sfx.shatter = ()=>{ noise(.4,.5,5000); tone([2600,1900,1300],.05,"triangle",.07); };
 
 /* ================= map: one long map, scrolled up and down =================
-   120 levels on one winding path from the bottom (加法森林 第 1 关) to the top (竖式城堡 Boss).
-   Each world is one band (段) with its own colours / decorations, a sign at its bottom and the Boss (第 15 关) at its top;
-   the top of every band fades into the colour of the next one. Only the map scrolls (native scrolling, with momentum on iOS);
-   the top bar stays put. Map background art: art("map_<世界id>") is tiled down the band if it exists. */
-const MAP_STEP = 68, MAP_PAD_B = 158, MAP_PAD_T = 84;
-const SEG_H = MAP_PAD_B + (NLV-1)*MAP_STEP + MAP_PAD_T;
+   Like the parents' reference sketch: each world is a floating island stacked on the one below
+   (加法森林 at the bottom, 竖式城堡 on top), sky and clouds around them. Every island has a grassy/rocky top surface and a
+   rock cliff under it; the cliff of the island above sits on the back of the island below, so the layers pile up.
+   A wide sandy road zig-zags up each island in rows of three (1-2-3 left→right, 4-5-6 right→left …), the Boss on the top.
+   Only the map scrolls (native scrolling, with momentum on iOS); the bars above stay put.
+   Map art: art("map_<世界id>") replaces the drawn island if it exists. */
+const MAP_ROW = 112, MAP_PAD_B = 172, MAP_PAD_T = 96, MAP_CLIFF = 70, MAP_OVER = 50;
+const SEG_H = MAP_PAD_B + 5*MAP_ROW + 10 + MAP_PAD_T;
 const MODE_ICON = {match:"🃏", link:"🔗", blend:"🔤"};
 const MODE_NAME = {battle:"打怪", match:"算术消除", link:"连连看", blend:"拼读"};
-// x (%) of each level: a gentle wave, different phase per world; the Boss sits in the middle
-const nodeX = (w,l) => l===NLV-1 ? 50 : Math.round(50 + 28*Math.sin(l*0.85 + w*1.3));
+// rows of three, alternating direction, each row climbing a little; levels 13, 14 then the Boss alone on top
+function nodePos(l){
+  if(l===NLV-1) return [50, MAP_PAD_B + 5*MAP_ROW + 10];
+  if(l>=12) return [l===12 ? 30 : 70, MAP_PAD_B + 4*MAP_ROW + (l-12)*14];
+  const r = Math.floor(l/3), k = l%3, xs = [24,50,76];
+  return [r%2 ? xs[2-k] : xs[k], MAP_PAD_B + r*MAP_ROW + k*14];
+}
+const nodeX = (w,l) => nodePos(l)[0];
 // y (px from the top of the whole map) of a level's centre
-const nodeY = (w,l) => (WORLDS_V2.length-1-w)*SEG_H + SEG_H - (MAP_PAD_B + l*MAP_STEP + (l===NLV-1?10:0));
+const nodeY = (w,l) => (WORLDS_V2.length-1-w)*SEG_H + SEG_H - nodePos(l)[1];
 const monImg = (w,l) => artImg("mon_"+WORLDS_V2[w].id+"_"+(l+1), WORLDS_V2[w].levels[l].emoji);
-function stripURL(id, nextId){
-  const c = SCENES[id], n = nextId && SCENES[nextId], H = SEG_H;
+const svgURL = svg => 'url("data:image/svg+xml,'+encodeURIComponent(svg)+'")';
+// the island's top surface (the band); its cliff is a separate element so it can hang over the island below
+function stripURL(id){
+  const c = SCENES[id], H = SEG_H, B = H - MAP_CLIFF;
   let svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 "+H+"' preserveAspectRatio='none'><defs>"
-    + "<linearGradient id='g' x1='0' y1='1' x2='0' y2='0'><stop offset='0' stop-color='"+c.h[2]+"'/><stop offset='.3' stop-color='"+c.h[1]+"'/><stop offset='.62' stop-color='"+c.h[0]+"'/><stop offset='.86' stop-color='"+c.sky[1]+"'/><stop offset='1' stop-color='"+c.sky[0]+"'/></linearGradient>"
-    + (n ? "<linearGradient id='t' x1='0' y1='1' x2='0' y2='0'><stop offset='0' stop-color='"+n.h[2]+"' stop-opacity='0'/><stop offset='1' stop-color='"+n.h[2]+"'/></linearGradient>" : "")
-    + "</defs><rect width='400' height='"+H+"' fill='url(#g)'/>";
-  if(c.night) for(let i=0;i<40;i++) svg += "<circle cx='"+(i*137%400)+"' cy='"+(30+(i*89%Math.round(H*.6)))+"' r='"+(1+(i%3)*.7)+"' fill='#fff' opacity='.7'/>";
-  for(let y=H-60, k=0; y>220; y-=230, k++) svg += "<path d='M0 "+y+" Q"+(k%2?140:90)+" "+(y-46)+" 200 "+(y-8)+" T400 "+(y-14)+" V"+(y+70)+" H0Z' fill='"+(k%2?c.h[0]:c.h[1])+"' opacity='.35'/>";
-  if(n) svg += "<rect width='400' height='200' fill='url(#t)'/>";
-  svg += "</svg>";
-  return 'url("data:image/svg+xml,'+encodeURIComponent(svg)+'")';
+    + "<linearGradient id='g' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='"+c.h[0]+"'/><stop offset='1' stop-color='"+c.h[1]+"'/></linearGradient></defs>";
+  const rim = "M26 "+B+" V62 Q26 32 60 34 Q115 18 172 30 Q232 40 290 24 Q348 14 374 40 V"+B+" Z";
+  svg += "<path d='"+rim+"' fill='url(#g)'/>";
+  for(let i=0;i<14;i++){ const x = 40+(i*97)%320, y = 90+(i*173)%(B-130); svg += "<ellipse cx='"+x+"' cy='"+y+"' rx='"+(18+(i%3)*8)+"' ry='"+(6+(i%2)*3)+"' fill='"+c.h[2]+"' opacity='.12'/>"; }
+  svg += "<path d='M26 62 Q26 32 60 34 Q115 18 172 30 Q232 40 290 24 Q348 14 374 40' fill='none' stroke='#fff' stroke-opacity='.55' stroke-width='5'/>";
+  return svgURL(svg+"</svg>");
+}
+// rock face under an island: darker than its ground, with cracks and a ragged bottom
+function cliffURL(id){
+  const c = SCENES[id], H = MAP_CLIFF + MAP_OVER;
+  let svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 "+H+"' preserveAspectRatio='none'>"
+    + "<path d='M26 0 H374 V58 L360 80 L342 70 L320 100 L296 84 L268 112 L240 92 L210 118 L182 94 L152 110 L122 86 L94 104 L66 80 L44 92 L26 62 Z' fill='"+c.h[2]+"'/>"
+    + "<path d='M26 0 H374 V10 H26 Z' fill='#000' opacity='.18'/>";
+  for(let i=0;i<9;i++){ const x = 40+i*40+(i%2)*9; svg += "<path d='M"+x+" 14 L"+(x+6)+" 44 L"+(x-3)+" 70' fill='none' stroke='#000' stroke-opacity='.18' stroke-width='3'/>"; }
+  return svgURL(svg+"</svg>");
+}
+// smooth road through the levels (Catmull-Rom → cubic Bézier), in the map's 100 × px coordinates
+function roadD(pts){
+  let d = "M"+pts[0][0]+" "+pts[0][1];
+  for(let i=0;i<pts.length-1;i++){
+    const p0 = pts[i-1]||pts[i], p1 = pts[i], p2 = pts[i+1], p3 = pts[i+2]||p2;
+    d += " C"+(p1[0]+(p2[0]-p0[0])/6).toFixed(2)+" "+(p1[1]+(p2[1]-p0[1])/6).toFixed(1)+" "+(p2[0]-(p3[0]-p1[0])/6).toFixed(2)+" "+(p2[1]-(p3[1]-p1[1])/6).toFixed(1)+" "+p2[0]+" "+p2[1];
+  }
+  return d;
 }
 let mapScroll = null, flashCur = false;
 function renderMap(focus){
@@ -120,21 +146,25 @@ function renderMap(focus){
   // 今天进度 | 下一个勇士 | 📍当前关 (kept off the map so it never covers a level)
   html += '<div class="nexthero">'+dayTag+'<span class="nh">'+(next ? img(next.e)+'再拿 <span class="num">'+(next.need-ts)+'</span>'+img("⭐")+'解锁「'+next.n+'」' : img("🏆")+'勇士全解锁！')+'</span>'
     + '<button class="btn white wcur" id="goCur">'+img("📍")+'当前关</button></div>';
-  const total = SEG_H*WORLDS_V2.length;
+  const total = SEG_H*WORLDS_V2.length + MAP_OVER + 20;   // room under the bottom island for its cliff
   let segs = "", nodes = "", pts = [];
   for(let wi=WORLDS_V2.length-1; wi>=0; wi--){
     const w = WORLDS_V2[wi], top = (WORLDS_V2.length-1-wi)*SEG_H, bg = art("map_"+w.id);
-    const deco = [0,1,2].map(k=>SCENES[w.id].deco.map(([e,x,y,s],j)=>'<span class="deco" style="left:'+(x<50?Math.min(x,3):Math.max(x,86))+'%;top:'+Math.round(k*SEG_H/3 + 40 + ((y+j*23)%80)/80*SEG_H/4)+'px;font-size:'+Math.round(s*.6)+'px">'+img(e)+'</span>').join("")).join("");
+    // scenery along both edges of the island, between the rows of levels
+    const dl = SCENES[w.id].deco;
+    const deco = [0,1,2,3,4].map(r=>[0,1].map(side=>{ const [e,,,sz] = dl[(r*2+side+wi)%dl.length], y = SEG_H - MAP_PAD_B - r*MAP_ROW + 36 + side*18;
+      return '<span class="deco" style="'+(side?'right':'left')+':'+(6+(r%2)*3)+'%;top:'+y+'px;font-size:'+Math.round(Math.min(sz,64)*.8)+'px">'+img(e)+'</span>'; }).join("")).join("");
     const bossDone = starOf(wi, NLV-1)>0;
-    segs += '<div class="band'+(bg?" art":"")+'" data-w="'+wi+'" style="top:'+top+'px;height:'+SEG_H+'px">'+deco
+    segs += '<div class="band'+(bg?" art":"")+'" data-w="'+wi+'" style="top:'+top+'px;height:'+SEG_H+'px">'+(bg?'':'<div class="cliff" data-w="'+wi+'"></div>')+deco
       + '<div class="wsign'+(worldOpen(wi)?"":" locked")+'"><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><span class="wsub2"><small>'+w.sub+'</small>'
       + (bossDone ? '<button class="btn white wrun" data-w="'+wi+'">'+img("🏅")+'连闯</button>' : '')+'</span></div></div>';
   }
   for(let wi=0; wi<WORLDS_V2.length; wi++) WORLDS_V2[wi].levels.forEach((L,li)=>{
     const lo = levelOpen(wi,li), st = starOf(wi,li), m = mastery(wi,li), x = nodeX(wi,li), y = nodeY(wi,li), mode = L.boss ? "battle" : LEVEL_MODES[wi].modes[li];
-    pts.push(x+" "+y);
+    pts.push([x, y]);
     let cls = (L.boss?" boss":"")+(lo?"":" closed")+(m>=4?" dia":"")+(st?" passed":"");
-    if(wi===cw && li===cl && !st) cls += " current"+(flashCur?" flash":"");
+    const here = wi===cw && li===cl && !st;
+    if(here) cls += " current"+(flashCur?" flash":"");
     let stars = "";
     if(st){
       if(m>=4) stars = img("💎")+img("💎")+img("💎");
@@ -145,17 +175,19 @@ function renderMap(focus){
     nodes += '<button class="node'+cls+'" style="left:'+x+'%;top:'+y+'px" data-w="'+wi+'" data-l="'+li+'"'+(lo?"":" disabled")+' aria-label="'+WORLDS_V2[wi].name+' 第'+(li+1)+'关 '+MODE_NAME[mode]+'">'
       + '<span class="ball'+nx+'">'+(lo?monImg(wi,li):img("🔒"))+'<span class="lv">'+(L.boss?"BOSS":li+1)+'</span>'
       + (MODE_ICON[mode]?'<span class="mb">'+img(MODE_ICON[mode])+'</span>':'')+'</span>'
-      + '<span class="stars">'+stars+'</span></button>';
+      + '<span class="stars">'+stars+'</span>'+(here?'<span class="here">'+img(h.e)+'</span>':'')+'</button>';
   });
   flashCur = false;
   html += '<div class="wview"><div class="lscroll" id="lscroll"><div class="lmap" style="height:'+total+'px">'+segs
-    + '<svg class="wpath" viewBox="0 0 100 '+total+'" preserveAspectRatio="none" style="height:'+total+'px"><path d="M'+pts.join(" L")+'" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="6" stroke-linecap="round" stroke-dasharray="0.1 13" vector-effect="non-scaling-stroke"/></svg>'
+    + '<svg class="wpath" viewBox="0 0 100 '+total+'" preserveAspectRatio="none" style="height:'+total+'px"><g fill="none" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"><path d="'+roadD(pts)+'" stroke="rgba(120,80,30,.35)" stroke-width="30" vector-effect="non-scaling-stroke"/><path d="'+roadD(pts)+'" stroke="#f6e4bd" stroke-width="22" vector-effect="non-scaling-stroke"/><path d="'+roadD(pts)+'" stroke="#fff" stroke-opacity=".9" stroke-width="5" stroke-dasharray="0.1 14" vector-effect="non-scaling-stroke"/></g></svg>'
     + nodes+'</div></div>'
     + (IS_BETA?'<span class="pill beta" id="betaTag">试玩版</span>':'')+'</div>';
   const mp = $("map"); mp.innerHTML = html;
   // band backgrounds are set as properties (the data: URLs contain quotes)
   mp.querySelectorAll(".band").forEach(el=>{ const wi = +el.dataset.w, id = WORLDS_V2[wi].id, bg = art("map_"+id);
-    const strip = () => { el.classList.remove("art"); el.style.backgroundImage = stripURL(id, WORLDS_V2[wi+1] && WORLDS_V2[wi+1].id); };
+    const strip = () => { el.classList.remove("art"); el.style.backgroundImage = stripURL(id);
+      if(!el.querySelector(".cliff")) el.insertAdjacentHTML("afterbegin", '<div class="cliff"></div>');
+      el.querySelector(".cliff").style.backgroundImage = cliffURL(id); };
     if(!bg) return strip();
     el.style.backgroundImage = 'url("'+bg+'")';
     const t = new Image(); t.onerror = strip; t.src = bg; });
