@@ -546,8 +546,8 @@ async function playAll(view) {
   if (mapBoss.length) problems.push(`[${view.name}] Boss nodes on the map should show their painted pictures: ${mapBoss}`);
   const snow = await roadCheck(5);
   if (!snow.band || snow.gap < 52 || !snow.bossTop || !snow.inside) problems.push(`[${view.name}] 雪山 levels should follow the painted road, Boss on top, all on screen: ${JSON.stringify(snow)}`);
-  // 洞穴、火山、冰雪城堡三段也沿原画小路排，和雪山同样检查
-  for (const [w, id, name, top] of [[1, 'sub', '洞穴', 0.3], [2, 'ten', '火山', 0.15], [3, 'ice', '冰雪城堡', 0.3]]) {
+  // 洞穴、火山、冰雪城堡、草原、数字小镇、城堡六段也沿原画小路排，和雪山同样检查
+  for (const [w, id, name, top] of [[1, 'sub', '洞穴', 0.3], [2, 'ten', '火山', 0.15], [3, 'ice', '冰雪城堡', 0.3], [4, 'tens', '草原', 0.3], [6, 'digit1', '数字小镇', 0.25], [7, 'digit2', '城堡', 0.35]]) {
     await showBand(w, 0.62); await shot('41-art-map-' + id);
     await showBand(w, top); await shot('41b-art-map-' + id + '-top');
     const r = await roadCheck(w);
@@ -557,6 +557,18 @@ async function playAll(view) {
   await showBand(0, 0.3); await shot('40b-art-map-forest-all-top');
   const forest = await roadCheck(0);
   if (forest.art !== 15) problems.push(`[${view.name}] 加法森林 should show all 15 monster pictures: ${JSON.stringify(forest)}`);
+  // 8 个世界的地图段都是原画；每段整段截一张全景（视口临时拉高到一整段，宽度不变，节点位置也不变）
+  const noArt = await p.evaluate(() => [...document.querySelectorAll('.band')].filter(b => !b.classList.contains('art')).map(b => b.dataset.w));
+  if (noArt.length) problems.push(`[${view.name}] every world should use its map art, these do not: ${noArt}`);
+  const vp = p.viewportSize(), ids = await p.evaluate(() => __t.WORLDS_V2.map(w => w.id));
+  for (let w = 0; w < ids.length; w++) {
+    const bh = await p.evaluate(w => document.querySelector(`.band[data-w="${w}"]`).offsetHeight, w);
+    await p.setViewportSize({ width: vp.width, height: bh + 400 }); await p.waitForTimeout(300);
+    const box = await p.evaluate(w => { const b = document.querySelector(`.band[data-w="${w}"]`), s = document.getElementById('lscroll'); s.scrollTop = b.offsetTop - 40; const r = b.getBoundingClientRect(), sr = s.getBoundingClientRect(); return { x: sr.left, y: Math.max(sr.top, r.top - 30), width: sr.width, height: Math.min(sr.bottom, r.bottom + 10) - Math.max(sr.top, r.top - 30) }; }, w);
+    await p.waitForTimeout(200);
+    await p.screenshot({ path: path.join(SHOTS, `42-map-full-${w + 1}-${ids[w]}.png`), clip: box });
+  }
+  await p.setViewportSize(vp); await p.waitForTimeout(300);
   await p.evaluate(() => { __t.S.openAll = false; __t.renderMap(); });
   // a broken picture must fall back to the 3D emoji instead of leaving a blank (monster, hero, map band); then restore
   const keep = await p.evaluate(() => Object.fromEntries(['map_add', 'hero_purple', 'mon_add_1', 'weapon_purple'].map(k => [k, __t.art(k)])));
@@ -565,8 +577,11 @@ async function playAll(view) {
   const brk = await p.evaluate(() => ({ art: document.querySelectorAll('#heroSprite img.art, #heroSprite .hand, #monSprite img.art').length, mon: !!document.querySelector('#monSprite img.ei'), hero: !!document.querySelector('#heroSprite img.ei'), nodeArt: !!document.querySelector('.node[data-w="0"][data-l="0"] img.art'), band: document.querySelector('.band[data-w="0"]').style.backgroundImage.includes('svg') }));
   if (brk.art || !brk.mon || !brk.hero || brk.nodeArt || !brk.band) problems.push(`[${view.name}] broken art should fall back to the 3D emoji / painted map: ${JSON.stringify(brk)}`);
   await p.evaluate(keep => { for (const k in keep) __t.setArt(k, keep[k]); for (const k of ['weapon', 'helmet', 'armor', 'shield']) __t.S.equipped[k] = null; __t.toMap(); }, keep);
-  // a world without map art (整十草原) keeps the drawn island
+  // a world whose map art is missing keeps the drawn island
+  const keepTens = await p.evaluate(() => __t.art('map_tens'));
+  await p.evaluate(() => { __t.setArt('map_tens', ''); __t.renderMap(); });
   if (await p.evaluate(() => document.querySelector('.band[data-w="4"]').classList.contains('art') || !document.querySelector('.band[data-w="4"] .cliff'))) problems.push(`[${view.name}] worlds without map art should keep the drawn island`);
+  await p.evaluate(k => { __t.setArt('map_tens', k); __t.renderMap(); }, keepTens);
   if (await p.evaluate(k => localStorage.getItem(k), BETA) !== null) problems.push(`[${view.name}] 正式版 wrote the 试玩版 save "${BETA}"`);
   await ctx.close();
 }
