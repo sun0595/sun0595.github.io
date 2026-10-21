@@ -166,6 +166,91 @@ function missSubQ(a,c){
   const hint = '<p class="htitle">拿走了几个？</p><p>本来有 '+a+' 个，剩下 '+c+' 个。被划掉的有几个？</p>'+dots([{n:c,c:"a"},{n:a-c,c:"x"}]);
   return mk([a,"−","?","=",c], a+"减几等于"+c+"？", a-c, hint);
 }
+// 语音读法。大数用汉字，避免把 100 读成「一零零」。
+function zhNum(n){
+  const d = "零一二三四五六七八九";
+  if(n===0) return "零";
+  if(n===1000) return "一千";
+  if(n<10) return d[n];
+  if(n<20) return "十"+(n%10?d[n%10]:"");
+  if(n<100){ const t=Math.floor(n/10), o=n%10; return d[t]+"十"+(o?d[o]:""); }
+  const h=Math.floor(n/100), rest=n%100, s=d[h]+"百";
+  if(!rest) return s;
+  if(rest<10) return s+"零"+d[rest];
+  const t=Math.floor(rest/10), o=rest%10;
+  return s+d[t]+"十"+(o?d[o]:"");
+}
+// 错误选项优先放孩子真会犯的错；凑不满 4 个时才用邻近数。答案一定在里面。
+function kidOpts(ans, traps, lo, hi){
+  const set = new Set([ans]);
+  const add = t => { if(set.size>=4) return; if(Number.isInteger(t) && t>=lo && t<=hi && !set.has(t)) set.add(t); };
+  (traps||[]).forEach(add);
+  shuffle([ans+10,ans-10,ans+1,ans-1,ans+20,ans-20,ans+100,ans-100,ans+2,ans-2]).forEach(add);
+  let guard=0;
+  while(set.size<4 && guard++<80) add(ri(lo,hi));
+  return [...set].sort((a,b)=>a-b);
+}
+function placeQ(op, a, b, hint, traps, lo, hi){
+  const ans = op==="+" ? a+b : a-b;
+  const sign = op==="+" ? "+" : "−";
+  const word = op==="+" ? "加" : "减";
+  return mk([a,sign,b,"=","?"], zhNum(a)+word+zhNum(b)+"等于几？", ans, hint, {
+    options: kidOpts(ans, traps, lo, hi),
+    small: a>=100 || b>=100 || ans>=100
+  });
+}
+function hintTenAdd(a,b){
+  const tail = a+b===100
+    ? "<p>满了 10 个十，就要进成 1 个百，后面写两个 0。</p>"
+    : "<p>得数是几十，末尾要写上 0。</p>";
+  return '<p class="htitle">整十相加</p><p>'+a+" 是 <b>"+(a/10)+"</b> 个十，"+b+" 是 <b>"+(b/10)+"</b> 个十。</p><p>先算几个十加几个十。</p>"+tail;
+}
+function hintTenSub(a,b){
+  return '<p class="htitle">整十相减</p><p>'+a+" 是 <b>"+(a/10)+"</b> 个十，"+b+" 是 <b>"+(b/10)+"</b> 个十。</p><p>几个十减几个十，还剩几个十？</p><p>得数末尾同样要写 0。</p>";
+}
+function hintHunAdd(a,b){
+  const tail = a+b===1000
+    ? "<p>满了 10 个百，就要进成 1 个千，后面写三个 0。</p>"
+    : "<p>得数是几百，末尾要写两个 0。</p>";
+  return '<p class="htitle">整百相加</p><p>'+a+" 是 <b>"+(a/100)+"</b> 个百，"+b+" 是 <b>"+(b/100)+"</b> 个百。</p><p>先算几个百加几个百。</p>"+tail;
+}
+function hintHunSub(a,b){
+  return '<p class="htitle">整百相减</p><p>'+a+" 是 <b>"+(a/100)+"</b> 个百，"+b+" 是 <b>"+(b/100)+"</b> 个百。</p><p>几个百减几个百，还剩几个百？</p><p>得数末尾同样要写两个 0。</p>";
+}
+function hintAdd1(a,b,carry){
+  const o=a%10, t=Math.floor(a/10);
+  if(!carry) return '<p class="htitle">先加个位</p><p>'+a+" 的个位是 <b>"+o+"</b>，加上 <b>"+b+"</b>。</p><p>个位加起来不满十，不用进位。</p><p>十位的 <b>"+t+"</b> 照原样写下来。</p>";
+  return '<p class="htitle">个位满十要进一</p><p>先算个位：<b>'+o+"</b> 加 <b>"+b+"</b>，满十了。</p><p>个位只写下多出来的，向十位进 1。</p><p>十位的 <b>"+t+"</b> 要加上进上来的 1。</p>";
+}
+function hintSub1(a,b,borrow){
+  const o=a%10, t=Math.floor(a/10);
+  if(!borrow) return '<p class="htitle">先减个位</p><p>'+a+" 的个位是 <b>"+o+"</b>，减去 <b>"+b+"</b>，够减。</p><p>个位不用向十位借。</p><p>十位的 <b>"+t+"</b> 照原样写下来。</p>";
+  return '<p class="htitle">个位不够要退一</p><p>个位 <b>'+o+"</b> 减 <b>"+b+"</b>，不够减。</p><p>向十位借 1 个十，个位加上 10 再减。</p><p>十位的 <b>"+t+"</b> 被借走 1，要少 1。</p>";
+}
+const hintAdd2 = () => '<p class="htitle">个位对个位</p><p>竖着写，个位对个位，十位对十位。</p><p>先加个位，再加十位。</p><p>这一题个位不满十，十位也不满十，都不用进位。</p>';
+const hintSub2 = () => '<p class="htitle">个位对个位</p><p>竖着写，个位对个位，十位对十位。</p><p>先减个位，再减十位。</p><p>这一题个位够减，十位也够减，不用借。</p>';
+function trapsAddTen(a,b){ const ta=a/10, tb=b/10, s=a+b; return [ta+tb,(ta+tb)*100,a+tb,b+ta,s+10,s-10,(ta+tb+1)*10]; }
+function trapsSubTen(a,b){ const ta=a/10, tb=b/10, d=a-b; return [ta-tb,(ta-tb)*100,a-tb,d+10,d-10,a+b,(ta-tb+1)*10]; }
+function trapsAddHun(a,b){ const ha=a/100, hb=b/100, s=a+b; return [ha+hb,(ha+hb)*10,(ha+hb)*1000,a+hb,s+100,s-100]; }
+function trapsSubHun(a,b){ const ha=a/100, hb=b/100, d=a-b; return [ha-hb,(ha-hb)*10,(ha-hb)*1000,a-hb,d+100,d-100,a+b]; }
+function trapsAdd1(a,b,carry){
+  const o=a%10, t=Math.floor(a/10), s=a+b;
+  const forgot=t*10+((o+b)%10), only=o+b, shift=a+b*10;
+  return carry ? [forgot,only,shift,s+10,s-1] : [only,shift,(t+b)*10+o,s+1,s-1,a-b];
+}
+function trapsSub1(a,b,borrow){
+  const o=a%10, t=Math.floor(a/10), d=a-b;
+  const bigSmall=t*10+(b-o), only=borrow?10+o-b:o-b, forgot=t*10+(10+o-b);
+  return borrow ? [bigSmall,only,forgot,d+1,d-1,a+b] : [only,a-b*10,(t>=b?(t-b)*10: (b-t)*10)+o,d+1,d-1,a+b];
+}
+function trapsAdd2(a,b){
+  const s=a+b, o1=a%10, o2=b%10, t1=Math.floor(a/10), t2=Math.floor(b/10);
+  return [(t1+t2)*10,o1+o2,(o1+o2)*10+(t1+t2),s+10,a+o2,a+t2,b+o1,s+1,s-1];
+}
+function trapsSub2(a,b){
+  const d=a-b, o1=a%10, o2=b%10, t1=Math.floor(a/10), t2=Math.floor(b/10);
+  return [(t1-t2)*10,o1-o2,(o1-o2)*10+(t1-t2),d-10,a+b,a-o2,a-t2,d+1,d-1];
+}
 const G = {
   add(max){ const s=ri(2,max), a=ri(1,s-1); return addQ(a,s-a); },
   sub(max){ const a=ri(2,max), b=ri(1,a); return subQ(a,b); },
@@ -227,9 +312,174 @@ const G = {
     steps+='</div>';
     const hint='<p class="htitle">找规律</p><p>每次都'+verb+' <b>'+s+'</b></p>'+steps;
     return mk(parts, "找规律，问号里填几？", seq[pos], hint, {small:true, seq:true});
+  },
+  // 整十：10～90，和不超过 100，差至少 10。整百：100～900，和不超过 1000，差至少 100。
+  addTen(){ const ta=ri(1,9), tb=ri(1,10-ta), a=ta*10, b=tb*10; return placeQ("+",a,b,hintTenAdd(a,b),trapsAddTen(a,b),0,1000); },
+  subTen(){ const ta=ri(2,9), tb=ri(1,ta-1), a=ta*10, b=tb*10; return placeQ("-",a,b,hintTenSub(a,b),trapsSubTen(a,b),0,1000); },
+  addHundred(){ const ha=ri(1,9), hb=ri(1,10-ha), a=ha*100, b=hb*100; return placeQ("+",a,b,hintHunAdd(a,b),trapsAddHun(a,b),0,2000); },
+  subHundred(){ const ha=ri(2,9), hb=ri(1,ha-1), a=ha*100, b=hb*100; return placeQ("-",a,b,hintHunSub(a,b),trapsSubHun(a,b),0,2000); },
+  // 两位数 ± 一位数。不进位/不退位，以及进位/退位。和不超过 100。
+  add1NoCarry(){ const t=ri(1,9), o=ri(0,8), b=ri(1,9-o), a=t*10+o; return placeQ("+",a,b,hintAdd1(a,b,false),trapsAdd1(a,b,false),0,250); },
+  add1Carry(){ const t=ri(1,9), o=ri(1,9), a=t*10+o, b=ri(10-o,Math.min(9,100-a)); return placeQ("+",a,b,hintAdd1(a,b,true),trapsAdd1(a,b,true),0,250); },
+  sub1NoBorrow(){ const t=ri(1,9), o=ri(1,9), b=ri(1,o), a=t*10+o; return placeQ("-",a,b,hintSub1(a,b,false),trapsSub1(a,b,false),0,250); },
+  sub1Borrow(){ const t=ri(1,9), o=ri(0,8), b=ri(o+1,9), a=t*10+o; return placeQ("-",a,b,hintSub1(a,b,true),trapsSub1(a,b,true),0,250); },
+  // 两位数 ± 两位数，个位和十位都不进位、不退位。
+  add2NoCarry(){
+    const t1=ri(1,8), t2=ri(1,9-t1), o1=ri(0,9), o2=ri(0,9-o1), a=t1*10+o1, b=t2*10+o2;
+    return placeQ("+",a,b,hintAdd2(),trapsAdd2(a,b),0,250);
+  },
+  sub2NoBorrow(){
+    const t1=ri(1,9), o1=ri(t1===1?1:0,9);
+    let t2=ri(1,t1), o2, o2Max=t2===t1?o1-1:o1;
+    if(o2Max<0){ t2=ri(1,t1-1); o2=0; } else o2=ri(0,o2Max);
+    const a=t1*10+o1, b=t2*10+o2;
+    return placeQ("-",a,b,hintSub2(),trapsSub2(a,b),0,250);
   }
 };
 const mix = (...fns) => () => pick(fns)();
+
+/* ================= 120 关难度计划（纯数据，还没接入 WORLDS） =================
+   8 个世界，各 15 关，第 15 关是 Boss。
+   mix 每一项是 {g, args?}。接入时：G[item.g](...(item.args||[]))，再用 mix(...) 组合。
+   比大小、连加连减、找规律仍用 G.compare / G.chain / G.pattern，这张表先不排。 */
+const LEVEL_PLAN = [
+  {world:1, id:"add", name:"加法森林", sub:"10 以内加法", levels:[
+    {n:1, mix:[{g:"add",args:[5]}]},
+    {n:2, mix:[{g:"add",args:[5]}]},
+    {n:3, mix:[{g:"add",args:[5]}]},
+    {n:4, mix:[{g:"add",args:[5]},{g:"add",args:[10]}]},
+    {n:5, mix:[{g:"add",args:[10]}]},
+    {n:6, mix:[{g:"add",args:[10]}]},
+    {n:7, mix:[{g:"add",args:[10]}]},
+    {n:8, mix:[{g:"missAdd",args:[5]}]},
+    {n:9, mix:[{g:"missAdd",args:[10]}]},
+    {n:10, mix:[{g:"missAdd",args:[10]}]},
+    {n:11, mix:[{g:"add",args:[10]},{g:"missAdd",args:[10]}]},
+    {n:12, mix:[{g:"make10"}]},
+    {n:13, mix:[{g:"make10"},{g:"add",args:[10]}]},
+    {n:14, mix:[{g:"add",args:[10]},{g:"missAdd",args:[10]},{g:"make10"}]},
+    {n:15, boss:true, mix:[{g:"add",args:[5]},{g:"add",args:[10]},{g:"missAdd",args:[10]},{g:"make10"}]}
+  ]},
+  {world:2, id:"sub", name:"减法洞穴", sub:"10 以内减法", levels:[
+    {n:1, mix:[{g:"sub",args:[5]}]},
+    {n:2, mix:[{g:"sub",args:[5]}]},
+    {n:3, mix:[{g:"sub",args:[5]}]},
+    {n:4, mix:[{g:"sub",args:[5]},{g:"sub",args:[10]}]},
+    {n:5, mix:[{g:"sub",args:[10]}]},
+    {n:6, mix:[{g:"sub",args:[10]}]},
+    {n:7, mix:[{g:"sub",args:[10]}]},
+    {n:8, mix:[{g:"missSub",args:[5]}]},
+    {n:9, mix:[{g:"missSub",args:[10]}]},
+    {n:10, mix:[{g:"missSub",args:[10]}]},
+    {n:11, mix:[{g:"sub",args:[10]},{g:"missSub",args:[10]}]},
+    {n:12, mix:[{g:"sub",args:[10]},{g:"add",args:[10]}]},
+    {n:13, mix:[{g:"missSub",args:[10]},{g:"missAdd",args:[10]}]},
+    {n:14, mix:[{g:"sub",args:[10]},{g:"missSub",args:[10]},{g:"add",args:[10]}]},
+    {n:15, boss:true, mix:[{g:"sub",args:[5]},{g:"sub",args:[10]},{g:"missSub",args:[10]},{g:"add",args:[10]},{g:"missAdd",args:[10]}]}
+  ]},
+  {world:3, id:"ten", name:"凑十火山", sub:"20 以内进位加法", levels:[
+    {n:1, mix:[{g:"make10"}]},
+    {n:2, mix:[{g:"make10"}]},
+    {n:3, mix:[{g:"carry",args:[[9]]}]},
+    {n:4, mix:[{g:"carry",args:[[9]]}]},
+    {n:5, mix:[{g:"carry",args:[[9]]},{g:"make10"}]},
+    {n:6, mix:[{g:"carry",args:[[8,7]]}]},
+    {n:7, mix:[{g:"carry",args:[[8,7]]}]},
+    {n:8, mix:[{g:"carry",args:[[8,7]]},{g:"carry",args:[[9]]}]},
+    {n:9, mix:[{g:"carry",args:[[6,5]]}]},
+    {n:10, mix:[{g:"carryAny"}]},
+    {n:11, mix:[{g:"carryAny"}]},
+    {n:12, mix:[{g:"carryAny"},{g:"make10"}]},
+    {n:13, mix:[{g:"carryAny"},{g:"add",args:[10]}]},
+    {n:14, mix:[{g:"carry",args:[[9]]},{g:"carry",args:[[8,7]]},{g:"carryAny"}]},
+    {n:15, boss:true, mix:[{g:"make10"},{g:"carry",args:[[9]]},{g:"carry",args:[[8,7]]},{g:"carry",args:[[6,5]]},{g:"carryAny"}]}
+  ]},
+  {world:4, id:"ice", name:"冰雪城堡", sub:"20 以内退位减法", levels:[
+    {n:1, mix:[{g:"teenNoBorrow"}]},
+    {n:2, mix:[{g:"teenNoBorrow"}]},
+    {n:3, mix:[{g:"teenNoBorrow"}]},
+    {n:4, mix:[{g:"borrow",args:[[9]]}]},
+    {n:5, mix:[{g:"borrow",args:[[9]]}]},
+    {n:6, mix:[{g:"borrow",args:[[9]]},{g:"teenNoBorrow"}]},
+    {n:7, mix:[{g:"borrow",args:[[8,7]]}]},
+    {n:8, mix:[{g:"borrow",args:[[8,7]]}]},
+    {n:9, mix:[{g:"borrow",args:[[8,7]]},{g:"borrow",args:[[9]]}]},
+    {n:10, mix:[{g:"borrowAny"}]},
+    {n:11, mix:[{g:"borrowAny"}]},
+    {n:12, mix:[{g:"borrowAny"},{g:"teenNoBorrow"}]},
+    {n:13, mix:[{g:"borrowAny"},{g:"carryAny"}]},
+    {n:14, mix:[{g:"borrow",args:[[9]]},{g:"borrowAny"},{g:"carryAny"}]},
+    {n:15, boss:true, mix:[{g:"teenNoBorrow"},{g:"borrow",args:[[9]]},{g:"borrow",args:[[8,7]]},{g:"borrowAny"},{g:"carryAny"}]}
+  ]},
+  {world:5, id:"tens", name:"整十草原", sub:"整十数加减", levels:[
+    {n:1, mix:[{g:"addTen"}]},
+    {n:2, mix:[{g:"addTen"}]},
+    {n:3, mix:[{g:"addTen"}]},
+    {n:4, mix:[{g:"addTen"},{g:"add",args:[10]}]},
+    {n:5, mix:[{g:"subTen"}]},
+    {n:6, mix:[{g:"subTen"}]},
+    {n:7, mix:[{g:"subTen"}]},
+    {n:8, mix:[{g:"subTen"},{g:"sub",args:[10]}]},
+    {n:9, mix:[{g:"addTen"},{g:"subTen"}]},
+    {n:10, mix:[{g:"addTen"},{g:"subTen"}]},
+    {n:11, mix:[{g:"addTen"},{g:"subTen"},{g:"add",args:[10]}]},
+    {n:12, mix:[{g:"addTen"},{g:"subTen"},{g:"sub",args:[10]}]},
+    {n:13, mix:[{g:"addTen"},{g:"subTen"}]},
+    {n:14, mix:[{g:"addTen"},{g:"subTen"},{g:"make10"}]},
+    {n:15, boss:true, mix:[{g:"addTen"},{g:"subTen"},{g:"add",args:[10]},{g:"sub",args:[10]},{g:"carryAny"}]}
+  ]},
+  {world:6, id:"hundreds", name:"整百雪山", sub:"整百数加减", levels:[
+    {n:1, mix:[{g:"addHundred"}]},
+    {n:2, mix:[{g:"addHundred"}]},
+    {n:3, mix:[{g:"addHundred"}]},
+    {n:4, mix:[{g:"addHundred"},{g:"addTen"}]},
+    {n:5, mix:[{g:"subHundred"}]},
+    {n:6, mix:[{g:"subHundred"}]},
+    {n:7, mix:[{g:"subHundred"}]},
+    {n:8, mix:[{g:"subHundred"},{g:"subTen"}]},
+    {n:9, mix:[{g:"addHundred"},{g:"subHundred"}]},
+    {n:10, mix:[{g:"addHundred"},{g:"subHundred"}]},
+    {n:11, mix:[{g:"addHundred"},{g:"subHundred"},{g:"addTen"}]},
+    {n:12, mix:[{g:"addHundred"},{g:"subHundred"},{g:"subTen"}]},
+    {n:13, mix:[{g:"addHundred"},{g:"addTen"},{g:"subTen"}]},
+    {n:14, mix:[{g:"addHundred"},{g:"subHundred"},{g:"addTen"},{g:"subTen"}]},
+    {n:15, boss:true, mix:[{g:"addHundred"},{g:"subHundred"},{g:"addTen"},{g:"subTen"},{g:"add",args:[10]},{g:"sub",args:[10]}]}
+  ]},
+  {world:7, id:"digit1", name:"数字小镇", sub:"两位数与一位数", levels:[
+    {n:1, mix:[{g:"add1NoCarry"}]},
+    {n:2, mix:[{g:"add1NoCarry"}]},
+    {n:3, mix:[{g:"add1NoCarry"}]},
+    {n:4, mix:[{g:"sub1NoBorrow"}]},
+    {n:5, mix:[{g:"sub1NoBorrow"}]},
+    {n:6, mix:[{g:"sub1NoBorrow"}]},
+    {n:7, mix:[{g:"add1NoCarry"},{g:"sub1NoBorrow"}]},
+    {n:8, mix:[{g:"add1Carry"}]},
+    {n:9, mix:[{g:"add1Carry"}]},
+    {n:10, mix:[{g:"add1Carry"}]},
+    {n:11, mix:[{g:"sub1Borrow"}]},
+    {n:12, mix:[{g:"sub1Borrow"}]},
+    {n:13, mix:[{g:"sub1Borrow"},{g:"add1Carry"}]},
+    {n:14, mix:[{g:"add1NoCarry"},{g:"sub1NoBorrow"},{g:"add1Carry"},{g:"sub1Borrow"}]},
+    {n:15, boss:true, mix:[{g:"add1NoCarry"},{g:"sub1NoBorrow"},{g:"add1Carry"},{g:"sub1Borrow"},{g:"addTen"},{g:"subTen"}]}
+  ]},
+  {world:8, id:"digit2", name:"竖式城堡", sub:"两位数加减两位数", levels:[
+    {n:1, mix:[{g:"add2NoCarry"}]},
+    {n:2, mix:[{g:"add2NoCarry"}]},
+    {n:3, mix:[{g:"add2NoCarry"}]},
+    {n:4, mix:[{g:"add2NoCarry"},{g:"add1NoCarry"}]},
+    {n:5, mix:[{g:"sub2NoBorrow"}]},
+    {n:6, mix:[{g:"sub2NoBorrow"}]},
+    {n:7, mix:[{g:"sub2NoBorrow"}]},
+    {n:8, mix:[{g:"sub2NoBorrow"},{g:"sub1NoBorrow"}]},
+    {n:9, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"}]},
+    {n:10, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"}]},
+    {n:11, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"},{g:"add1Carry"}]},
+    {n:12, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"},{g:"sub1Borrow"}]},
+    {n:13, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"},{g:"addTen"},{g:"subTen"}]},
+    {n:14, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"},{g:"addHundred"},{g:"subHundred"}]},
+    {n:15, boss:true, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"},{g:"add1Carry"},{g:"sub1Borrow"},{g:"addTen"},{g:"subTen"},{g:"addHundred"},{g:"subHundred"}]}
+  ]}
+];
 
 /* ================= pinyin (语文) ================= */
 // [字, 无调拼音(ü 写作 v), 声调, 图]
@@ -440,8 +690,8 @@ function wordOpts(ans, traps){
   return [...set].sort((a,b)=>a-b);
 }
 function wq(o){
-  return {kind:"word", html:o.html, speak:strip(o.html), answer:o.answer, options:wordOpts(o.answer,o.traps),
-    steps:o.steps, key:o.key, rec:strip(o.html), pic:o.pic||"🤔"};
+  return {kind:"word", html:o.html, speak:o.speak||strip(o.html), answer:o.answer, options:wordOpts(o.answer,o.traps),
+    steps:o.steps, key:o.key, rec:o.rec||strip(o.html), pic:o.pic||"🤔"};
 }
 function bars(rows, max){
   max = max || Math.max(...rows.map(r=>r.segs.reduce((a,s)=>a+s.v,0)));
@@ -632,21 +882,22 @@ const WP = {
   ageConst(){
     const [big,small] = pick([["哥哥","弟弟"],["姐姐","妹妹"]]);
     const a = ri(7,12), b = ri(3,a-2), k = ri(2,5), d = a-b;
-    const now = hl => [{l:big,segs:[{v:b,t:""},{v:d,c:"d"+(hl?" hl":""),t:d}]},{l:small,segs:[{v:b,c:"b",t:""}]}];
-    const later = [{l:big,segs:[{v:b,t:""},{v:d,c:"d hl",t:d},{v:k,c:"c",t:"+"+k}]},{l:small,segs:[{v:b,c:"b",t:""},{v:k,c:"c",t:"+"+k}]}];
+    const now = hl => [{l:big,segs:[{v:b,t:""},{v:d,c:"d"+(hl?" hl":""),t:"?"}]},{l:small,segs:[{v:b,c:"b",t:""}]}];
+    const later = [{l:big,segs:[{v:b,t:""},{v:d,c:"d hl",t:"?"},{v:k,c:"c",t:"+"+k}]},{l:small,segs:[{v:b,c:"b",t:""},{v:k,c:"c",t:"+"+k}]}];
     return wq({key:"age"+a+b+k, pic:"🎂", answer:d, traps:[d+k,k,d+k+k],
       html:big+"今年"+N(a)+"岁，"+small+"今年"+N(b)+"岁。"+N(k)+"年以后，"+big+"比"+small+"大几岁？",
       steps:[
-        {t:"今年 "+big+" 比 "+small+" 大：<b>"+a+" − "+b+" = "+d+"</b> 岁。", v:bars(now(true),a+k)},
+        {t:"今年 "+big+" 比 "+small+" 大多少？用大的减去小的：<b>"+a+" − "+b+" = ?</b>", v:bars(now(true),a+k)},
         {t:"过了 <b>"+k+"</b> 年，两个人<b>都</b>长了 "+k+" 岁，两条线段一起加长（绿色）。", v:bars(later,a+k)},
         {t:"⚠️ 加长的一样多，所以相差的那段<b>一点都没变</b>！还是 ? 岁。", v:bars(later,a+k)}
       ]});
   },
   exchange(){
-    const [x,y] = pick([["🍉","🍎"],["🍎","🍓"],["🐟","🦐"],["🍔","🍪"]]);
+    const [x,xn,y,yn] = pick([["🍉","西瓜","🍎","苹果"],["🍎","苹果","🍓","草莓"],["🐟","鱼","🦐","虾"],["🍔","汉堡","🍪","饼干"]]);
     const k = pick([2,3]), n = k===3 ? ri(2,3) : ri(2,4), ans = k*n;
     const rowV = m => [...Array(m)].map(()=>'<div class="xrow">'+x+'<span class="eq">=</span>'+y.repeat(k)+'</div>').join("");
-    return wq({key:"ex"+x+k+n, pic:"⚖️", answer:ans, traps:[k+n,n,ans+1],
+    const said = "1个"+xn+"能换"+k+"个"+yn+"。"+n+"个"+xn+"能换几个"+yn+"？";
+    return wq({key:"ex"+x+k+n, pic:"⚖️", answer:ans, traps:[k+n,n,ans+1], speak:said, rec:said,
       html:"1 个"+x+"能换"+N(k)+"个"+y+"。"+N(n)+"个"+x+"能换几个"+y+"？",
       steps:[
         {t:"1 个"+x+"换 <b>"+k+"</b> 个"+y+"：", v:rowV(1)},
