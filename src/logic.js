@@ -1982,3 +1982,167 @@ if(typeof window !== "undefined"){
   window.matchSolvable = matchSolvable;
 }
 
+/* ================= character-pinyin linking (汉字-拼音连连看) ================= */
+// 内置示例数组（人教版一年级上册常见字，拼音准确，带 Fluent 3D emoji）
+const DEFAULT_LINK_PAIRS = [
+  { hz: "日", py: "rì",  e: "☀️" },
+  { hz: "月", py: "yuè", e: "🌙" },
+  { hz: "水", py: "shuǐ", e: "💧" },
+  { hz: "火", py: "huǒ", e: "🔥" },
+  { hz: "山", py: "shān", e: "⛰️" },
+  { hz: "石", py: "shí",  e: "🪨" },
+  { hz: "田", py: "tián", e: "🌾" },
+  { hz: "禾", py: "hé",   e: "🌱" }
+];
+
+// 生成无任何元素留在原位的错排序列（保证右列无横向对齐）
+function makeDerangement(n){
+  if(n <= 1) return [0];
+  const indices = Array.from({ length: n }, (_, i) => i);
+  let perm;
+  let attempts = 0;
+  do {
+    attempts++;
+    perm = shuffle(indices.slice());
+  } while (perm.some((v, i) => v === i) && attempts < 50);
+
+  if(perm.some((v, i) => v === i)){
+    // 确定性移位保底（(i + 1) % n 一定错排）
+    perm = indices.map(i => (i + 1) % n);
+  }
+  return perm;
+}
+
+// 棋盘生成纯逻辑
+function makeLinkBoard(pairs, opts = {}){
+  const source = (Array.isArray(pairs) && pairs.length > 0) ? pairs : DEFAULT_LINK_PAIRS;
+  const targetN = Math.max(2, (opts && typeof opts.n === "number") ? opts.n : 4);
+
+  // 筛选互不相同且无同音字的字对
+  const selected = [];
+  const seenHz = new Set();
+  const seenPy = new Set();
+
+  for(const p of shuffle(source.slice())){
+    if(!p || !p.hz || !p.py) continue;
+    if(!seenHz.has(p.hz) && !seenPy.has(p.py)){
+      seenHz.add(p.hz);
+      seenPy.add(p.py);
+      selected.push(p);
+      if(selected.length === targetN) break;
+    }
+  }
+
+  // 若传入的数据池不足，用内置人教版字表安全补齐
+  if(selected.length < targetN){
+    for(const p of DEFAULT_LINK_PAIRS){
+      if(!seenHz.has(p.hz) && !seenPy.has(p.py)){
+        seenHz.add(p.hz);
+        seenPy.add(p.py);
+        selected.push(p);
+        if(selected.length === targetN) break;
+      }
+    }
+  }
+
+  const n = selected.length;
+
+  // 左列汉字（0 ~ n-1）
+  const left = [];
+  for(let i = 0; i < n; i++){
+    left.push({
+      id: "l_" + (i + 1),
+      hz: selected[i].hz,
+      py: selected[i].py,
+      e: selected[i].e || null,
+      side: "left",
+      row: i,
+      matched: false,
+      matchedWith: null
+    });
+  }
+
+  // 右列带调拼音，错排打乱（无横向直连对齐）
+  const derange = makeDerangement(n);
+  const right = [];
+  for(let r = 0; r < n; r++){
+    const origIdx = derange[r];
+    const item = selected[origIdx];
+    right.push({
+      id: "r_" + (r + 1),
+      hz: item.hz,
+      py: item.py,
+      e: item.e || null,
+      side: "right",
+      row: r,
+      matched: false,
+      matchedWith: null
+    });
+  }
+
+  return {
+    n,
+    left,
+    right,
+    connections: [],
+    matchedCount: 0
+  };
+}
+
+// 配对连线逻辑
+function linkPick(board, leftId, rightId){
+  if(!board || !board.left || !board.right || !leftId || !rightId || leftId === rightId) return false;
+
+  const allCards = [...board.left, ...board.right];
+  const item1 = allCards.find(c => c && c.id === leftId);
+  const item2 = allCards.find(c => c && c.id === rightId);
+  if(!item1 || !item2) return false;
+
+  let leftItem, rightItem;
+  if(item1.side === "left" && item2.side === "right"){
+    leftItem = item1; rightItem = item2;
+  } else if(item1.side === "right" && item2.side === "left"){
+    leftItem = item2; rightItem = item1;
+  } else {
+    return false; // 同侧不可连线
+  }
+
+  // 已连过不可重复连
+  if(leftItem.matched || rightItem.matched) return false;
+
+  // 判定汉字与拼音是否配对正确
+  if(leftItem.hz !== rightItem.hz && leftItem.py !== rightItem.py) return false;
+
+  // 连线成功，记录状态
+  leftItem.matched = true;
+  leftItem.matchedWith = rightItem.id;
+  rightItem.matched = true;
+  rightItem.matchedWith = leftItem.id;
+
+  board.connections = board.connections || [];
+  board.connections.push({
+    leftId: leftItem.id,
+    rightId: rightItem.id,
+    hz: leftItem.hz,
+    py: leftItem.py
+  });
+  board.matchedCount = (board.matchedCount || 0) + 1;
+
+  return true;
+}
+
+// 判定是否全部连完
+function linkDone(board){
+  if(!board || !Array.isArray(board.left) || !Array.isArray(board.right)) return false;
+  if(board.left.length === 0) return true;
+  return board.left.every(c => c && c.matched) && board.right.every(c => c && c.matched);
+}
+
+// 挂载到 window，方便测试和 UI 调用
+if(typeof window !== "undefined"){
+  window.DEFAULT_LINK_PAIRS = DEFAULT_LINK_PAIRS;
+  window.makeLinkBoard = makeLinkBoard;
+  window.linkPick = linkPick;
+  window.linkDone = linkDone;
+}
+
