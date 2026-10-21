@@ -481,6 +481,161 @@ const LEVEL_PLAN = [
   ]}
 ];
 
+/* ================= 120 关世界与玩法（纯数据，还没接入 WORLDS） =================
+   id 跟 LEVEL_PLAN 对齐。WORLDS_V2 是场景和怪兽，LEVEL_MODES 是玩法。
+   match 关沿用该关 LEVEL_PLAN 的 mix 出题，这里不重复生成器。
+   前 3 关固定 battle。这三关是唯一允许的同玩法三连；第 4 关必须换一种。
+   从第 2 关起，任意连续三关不能再是同一种玩法。
+   每个世界至少 2 关 match，另有 1 到 2 关 link 或 blend。第 15 关一定是 battle。 */
+const WORLDS_V2 = [
+  {id:"add", name:"加法森林", sub:"10 以内加法", scene:"森林", levels:[
+    {n:1, emoji:"🐛", name:"毛毛虫"},
+    {n:2, emoji:"🐸", name:"跳跳蛙"},
+    {n:3, emoji:"🦎", name:"小蜥蜴"},
+    {n:4, emoji:"🐍", name:"林蛇"},
+    {n:5, emoji:"🦋", name:"凤蝶"},
+    {n:6, emoji:"🐝", name:"蜜蜂"},
+    {n:7, emoji:"🐞", name:"瓢虫"},
+    {n:8, emoji:"🐜", name:"兵蚁"},
+    {n:9, emoji:"🦟", name:"蚊子"},
+    {n:10, emoji:"🦗", name:"蟋蟀"},
+    {n:11, emoji:"🐌", name:"蜗牛"},
+    {n:12, emoji:"🦜", name:"鹦鹉"},
+    {n:13, emoji:"🐒", name:"灵猴"},
+    {n:14, emoji:"🦊", name:"赤狐"},
+    {n:15, emoji:"🦍", name:"猩猩大王", boss:true}
+  ]},
+  {id:"sub", name:"减法洞穴", sub:"10 以内减法", scene:"洞穴", levels:[
+    {n:1, emoji:"🦇", name:"暗蝠"},
+    {n:2, emoji:"🕷️", name:"结网蛛"},
+    {n:3, emoji:"🦂", name:"尾蝎"},
+    {n:4, emoji:"🐀", name:"灰鼠"},
+    {n:5, emoji:"🦉", name:"夜枭"},
+    {n:6, emoji:"🐺", name:"窟狼"},
+    {n:7, emoji:"🐗", name:"獠牙猪"},
+    {n:8, emoji:"🐻", name:"洞熊"},
+    {n:9, emoji:"🦝", name:"浣熊"},
+    {n:10, emoji:"🦨", name:"臭鼬"},
+    {n:11, emoji:"🦡", name:"蜜獾"},
+    {n:12, emoji:"🦔", name:"刺猬"},
+    {n:13, emoji:"🐢", name:"岩龟"},
+    {n:14, emoji:"👻", name:"游魂"},
+    {n:15, emoji:"🧛", name:"吸血伯爵", boss:true}
+  ]},
+  {id:"ten", name:"凑十火山", sub:"20 以内进位加法", scene:"火山", levels:[
+    {n:1, emoji:"🦀", name:"熔岩蟹"},
+    {n:2, emoji:"🐊", name:"火鳄"},
+    {n:3, emoji:"🦏", name:"铁甲犀"},
+    {n:4, emoji:"🦅", name:"金雕"},
+    {n:5, emoji:"🦖", name:"暴龙"},
+    {n:6, emoji:"🐲", name:"炎龙"},
+    {n:7, emoji:"🦁", name:"火狮"},
+    {n:8, emoji:"🐯", name:"虎仔"},
+    {n:9, emoji:"🐆", name:"花豹"},
+    {n:10, emoji:"🐅", name:"猛虎"},
+    {n:11, emoji:"🐂", name:"蛮牛"},
+    {n:12, emoji:"🐐", name:"岩羊"},
+    {n:13, emoji:"🐏", name:"角羊"},
+    {n:14, emoji:"🦃", name:"火鸟"},
+    {n:15, emoji:"🐉", name:"熔岩龙王", boss:true}
+  ]},
+  {id:"ice", name:"冰雪城堡", sub:"20 以内退位减法", scene:"冰雪", levels:[
+    {n:1, emoji:"🐧", name:"企鹅兵"},
+    {n:2, emoji:"⛄", name:"雪人卫"},
+    {n:3, emoji:"🦢", name:"冰天鹅"},
+    {n:4, emoji:"🕊️", name:"雪鸽"},
+    {n:5, emoji:"🦆", name:"寒鸭"},
+    {n:6, emoji:"🐰", name:"白兔"},
+    {n:7, emoji:"🐑", name:"霜羊"},
+    {n:8, emoji:"🦭", name:"胖海豹"},
+    {n:9, emoji:"🦦", name:"雪獭"},
+    {n:10, emoji:"🐤", name:"冰雏"},
+    {n:11, emoji:"🐔", name:"雪鸡"},
+    {n:12, emoji:"🐓", name:"霜公鸡"},
+    {n:13, emoji:"🐦", name:"雪雀"},
+    {n:14, emoji:"🦚", name:"霜孔雀"},
+    {n:15, emoji:"🦈", name:"冰鲨王", boss:true}
+  ]},
+  {id:"tens", name:"整十草原", sub:"整十数加减", scene:"草原", levels:[
+    {n:1, emoji:"🐴", name:"野马"},
+    {n:2, emoji:"🦓", name:"斑马"},
+    {n:3, emoji:"🦒", name:"长颈鹿"},
+    {n:4, emoji:"🦌", name:"梅花鹿"},
+    {n:5, emoji:"🐘", name:"大象"},
+    {n:6, emoji:"🦛", name:"河马"},
+    {n:7, emoji:"🐄", name:"奶牛"},
+    {n:8, emoji:"🐃", name:"水牛"},
+    {n:9, emoji:"🐖", name:"拱地猪"},
+    {n:10, emoji:"🐕", name:"牧羊犬"},
+    {n:11, emoji:"🐈", name:"草地猫"},
+    {n:12, emoji:"🐇", name:"长耳兔"},
+    {n:13, emoji:"🐿️", name:"松鼠"},
+    {n:14, emoji:"🐁", name:"田鼠"},
+    {n:15, emoji:"🦄", name:"独角兽王", boss:true}
+  ]},
+  {id:"hundreds", name:"整百雪山", sub:"整百数加减", scene:"雪山", levels:[
+    {n:1, emoji:"🦙", name:"雪羊驼"},
+    {n:2, emoji:"🦣", name:"小猛犸"},
+    {n:3, emoji:"🦬", name:"霜野牛"},
+    {n:4, emoji:"🐼", name:"竹熊猫"},
+    {n:5, emoji:"🐵", name:"崖猴"},
+    {n:6, emoji:"🦧", name:"雪猩猩"},
+    {n:7, emoji:"🦫", name:"冰河狸"},
+    {n:8, emoji:"🐭", name:"山鼠"},
+    {n:9, emoji:"🐣", name:"雪蛋雀"},
+    {n:10, emoji:"🐥", name:"绒雪雀"},
+    {n:11, emoji:"🐦‍⬛", name:"黑乌鸦"},
+    {n:12, emoji:"🐎", name:"雪山骏马"},
+    {n:13, emoji:"🦥", name:"崖树懒"},
+    {n:14, emoji:"🦘", name:"岩袋鼠"},
+    {n:15, emoji:"🐻‍❄️", name:"北极熊王", boss:true}
+  ]},
+  {id:"digit1", name:"数字小镇", sub:"两位数与一位数", scene:"小镇", levels:[
+    {n:1, emoji:"🐹", name:"仓鼠"},
+    {n:2, emoji:"🐶", name:"看门狗"},
+    {n:3, emoji:"🐱", name:"花猫"},
+    {n:4, emoji:"🐷", name:"小胖猪"},
+    {n:5, emoji:"🐮", name:"小奶牛"},
+    {n:6, emoji:"🐩", name:"卷毛狗"},
+    {n:7, emoji:"🦮", name:"领路犬"},
+    {n:8, emoji:"🐈‍⬛", name:"夜黑猫"},
+    {n:9, emoji:"🪲", name:"甲虫"},
+    {n:10, emoji:"🪳", name:"蟑螂"},
+    {n:11, emoji:"🪰", name:"苍蝇"},
+    {n:12, emoji:"🪱", name:"蚯蚓"},
+    {n:13, emoji:"🐨", name:"树袋熊"},
+    {n:14, emoji:"🦕", name:"小恐龙"},
+    {n:15, emoji:"🐙", name:"章鱼大王", boss:true}
+  ]},
+  {id:"digit2", name:"竖式城堡", sub:"两位数加减两位数", scene:"城堡", levels:[
+    {n:1, emoji:"🧙", name:"小巫师"},
+    {n:2, emoji:"🧚", name:"小仙子"},
+    {n:3, emoji:"🧟", name:"僵尸"},
+    {n:4, emoji:"💀", name:"骷髅兵"},
+    {n:5, emoji:"👽", name:"外星客"},
+    {n:6, emoji:"👾", name:"像素魔"},
+    {n:7, emoji:"👺", name:"面具鬼"},
+    {n:8, emoji:"🧞", name:"灯神"},
+    {n:9, emoji:"🎃", name:"南瓜怪"},
+    {n:10, emoji:"🧝", name:"精灵"},
+    {n:11, emoji:"🧜", name:"人鱼卫"},
+    {n:12, emoji:"🤖", name:"铁卫兵"},
+    {n:13, emoji:"👿", name:"小恶魔"},
+    {n:14, emoji:"☠️", name:"十字骨"},
+    {n:15, emoji:"👹", name:"城堡魔王", boss:true}
+  ]}
+];
+const LEVEL_MODES = [
+  {id:"add", modes:["battle","battle","battle","match","battle","match","battle","link","battle","battle","match","battle","battle","match","battle"]},
+  {id:"sub", modes:["battle","battle","battle","match","battle","battle","match","blend","battle","battle","match","battle","link","battle","battle"]},
+  {id:"ten", modes:["battle","battle","battle","match","battle","link","battle","match","battle","blend","battle","battle","match","battle","battle"]},
+  {id:"ice", modes:["battle","battle","battle","blend","battle","match","battle","battle","match","link","battle","battle","match","battle","battle"]},
+  {id:"tens", modes:["battle","battle","battle","match","battle","battle","link","match","battle","battle","blend","battle","match","battle","battle"]},
+  {id:"hundreds", modes:["battle","battle","battle","match","link","battle","match","battle","battle","blend","match","battle","battle","match","battle"]},
+  {id:"digit1", modes:["battle","battle","battle","match","battle","blend","battle","match","battle","battle","link","battle","match","battle","battle"]},
+  {id:"digit2", modes:["battle","battle","battle","match","battle","battle","match","link","battle","blend","battle","battle","match","battle","battle"]}
+];
+
 /* ================= pinyin (语文) ================= */
 // [字, 无调拼音(ü 写作 v), 声调, 图]
 const PY = [
