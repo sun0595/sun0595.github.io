@@ -20,11 +20,15 @@ const cleanSpeech = t => String(t).replace(EMO_RE, "");
 /* ================= art: hand-drawn pictures (原画) =================
    ART_D is injected by the build from src/art/*.webp|png: {name: [mime, base64]}. art(name) gives a URL or null;
    artImg(name, emoji) shows the picture if there is one, otherwise the Fluent 3D emoji (so nothing changes until art arrives).
-   Names: map_<世界id>（竖长背景）, hero_base, gear_<weapon|helmet|armor|shield>（和 hero_base 同尺寸的透明图层，画成浅灰色，品质用 CSS 着色）,
-   mon_<世界id>_<关号 1–15>（第 15 关就是 Boss）。 */
-const ART = {};
+   Names (tools/art_prep.py makes them from the painted originals):
+     map_<世界id>     tall picture of one world's island, levels are placed along its painted road (ART_ROADS)
+     hero_base        小勇士 without armour; hero_<品质> = the whole look when wearing armour of that quality
+     weapon_<品质> / shield_<品质>  held in the right / left hand (helmets only show in the bag)
+     mon_<世界id>_<关号 1–15>        monsters, 第 15 关 is the Boss */
+const ART = {}, ART_SIZE = {};
 for(const k in ART_D){
-  const [mime, d] = ART_D[k];
+  const [mime, d, w, h] = ART_D[k];
+  if(w && h) ART_SIZE[k] = [w, h];
   try{ const bin = atob(d), u8 = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i] = bin.charCodeAt(i); ART[k] = URL.createObjectURL(new Blob([u8], {type:mime})); }
   catch(e){ ART[k] = "data:"+mime+";base64,"+d; }
 }
@@ -94,9 +98,36 @@ function nodePos(l){
   const r = Math.floor(l/3), k = l%3, xs = [24,50,76];
   return [r%2 ? xs[2-k] : xs[k], MAP_PAD_B + r*MAP_ROW + k*14];
 }
-const nodeX = (w,l) => nodePos(l)[0];
+/* A world with map art (map_<世界id>) gets a taller band (ART_BAND_H) filled with the picture (cover, centred); its
+   levels follow the road painted in the picture: ART_ROADS[id] is that road from the bottom up, in picture fractions
+   (x, y from the top). The bottom of the road (behind the world sign) is skipped, levels 1–14 are spread evenly along
+   the rest and the Boss stands at the road's end. No road listed → the usual rows of three. */
+const ART_BAND_H = 1250, ART_SIGN = 150;
+const ART_ROADS = {
+  add: [[0.38,1.0],[0.52,0.86],[0.62,0.77],[0.52,0.70],[0.36,0.655],[0.30,0.61],[0.39,0.567],[0.56,0.53],[0.70,0.47],[0.67,0.42],[0.55,0.378],[0.45,0.342],[0.43,0.305],[0.52,0.265]]
+};
+let MAPL = null;
+function layoutMap(W){
+  const n = WORLDS_V2.length, hs = [], tops = [], pos = {}, artBand = [];
+  for(let w=0; w<n; w++){ artBand[w] = !!art("map_"+WORLDS_V2[w].id); hs[w] = artBand[w] ? ART_BAND_H : SEG_H; }
+  let y = 0; for(let w=n-1; w>=0; w--){ tops[w] = y; y += hs[w]; }
+  for(let w=0; w<n; w++){
+    const id = WORLDS_V2[w].id, road = ART_ROADS[id], sz = ART_SIZE["map_"+id], H = hs[w];
+    if(artBand[w] && road && sz){
+      const k = Math.max(W/sz[0], H/sz[1]), dw = sz[0]*k, dh = sz[1]*k, ox = (dw-W)/2, oy = (dh-H)/2;
+      let P = road.map(([fx,fy])=>[fx*dw-ox, fy*dh-oy]);
+      const i0 = P.findIndex(p=>p[1] <= H-ART_SIGN);          // start above the world sign
+      if(i0>0){ const [a,b] = [P[i0-1], P[i0]], t = (a[1]-(H-ART_SIGN))/(a[1]-b[1]); P = [[a[0]+(b[0]-a[0])*t, H-ART_SIGN]].concat(P.slice(i0)); }
+      const cum = [0]; for(let i=1;i<P.length;i++) cum.push(cum[i-1] + Math.hypot(P[i][0]-P[i-1][0], P[i][1]-P[i-1][1]));
+      const L = cum[cum.length-1], at = d => { let i = 1; while(i<P.length-1 && cum[i]<d) i++; const t = (d-cum[i-1])/((cum[i]-cum[i-1])||1); return [P[i-1][0]+(P[i][0]-P[i-1][0])*t, P[i-1][1]+(P[i][1]-P[i-1][1])*t]; };
+      for(let l=0;l<NLV;l++){ const [x,yy] = at(l===NLV-1 ? L : L*0.9*l/(NLV-2)); pos[w+"-"+l] = [Math.round(x/W*1000)/10, Math.round(tops[w]+yy)]; }
+    } else for(let l=0;l<NLV;l++){ const [x,yb] = nodePos(l); pos[w+"-"+l] = [x, tops[w] + H - yb]; }
+  }
+  return {W, tops, hs, artBand, total: y + (artBand[0] ? 0 : MAP_OVER + 20), pos};
+}
+const nodeX = (w,l) => MAPL.pos[w+"-"+l][0];
 // y (px from the top of the whole map) of a level's centre
-const nodeY = (w,l) => (WORLDS_V2.length-1-w)*SEG_H + SEG_H - nodePos(l)[1];
+const nodeY = (w,l) => MAPL.pos[w+"-"+l][1];
 const monImg = (w,l) => artImg("mon_"+WORLDS_V2[w].id+"_"+(l+1), WORLDS_V2[w].levels[l].emoji);
 const svgURL = svg => 'url("data:image/svg+xml,'+encodeURIComponent(svg)+'")';
 // the island's top surface (the band); its cliff is a separate element so it can hang over the island below
@@ -129,7 +160,7 @@ function roadD(pts){
   return d;
 }
 let mapScroll = null, flashCur = false;
-function renderMap(focus){
+function renderMap(focus, width){
   const [cw, cl] = curLevel();
   const ts = totalStars(), h = hero();
   const next = HEROES.find(x=>x.need!=null && x.need>ts);
@@ -137,7 +168,7 @@ function renderMap(focus){
   const dayTag = dn<15 ? '<span class="pill tag" id="dayTag">今天 <span class="num">'+dn+'/15</span></span>'
                        : '<span class="pill tag hot" id="dayTag">狂暴中</span>';
   let html = '<div class="topbar">'
-    + '<button class="ibtn round avatarbtn" id="heroBtn" aria-label="换勇士">'+img(h.e)+'</button>'
+    + '<button class="ibtn round avatarbtn" id="heroBtn" aria-label="换勇士">'+heroFace()+'</button>'
     + '<span class="pill">'+img("⭐")+'<span class="num">'+ts+'</span></span>'
     + '<span class="grow"></span>'
     + '<button class="ibtn" id="bagBtn" aria-label="背包">'+img("🎒")+(S.chests>0?'<span class="badge pulse">'+S.chests+'</span>':'')+'</button>'
@@ -146,22 +177,24 @@ function renderMap(focus){
   // 今天进度 | 下一个勇士 | 📍当前关 (kept off the map so it never covers a level)
   html += '<div class="nexthero">'+dayTag+'<span class="nh">'+(next ? img(next.e)+'再拿 <span class="num">'+(next.need-ts)+'</span>'+img("⭐")+'解锁「'+next.n+'」' : img("🏆")+'勇士全解锁！')+'</span>'
     + '<button class="btn white wcur" id="goCur">'+img("📍")+'当前关</button></div>';
-  const total = SEG_H*WORLDS_V2.length + MAP_OVER + 20;   // room under the bottom island for its cliff
+  // the map's inner width (map padding 2×12, frame 2×4) decides where levels land on painted roads
+  MAPL = layoutMap(width || ($("lscroll") && $("lscroll").clientWidth) || Math.max(200, ($("map").clientWidth || 375) - 32));
+  const total = MAPL.total;   // includes room under the bottom island for its cliff
   let segs = "", nodes = "", pts = [];
   for(let wi=WORLDS_V2.length-1; wi>=0; wi--){
-    const w = WORLDS_V2[wi], top = (WORLDS_V2.length-1-wi)*SEG_H, bg = art("map_"+w.id);
+    const w = WORLDS_V2[wi], top = MAPL.tops[wi], bh = MAPL.hs[wi], bg = art("map_"+w.id);
     // scenery along both edges of the island, between the rows of levels
     const dl = SCENES[w.id].deco;
-    const deco = [0,1,2,3,4].map(r=>[0,1].map(side=>{ const [e,,,sz] = dl[(r*2+side+wi)%dl.length], y = SEG_H - MAP_PAD_B - r*MAP_ROW + 36 + side*18;
+    const deco = bg ? "" : [0,1,2,3,4].map(r=>[0,1].map(side=>{ const [e,,,sz] = dl[(r*2+side+wi)%dl.length], y = SEG_H - MAP_PAD_B - r*MAP_ROW + 36 + side*18;
       return '<span class="deco" style="'+(side?'right':'left')+':'+(6+(r%2)*3)+'%;top:'+y+'px;font-size:'+Math.round(Math.min(sz,64)*.8)+'px">'+img(e)+'</span>'; }).join("")).join("");
     const bossDone = starOf(wi, NLV-1)>0;
-    segs += '<div class="band'+(bg?" art":"")+'" data-w="'+wi+'" style="top:'+top+'px;height:'+SEG_H+'px">'+(bg?'':'<div class="cliff" data-w="'+wi+'"></div>')+deco
+    segs += '<div class="band'+(bg?" art":"")+'" data-w="'+wi+'" style="top:'+top+'px;height:'+bh+'px">'+(bg?'':'<div class="cliff" data-w="'+wi+'"></div>')+deco
       + '<div class="wsign'+(worldOpen(wi)?"":" locked")+'"><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><span class="wsub2"><small>'+w.sub+'</small>'
       + (bossDone ? '<button class="btn white wrun" data-w="'+wi+'">'+img("🏅")+'连闯</button>' : '')+'</span></div></div>';
   }
   for(let wi=0; wi<WORLDS_V2.length; wi++) WORLDS_V2[wi].levels.forEach((L,li)=>{
     const lo = levelOpen(wi,li), st = starOf(wi,li), m = mastery(wi,li), x = nodeX(wi,li), y = nodeY(wi,li), mode = L.boss ? "battle" : LEVEL_MODES[wi].modes[li];
-    pts.push([x, y]);
+    pts.push([x, y, MAPL.artBand[wi]]);
     let cls = (L.boss?" boss":"")+(lo?"":" closed")+(m>=4?" dia":"")+(st?" passed":"");
     const here = wi===cw && li===cl && !st;
     if(here) cls += " current"+(flashCur?" cur-flash":"");
@@ -175,11 +208,14 @@ function renderMap(focus){
     nodes += '<button class="node'+cls+'" style="left:'+x+'%;top:'+y+'px" data-w="'+wi+'" data-l="'+li+'"'+(lo?"":" disabled")+' aria-label="'+WORLDS_V2[wi].name+' 第'+(li+1)+'关 '+MODE_NAME[mode]+'">'
       + '<span class="ball'+nx+'">'+(lo?monImg(wi,li):img("🔒"))+'<span class="lv">'+(L.boss?"BOSS":li+1)+'</span>'
       + (MODE_ICON[mode]?'<span class="mb">'+img(MODE_ICON[mode])+'</span>':'')+'</span>'
-      + '<span class="stars">'+stars+'</span>'+(here?'<span class="here">'+img(h.e)+'</span>':'')+'</button>';
+      + '<span class="stars">'+stars+'</span>'+(here?'<span class="here">'+heroFace()+'</span>':'')+'</button>';
   });
   flashCur = false;
+  // the drawn road skips painted islands: their picture has its own road, and their Boss stands at its end
+  const runs = [[]]; pts.forEach((p,i)=>{ if(i && pts[i-1][2]) runs.push([]); runs[runs.length-1].push(p); });
+  const road = runs.filter(r=>r.length>1).map(roadD).join(" ");
   html += '<div class="wview"><div class="lscroll" id="lscroll"><div class="lmap" style="height:'+total+'px">'+segs
-    + '<svg class="wpath" viewBox="0 0 100 '+total+'" preserveAspectRatio="none" style="height:'+total+'px"><g fill="none" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"><path d="'+roadD(pts)+'" stroke="rgba(120,80,30,.35)" stroke-width="30" vector-effect="non-scaling-stroke"/><path d="'+roadD(pts)+'" stroke="#f6e4bd" stroke-width="22" vector-effect="non-scaling-stroke"/><path d="'+roadD(pts)+'" stroke="#fff" stroke-opacity=".9" stroke-width="5" stroke-dasharray="0.1 14" vector-effect="non-scaling-stroke"/></g></svg>'
+    + '<svg class="wpath" viewBox="0 0 100 '+total+'" preserveAspectRatio="none" style="height:'+total+'px"><g fill="none" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"><path d="'+road+'" stroke="rgba(120,80,30,.35)" stroke-width="30" vector-effect="non-scaling-stroke"/><path d="'+road+'" stroke="#f6e4bd" stroke-width="22" vector-effect="non-scaling-stroke"/><path d="'+road+'" stroke="#fff" stroke-opacity=".9" stroke-width="5" stroke-dasharray="0.1 14" vector-effect="non-scaling-stroke"/></g></svg>'
     + nodes+'</div></div>'
     + (IS_BETA?'<span class="pill beta" id="betaTag">试玩版</span>':'')+'</div>';
   const mp = $("map"); mp.innerHTML = html;
@@ -192,6 +228,8 @@ function renderMap(focus){
     el.style.backgroundImage = 'url("'+bg+'")';
     const t = new Image(); t.onerror = strip; t.src = bg; });
   const sc = $("lscroll");
+  // first render can be measured before the layout settles: redo once if the real width differs
+  if(sc.clientWidth && Math.abs(sc.clientWidth - MAPL.W) > 2 && !width) return renderMap(focus, sc.clientWidth);
   const centre = (wi, li, smooth) => {
     const t = Math.max(0, nodeY(wi,li) - sc.clientHeight/2);
     if(!smooth || !sc.scrollTo){ sc.scrollTop = t; return; }
@@ -279,10 +317,16 @@ const gearPower = g => !g ? -1 : QIDX[g.quality]*2 + g.affixes.reduce((s,a)=>s +
 const isBetter = g => gearPower(g) > gearPower(S.equipped[g.slot]);
 const isWorn = g => !!g && !!S.equipped[g.slot] && S.equipped[g.slot].id===g.id;
 // placeholder look until the real art arrives: hero emoji with the four pieces stacked on head / hands / chest
+// 小勇士 with original art: the armour's quality picks the whole look (hero_<品质>, else hero_base); weapon / shield
+// pictures sit in the hands if they exist. Other heroes, or no art at all: the 3D emoji with the gear icons around it.
+function heroArtURL(eq){ if(hero()!==HEROES[0]) return null; return (eq.armor && art("hero_"+eq.armor.quality)) || art("hero_base"); }
+const heroFace = () => { const u = heroArtURL(S.equipped); return u ? artTag(u, "ei art", img(hero().e)) : img(hero().e); };
 function avatarHTML(eq){
-  const emoGear = k => '<span class="ag '+k+' q-'+eq[k].quality+'" style="--qc:'+qCol(eq[k])+'">'+img(eq[k].e)+'</span>';
-  if(art("hero_base")) return '<span class="av lay">'+artTag(art("hero_base"), "ei art", img(hero().e))
-    + SLOT_KEYS.map(k=>!eq[k] ? '' : art("gear_"+k) ? artTag(art("gear_"+k), "agl q-"+eq[k].quality, emoGear(k), "--qc:"+qCol(eq[k])) : emoGear(k)).join("")+'</span>';
+  const base = heroArtURL(eq);
+  if(base){
+    const hand = (slot, side) => eq[slot] && art(slot+"_"+eq[slot].quality) ? artTag(art(slot+"_"+eq[slot].quality), "hand "+side+" q-"+eq[slot].quality, "", "--qc:"+qCol(eq[slot])) : "";
+    return '<span class="av lay">'+artTag(base, "ei art", img(hero().e))+hand("weapon","rh")+hand("shield","lh")+'</span>';
+  }
   return '<span class="av">'+img(hero().e)+SLOT_KEYS.map(k=>eq[k] ? '<span class="ag '+k+' q-'+eq[k].quality+'" style="--qc:'+qCol(eq[k])+'">'+img(eq[k].e)+'</span>' : '').join("")+'</span>';
 }
 const gearTile = (g, cls, attrs) => '<button class="gt q-'+g.quality+(cls?" "+cls:"")+'" style="--qc:'+qCol(g)+'" '+(attrs||"")+' aria-label="'+g.name+'">'+img(g.e)+'</button>';
