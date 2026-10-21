@@ -869,9 +869,11 @@ function pyBlendHz(e){
     speak:"读一读这个音节，选出对应的字。", rec:ans+" 是哪个字",
     hint:'<p class="htitle">分开读一读</p><p><span class="py">'+ini+'</span> — <span class="py">'+shown+'</span>，合起来是 <span class="py">'+ans+'</span>。</p><p>想一想，学过的字里哪个读这个音？</p>'};
 }
+// 拼读关专用的出题器：整关都是拼读（约 35% 是进阶的"看音节选汉字"）
+const blendQ = () => Math.random()<.35 ? pyBlendHz() : pyBlend();
 function pyQ(){
   const type = pick(["read","read","pick","blend","blend","tone","init","init","fin","fin","cat"]);
-  if(type==="blend") return Math.random()<.35 ? pyBlendHz() : pyBlend();
+  if(type==="blend") return blendQ();
   if(type==="init") return pyInit(pick(PY.filter(canInit)));
   if(type==="fin") return pyFin(pick(PY.filter(canFin)));
   if(type==="cat") return pyCat();
@@ -884,6 +886,7 @@ function pyQ(){
    （不在这个组里出现的音，免得孩子连对了却被判错）。
    同一组里没有同音字：拼音两两不同，连调也错开（木/目、鱼/雨 不同组）。
    接现成的 makeLinkBoard 时这样转：makeLinkBoard(LLK_SETS[i].p.map(([hz,py]) => ({hz, py}))) */
+
 const LLK_SETS = [
   {n:"识字1 天地人", p:[
     ["天","tiān",["tián","tān"]], ["地","dì",["dí","tì"]], ["人","rén",["rèn","réng"]],
@@ -942,6 +945,22 @@ const LLK_SETS = [
     ["乌","wū",["wú","wù"]], ["鸦","yā",["yà","yǎ"]]
   ]}
 ];
+// 连连看取字：世界越靠后，越用课本靠后的分组（识字 → 拼音 → 课文），一个组不够就接着用下一组（组用完绕回来）。
+// 同一个字在 PY 里有图就把 emoji 带上，没有就不带。
+const PY_EMOJI = {}; PY.forEach(e => { PY_EMOJI[e[0]] = e[3]; });
+function llkPairs(w, n){
+  const need = Math.max(2, n||4), out = [], seen = new Set();
+  const start = Math.floor((w||0) * LLK_SETS.length / Math.max(1, WORLDS_V2.length));
+  for(let i=0; i<LLK_SETS.length && out.length<need; i++){
+    for(const [hz, py] of shuffle(LLK_SETS[(start+i) % LLK_SETS.length].p.slice())){
+      if(seen.has(hz)) continue;
+      seen.add(hz);
+      out.push({hz, py, e: PY_EMOJI[hz] || null});
+      if(out.length>=need) break;
+    }
+  }
+  return out;
+}
 
 /* ================= word problems (应用题 · 思维题) =================
    Types follow the Common Core "Table 1" situations (add-to / take-from / compare, with the
@@ -1349,13 +1368,13 @@ const WP_MORE = WP_EASY.concat(["queue","queuePos","between","compareTrap","gaps
 const WP_RATE = 0.12;
 const planFn = it => () => G[it.g](...(it.args||[]));
 /* 一关的全部信息。怪兽血量 = 10 + floor(全局关卡序号 / 10)，Boss 再 +5（星级档位另加，见 ui.js startLevel）。
-   blend（拼读）关暂时用 pyQ 出拼音题。TODO: 有了专门的拼读生成器（b + ā → bā）后换掉 */
+   blend（拼读）关整关都出拼读题 blendQ（连闯里仍用 L.math 出计算题，见 ui.js startLevel）。 */
 function levelDef(w,l){
   const W2 = WORLDS_V2[w], lv = W2.levels[l], plan = LEVEL_PLAN[w].levels[l];
   const mode = lv.boss ? "battle" : (LEVEL_MODES[w].modes[l] || "battle");
   const math = mix(...plan.mix.map(planFn));
   let g = math;
-  if(mode==="blend") g = pyQ;
+  if(mode==="blend") g = blendQ;
   else if(mode==="battle" && w>=2){ const pool = (w>=4 ? WP_MORE : WP_EASY).filter(k=>WP[k]); g = () => Math.random()<WP_RATE ? WP[pick(pool)]() : math(); }
   const i = gIndex(w,l);
   return {w, l, m:lv.emoji, n:lv.name, boss:!!lv.boss, mode, g, math, hp:10 + Math.floor(i/10) + (lv.boss?5:0)};
