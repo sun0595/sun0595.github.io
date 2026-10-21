@@ -22,6 +22,8 @@ const V1 = 'math-hero-v1', BETA = 'math-hero-beta';
 const stars = { 'think-1': 3 }; for (const w of ['add', 'sub', 'ten']) for (let l = 0; l < 5; l++) stars[w + '-' + l] = 3; stars['add-2'] = 2;
 const SAVE = { stars, stickers: { '🐶': 3, '🐱': 2, '💎': 2 }, medals: { add: 1, sub: 1, ten: 1 }, tier: { 'add-1': 2 }, py: 0, sound: false, voice: false, world: 0 };
 // buttons, titles and panels that must stay fully on screen and out of the safe areas
+// a page (openPage) must leave at least this much height free, see shotCheck
+const SPARE = 16;
 const KEY_UI = 'button, .btn, .ibtn, .ribbon, .ttl, .wintitle, .pill, .tab, .ans, .item, .node, .wtitle, .nexthero, #bTitle, .qcard, .hint, .note, .page, .mboard, .lboard, .wview';
 
 async function newPage(view) {
@@ -42,13 +44,27 @@ async function newPage(view) {
 // screenshot + layout check: nothing scrolls, key UI stays on screen and out of the safe areas
 async function shotCheck(p, view, dir, name) {
   await p.screenshot({ path: path.join(dir, name + '.png') });
-  const bad = await p.evaluate(({ top, bottom, sel }) => {
+  const bad = await p.evaluate(({ top, bottom, sel, spare }) => {
     const W = innerWidth, H = innerHeight, out = [];
     const se = document.scrollingElement;
     if (se.scrollHeight > H + 1 || se.scrollWidth > W + 1) out.push(`document scrolls (${se.scrollWidth}x${se.scrollHeight})`);
     for (const id of ['map', 'battle']) { const s = document.getElementById(id); if (!s.hidden && s.scrollHeight > s.clientHeight + 2) out.push(`#${id} needs scrolling (${s.scrollHeight}>${s.clientHeight})`); }
-    const m = document.querySelector('.pbody');
-    if (m && m.scrollHeight > m.clientHeight + 2) out.push(`page needs scrolling (${m.scrollHeight}>${m.clientHeight})`);
+    // pages must fit with SPARE px to spare: fonts on macOS / iOS are a little taller than on Linux, so a page that only
+    // just fits here scrolls there. need = the page body's natural height (laid out once with no height limit);
+    // room = the most the body can get (the page grown to the full height of the modal, which is its max-height).
+    const md = document.getElementById('modal'), m = md && !md.hidden && md.querySelector('.pbody');
+    if (m) {
+      if (m.scrollHeight > m.clientHeight + 2) out.push(`page needs scrolling (${m.scrollHeight}>${m.clientHeight})`);
+      const pg = m.parentElement, mcs = getComputedStyle(md);
+      const room = m.clientHeight + (md.clientHeight - parseFloat(mcs.paddingTop) - parseFloat(mcs.paddingBottom) - pg.offsetHeight);
+      const keep = m.getAttribute('style'), st = m.scrollTop;
+      m.style.flex = 'none'; m.style.height = 'auto'; m.style.overflow = 'visible';
+      const need = m.offsetHeight;
+      if (keep === null) m.removeAttribute('style'); else m.setAttribute('style', keep);
+      m.scrollTop = st;
+      if (need > room - spare) out.push(`page has less than ${spare}px to spare (content ${need} > ${Math.round(room)} - ${spare})`);
+      window.__spare = Math.round(room - need);
+    }
     const bt = document.getElementById('battle');
     if (!bt.hidden) {
       const a = document.getElementById('answers').getBoundingClientRect(); if (a.bottom > H - bottom + 1) out.push(`answers bottom ${Math.round(a.bottom)} > ${H - bottom}`);
@@ -73,9 +89,10 @@ async function shotCheck(p, view, dir, name) {
       if (why.length) out.push(desc(el) + ': ' + why.join(', '));
     }
     return out;
-  }, { ...view.safe, sel: KEY_UI });
+  }, { ...view.safe, sel: KEY_UI, spare: SPARE });
   for (const x of bad) problems.push(`[${view.name}] ${name}: ${x}`);
-  console.log(bad.length ? 'BAD' : 'ok ', view.name, name);
+  const spare = await p.evaluate(() => { const v = window.__spare; window.__spare = undefined; return v; });
+  console.log(bad.length ? 'BAD' : 'ok ', view.name, name, spare === undefined ? '' : `(page spare ${spare}px)`);
 }
 
 async function playAll(view) {

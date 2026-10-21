@@ -395,7 +395,7 @@ function openBag(slot){
     note = ""; gone = null;
     body += '<div class="ggrid">'+all.slice(pg*PER, pg*PER+PER).map(g=>gearTile(g, (cur && g.id===cur.id?"sel":"")+(isWorn(g)?" worn":""), 'data-id="'+g.id+'" data-lv="Lv'+(g.lv||1)+'"')).join("")+'</div>';
     body += pagerHTML(pg, pages);
-    if(first) openPage({title:"🎒 背包", back:true, onClose:renderMap, body}); else setBody(body);
+    if(first) openPage({title:"🎒 背包", cls:"bag", back:true, onClose:renderMap, body}); else setBody(body);
     const P = $("pbody");
     P.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ sfx.click(); slot = b.dataset.s; sel = null; pg = 0; render(false); });
     P.querySelectorAll(".gt").forEach(b=>b.onclick=()=>{ sfx.click(); sel = b.dataset.id; render(false); });
