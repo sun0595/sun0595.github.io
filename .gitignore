@@ -1,5 +1,5 @@
 .cache/
 build/
-node_modules/
+node_modules
 *.png
 !docs/*.png
