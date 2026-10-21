@@ -189,6 +189,12 @@ async function playAll(view) {
   await p.evaluate(() => { for (const k of ['weapon', 'helmet', 'armor', 'shield']) __t.S.equipped[k] = null; });
   await tap('#bBack'); await p.waitForTimeout(300);
   // every world's map page (all open), then 「当前关」 jumps back to the current level
+  // with a beaten Boss the sign grows a 「连闯」 button: it must not touch level 1 (or its stars)
+  await p.evaluate(() => { __t.S.lv.stars['add-15'] = 3; __t.renderMap(); });
+  await scrollToBand(0); await shot('22a-map-w1-run');
+  const sg = await p.evaluate(() => { const a = document.querySelector('.band[data-w="0"] .wsign').getBoundingClientRect(), n = document.querySelector('.node[data-w="0"][data-l="0"]').getBoundingClientRect(); return { gap: Math.round(a.top - n.bottom), run: !!document.querySelector('.band[data-w="0"] .wrun') }; });
+  if (!sg.run || sg.gap < 2) problems.push(`[${view.name}] world sign with 连闯 overlaps level 1: ${JSON.stringify(sg)}`);
+  await p.evaluate(() => { delete __t.S.lv.stars['add-15']; __t.renderMap(); });
   for (let w = 0; w < 8; w++) { await scrollToBand(w); await shot(`22-map-w${w + 1}`); }
   // scroll all the way up to the 8th band's Boss
   await p.evaluate(() => { const n = document.querySelector('.node[data-w="7"][data-l="14"]'), s = document.getElementById('lscroll'); s.scrollTop = n.offsetTop - s.clientHeight / 2; }); await p.waitForTimeout(300);
@@ -250,6 +256,8 @@ async function playAll(view) {
   await p.waitForTimeout(3000); await tapPair(prs[2]); await p.waitForTimeout(100);
   const slowHit = await p.evaluate(() => __t.B.lastHit);
   if (slowHit !== 1) problems.push(`[${view.name}] a pair 3 s later should hit 1 again, hit ${slowHit}`);
+  const comboTxt = await p.evaluate(() => document.getElementById('combo').textContent);
+  if (comboTxt.trim()) problems.push(`[${view.name}] after the combo timed out the 连击 label must be cleared, still "${comboTxt}"`);
   await p.waitForTimeout(500);
   await p.evaluate(() => { __t.B.hp = 2; });
   const before = await p.evaluate(() => __t.S.daily.n);
@@ -352,6 +360,11 @@ async function playAll(view) {
   await tapNode(0, 1); await p.waitForTimeout(1900); await shot('29b-art-battle');
   const ab = await p.evaluate(() => ({ hero: !!document.querySelector('#heroSprite .av.lay img.art'), gear: !!document.querySelector('#heroSprite .agl.q-purple'), mon: !!document.querySelector('#monSprite img.art') }));
   if (!am.bg || !am.mon || !ab.hero || !ab.gear || !ab.mon) problems.push(`[${view.name}] art() pictures are not used: ${JSON.stringify({ ...am, ...ab })}`);
+  // a broken picture must fall back to the 3D emoji instead of leaving a blank (monster, hero layer, map band)
+  await p.evaluate(() => { for (const k of ['map_add', 'hero_base', 'gear_weapon', 'mon_add_2']) __t.setArt(k, 'data:image/png;base64,AAAA'); __t.toMap(); });
+  await tapNode(0, 1); await p.waitForTimeout(1900); await shot('29c-art-broken');
+  const brk = await p.evaluate(() => ({ art: document.querySelectorAll('#heroSprite img.art, #heroSprite .agl, #monSprite img.art').length, mon: !!document.querySelector('#monSprite img.ei'), hero: !!document.querySelector('#heroSprite img.ei'), gear: !!document.querySelector('#heroSprite .ag img'), nodeArt: document.querySelectorAll('#map img.art').length, band: document.querySelector('.band[data-w="0"]').style.backgroundImage.includes('svg') }));
+  if (brk.art || !brk.mon || !brk.hero || !brk.gear || brk.nodeArt || !brk.band) problems.push(`[${view.name}] broken art should fall back to the 3D emoji / painted map: ${JSON.stringify(brk)}`);
   await p.evaluate(() => { for (const k of ['map_add', 'hero_base', 'gear_weapon', 'mon_add_2']) __t.setArt(k, null); __t.toMap(); });
   if (await p.evaluate(() => document.querySelectorAll('#map img.art').length)) problems.push(`[${view.name}] without art the game must fall back to the 3D emoji`);
   if (await p.evaluate(k => localStorage.getItem(k), BETA) !== null) problems.push(`[${view.name}] 正式版 wrote the 试玩版 save "${BETA}"`);
