@@ -17,6 +17,19 @@ const img = (e, cls) => IMG[e] ? '<img class="ei'+(cls?" "+cls:"")+'" src="'+IMG
 // swap emoji in text (never inside tags/attributes) for the 3D icons
 const emo = html => String(html).split(/(<[^>]*>)/).map(p => p[0]==="<" ? p : p.replace(EMO_RE, m=>img(m))).join("");
 const cleanSpeech = t => String(t).replace(EMO_RE, "");
+/* ================= art: hand-drawn pictures (原画) =================
+   ART_D is injected by the build from src/art/*.webp|png: {name: [mime, base64]}. art(name) gives a URL or null;
+   artImg(name, emoji) shows the picture if there is one, otherwise the Fluent 3D emoji (so nothing changes until art arrives).
+   Names: map_<世界id>（竖长背景）, hero_base, gear_<weapon|helmet|armor|shield>（和 hero_base 同尺寸的透明图层，画成浅灰色，品质用 CSS 着色）,
+   mon_<世界id>_<关号 1–15>（第 15 关就是 Boss）。 */
+const ART = {};
+for(const k in ART_D){
+  const [mime, d] = ART_D[k];
+  try{ const bin = atob(d), u8 = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i] = bin.charCodeAt(i); ART[k] = URL.createObjectURL(new Blob([u8], {type:mime})); }
+  catch(e){ ART[k] = "data:"+mime+";base64,"+d; }
+}
+const art = name => ART[name] || null;
+const artImg = (name, emoji, cls) => art(name) ? '<img class="ei art'+(cls?" "+cls:"")+'" src="'+art(name)+'" alt="">' : img(emoji, cls);
 document.documentElement.style.setProperty("--warn-img", 'url("'+(IMG["❗"]||"")+'")');
 
 /* ================= art: painted world scenes ================= */
@@ -57,18 +70,36 @@ const starImg = (on, tier) => '<span class="'+(on?"":"off")+'"'+(on && tier && T
 sfx.freeze = ()=>{ tone([1800,2400,3000],.05,"sine",.08); noise(.35,.25,7000); };
 sfx.shatter = ()=>{ noise(.4,.5,5000); tone([2600,1900,1300],.05,"triangle",.07); };
 
-/* ================= map: one world per screen, 15 levels on a winding path ================= */
-// 15 nodes zig-zag up the card (row by row), the Boss (第 15 关) alone on top and bigger
-const NODE_POS = [[18,89],[50,89],[82,89],[82,74],[50,74],[18,74],[18,59],[50,59],[82,59],[82,44],[50,44],[18,44],[18,29],[82,29],[50,13]];
-const PATH_D = "M"+NODE_POS.map(p=>p.join(" ")).join(" L");
+/* ================= map: one long map, scrolled up and down =================
+   120 levels on one winding path from the bottom (加法森林 第 1 关) to the top (竖式城堡 Boss).
+   Each world is one band (段) with its own colours / decorations, a sign at its bottom and the Boss (第 15 关) at its top;
+   the top of every band fades into the colour of the next one. Only the map scrolls (native scrolling, with momentum on iOS);
+   the top bar stays put. Map background art: art("map_<世界id>") is tiled down the band if it exists. */
+const MAP_STEP = 68, MAP_PAD_B = 150, MAP_PAD_T = 84;
+const SEG_H = MAP_PAD_B + (NLV-1)*MAP_STEP + MAP_PAD_T;
 const MODE_ICON = {match:"🃏", link:"🔗", blend:"🔤"};
 const MODE_NAME = {battle:"打怪", match:"算术消除", link:"连连看", blend:"拼读"};
-let curWorld = null, flashCur = false;
-function renderMap(dir){
+// x (%) of each level: a gentle wave, different phase per world; the Boss sits in the middle
+const nodeX = (w,l) => l===NLV-1 ? 50 : Math.round(50 + 28*Math.sin(l*0.85 + w*1.3));
+// y (px from the top of the whole map) of a level's centre
+const nodeY = (w,l) => (WORLDS_V2.length-1-w)*SEG_H + SEG_H - (MAP_PAD_B + l*MAP_STEP + (l===NLV-1?10:0));
+const monImg = (w,l) => artImg("mon_"+WORLDS_V2[w].id+"_"+(l+1), WORLDS_V2[w].levels[l].emoji);
+function stripURL(id, nextId){
+  const c = SCENES[id], n = nextId && SCENES[nextId], H = SEG_H;
+  let svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 "+H+"' preserveAspectRatio='none'><defs>"
+    + "<linearGradient id='g' x1='0' y1='1' x2='0' y2='0'><stop offset='0' stop-color='"+c.h[2]+"'/><stop offset='.3' stop-color='"+c.h[1]+"'/><stop offset='.62' stop-color='"+c.h[0]+"'/><stop offset='.86' stop-color='"+c.sky[1]+"'/><stop offset='1' stop-color='"+c.sky[0]+"'/></linearGradient>"
+    + (n ? "<linearGradient id='t' x1='0' y1='1' x2='0' y2='0'><stop offset='0' stop-color='"+n.h[2]+"' stop-opacity='0'/><stop offset='1' stop-color='"+n.h[2]+"'/></linearGradient>" : "")
+    + "</defs><rect width='400' height='"+H+"' fill='url(#g)'/>";
+  if(c.night) for(let i=0;i<40;i++) svg += "<circle cx='"+(i*137%400)+"' cy='"+(30+(i*89%Math.round(H*.6)))+"' r='"+(1+(i%3)*.7)+"' fill='#fff' opacity='.7'/>";
+  for(let y=H-60, k=0; y>220; y-=230, k++) svg += "<path d='M0 "+y+" Q"+(k%2?140:90)+" "+(y-46)+" 200 "+(y-8)+" T400 "+(y-14)+" V"+(y+70)+" H0Z' fill='"+(k%2?c.h[0]:c.h[1])+"' opacity='.35'/>";
+  if(n) svg += "<rect width='400' height='200' fill='url(#t)'/>";
+  svg += "</svg>";
+  return 'url("data:image/svg+xml,'+encodeURIComponent(svg)+'")';
+}
+let mapScroll = null, flashCur = false;
+function renderMap(focus){
   const [cw, cl] = curLevel();
-  // first time: the world looked at last (S.mapWorld), else the current level's world; 「当前关」 always jumps back
-  if(curWorld===null) curWorld = (Number.isInteger(S.mapWorld) && S.mapWorld>=0 && S.mapWorld<WORLDS_V2.length) ? S.mapWorld : cw;
-  const ts = totalStars(), h = hero(), wi = curWorld, w = WORLDS_V2[wi], open = worldOpen(wi);
+  const ts = totalStars(), h = hero();
   const next = HEROES.find(x=>x.need!=null && x.need>ts);
   const dn = daily().n;   // 当天进度：前 15 次通关正常，之后进入狂暴
   const dayTag = dn<15 ? '<span class="pill tag" id="dayTag">今天 <span class="num">'+dn+'/15</span></span>'
@@ -82,15 +113,19 @@ function renderMap(dir){
     + '<button class="ibtn" id="parentBtn" aria-label="家长设置">'+img("⚙️")+'</button></div>';
   html += next ? '<div class="nexthero">'+dayTag+img(next.e)+'再拿 <span class="num">'+(next.need-ts)+'</span> '+img("⭐")+' 解锁「'+next.n+'」</div>'
                : '<div class="nexthero">'+dayTag+img("🏆")+'所有勇士都解锁了！</div>';
-  const bossDone = starOf(wi, NLV-1)>0;
-  html += '<div class="wview" id="wview"><div class="wcard" id="wcard" style="--wdir:'+(dir||0)*40+'px">'
-    + decoHTML(w.id, .7)
-    + '<svg class="wpath" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="'+PATH_D+'" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="6" stroke-linecap="round" stroke-dasharray="0.1 13" vector-effect="non-scaling-stroke"/></svg>'
-    + '<button class="btn white wcur" id="goCur">'+img("📍")+'当前关</button>'
-    + (bossDone ? '<button class="wmedal" id="runBtn" aria-label="Boss 连闯">'+img("🏅")+'<small>连闯</small></button>' : '')
-    + (IS_BETA?'<span class="pill beta" id="betaTag">试玩版</span>':'');
-  w.levels.forEach((L,li)=>{
-    const lo = levelOpen(wi,li), st = starOf(wi,li), m = mastery(wi,li), [x,y] = NODE_POS[li], mode = L.boss ? "battle" : LEVEL_MODES[wi].modes[li];
+  const total = SEG_H*WORLDS_V2.length;
+  let segs = "", nodes = "", pts = [];
+  for(let wi=WORLDS_V2.length-1; wi>=0; wi--){
+    const w = WORLDS_V2[wi], top = (WORLDS_V2.length-1-wi)*SEG_H, bg = art("map_"+w.id);
+    const deco = [0,1,2].map(k=>SCENES[w.id].deco.map(([e,x,y,s],j)=>'<span class="deco" style="left:'+(x<50?Math.min(x,3):Math.max(x,86))+'%;top:'+Math.round(k*SEG_H/3 + 40 + ((y+j*23)%80)/80*SEG_H/4)+'px;font-size:'+Math.round(s*.6)+'px">'+img(e)+'</span>').join("")).join("");
+    const bossDone = starOf(wi, NLV-1)>0;
+    segs += '<div class="band'+(bg?" art":"")+'" data-w="'+wi+'" style="top:'+top+'px;height:'+SEG_H+'px">'+deco
+      + '<div class="wsign'+(worldOpen(wi)?"":" locked")+'"><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><small>'+w.sub+'</small>'
+      + (bossDone ? '<button class="btn white wrun" data-w="'+wi+'">'+img("🏅")+'连闯</button>' : '')+'</div></div>';
+  }
+  for(let wi=0; wi<WORLDS_V2.length; wi++) WORLDS_V2[wi].levels.forEach((L,li)=>{
+    const lo = levelOpen(wi,li), st = starOf(wi,li), m = mastery(wi,li), x = nodeX(wi,li), y = nodeY(wi,li), mode = L.boss ? "battle" : LEVEL_MODES[wi].modes[li];
+    pts.push(x+" "+y);
     let cls = (L.boss?" boss":"")+(lo?"":" closed")+(m>=4?" dia":"")+(st?" passed":"");
     if(wi===cw && li===cl && !st) cls += " current"+(flashCur?" flash":"");
     let stars = "";
@@ -100,27 +135,46 @@ function renderMap(dir){
       else stars = [0,1,2].map(i=>starImg(i<st,0)).join("");
     }
     const nx = st && m>=1 && m<4 ? ' nx" style="--nc:'+TIERS[m].c : '';
-    html += '<button class="node'+cls+'" style="left:'+x+'%;top:'+y+'%" data-l="'+li+'"'+(lo?"":" disabled")+' aria-label="第'+(li+1)+'关 '+MODE_NAME[mode]+'">'
-      + '<span class="ball'+nx+'">'+(lo?img(L.emoji):img("🔒"))+'<span class="lv">'+(L.boss?"BOSS":li+1)+'</span>'
+    nodes += '<button class="node'+cls+'" style="left:'+x+'%;top:'+y+'px" data-w="'+wi+'" data-l="'+li+'"'+(lo?"":" disabled")+' aria-label="'+WORLDS_V2[wi].name+' 第'+(li+1)+'关 '+MODE_NAME[mode]+'">'
+      + '<span class="ball'+nx+'">'+(lo?monImg(wi,li):img("🔒"))+'<span class="lv">'+(L.boss?"BOSS":li+1)+'</span>'
       + (MODE_ICON[mode]?'<span class="mb">'+img(MODE_ICON[mode])+'</span>':'')+'</span>'
       + '<span class="stars">'+stars+'</span></button>';
   });
   flashCur = false;
-  if(!open) html += '<div class="wlock">'+img("🔒")+'<div>通过上一个世界的全部关卡<br>就能进入这里</div></div>';
-  html += '</div></div>';
-  html += '<div class="wnav"><button class="ibtn round" id="wPrev" aria-label="上一个世界"'+(wi===0?" disabled":"")+'>'+chev()+'</button>'
-    + '<div class="wtitle"><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><small>'+w.sub+'</small></div>'
-    + '<button class="ibtn round" id="wNext" aria-label="下一个世界"'+(wi===WORLDS_V2.length-1?" disabled":"")+'>'+chev(true)+'</button></div>';
+  html += '<div class="wview"><div class="lscroll" id="lscroll"><div class="lmap" style="height:'+total+'px">'+segs
+    + '<svg class="wpath" viewBox="0 0 100 '+total+'" preserveAspectRatio="none" style="height:'+total+'px"><path d="M'+pts.join(" L")+'" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="6" stroke-linecap="round" stroke-dasharray="0.1 13" vector-effect="non-scaling-stroke"/></svg>'
+    + nodes+'</div></div>'
+    + '<button class="btn white wcur" id="goCur">'+img("📍")+'当前关</button>'
+    + (IS_BETA?'<span class="pill beta" id="betaTag">试玩版</span>':'')+'</div>';
   const mp = $("map"); mp.innerHTML = html;
-  $("wcard").style.backgroundImage = sceneURL(w.id);
-  mp.querySelectorAll(".node").forEach(b=>b.addEventListener("click",()=>{ sfx.click(); startLevel(wi, +b.dataset.l); }));
-  const go = d => { const n = curWorld+d; if(n<0 || n>=WORLDS_V2.length) return; curWorld = n; S.mapWorld = n; save(); sfx.click(); renderMap(d); };
-  $("wPrev").onclick = ()=>go(-1); $("wNext").onclick = ()=>go(1);
-  $("goCur").onclick = ()=>{ sfx.click(); const d = Math.sign(cw-curWorld); curWorld = cw; S.mapWorld = cw; save(); flashCur = true; renderMap(d); say("第"+(cl+1)+"关，出发！"); };
-  if($("runBtn")) $("runBtn").onclick = ()=>{ sfx.click(); openRunMenu(wi); };
-  let tx = null;
-  $("wview").addEventListener("touchstart", e=>{ tx = e.touches[0].clientX; }, {passive:true});
-  $("wview").addEventListener("touchend", e=>{ if(tx===null) return; const dx = e.changedTouches[0].clientX - tx; tx = null; if(Math.abs(dx)>50) go(dx<0?1:-1); });
+  // band backgrounds are set as properties (the data: URLs contain quotes)
+  mp.querySelectorAll(".band").forEach(el=>{ const wi = +el.dataset.w, id = WORLDS_V2[wi].id, bg = art("map_"+id);
+    el.style.backgroundImage = bg ? 'url("'+bg+'")' : stripURL(id, WORLDS_V2[wi+1] && WORLDS_V2[wi+1].id); });
+  const sc = $("lscroll");
+  const centre = (wi, li, smooth) => {
+    const t = Math.max(0, nodeY(wi,li) - sc.clientHeight/2);
+    if(!smooth || !sc.scrollTo){ sc.scrollTop = t; return; }
+    // far away (e.g. up at the last world): jump most of the way, then glide the last screen
+    if(Math.abs(t - sc.scrollTop) > sc.clientHeight*1.5) sc.scrollTop = t + Math.sign(sc.scrollTop - t)*sc.clientHeight;
+    sc.scrollTo({top:t, behavior:"smooth"});
+  };
+  if(focus || mapScroll===null){
+    // keep the current level centred while the layout settles (fonts, safe areas), until the child touches the map
+    let auto = true; const stop = ()=>{ auto = false; };
+    centre(cw, cl);
+    ["touchstart","wheel","pointerdown"].forEach(ev=>sc.addEventListener(ev, stop, {passive:true}));
+    if(window.ResizeObserver){ const ro = new ResizeObserver(()=>{ if(!sc.isConnected || !auto){ ro.disconnect(); return; } centre(cw, cl); mapScroll = sc.scrollTop; }); ro.observe(sc); }
+  }
+  else sc.scrollTop = mapScroll;
+  mapScroll = sc.scrollTop;
+  sc.addEventListener("scroll", ()=>{ mapScroll = sc.scrollTop; }, {passive:true});
+  mp.querySelectorAll(".node").forEach(b=>b.addEventListener("click",()=>{ sfx.click(); startLevel(+b.dataset.w, +b.dataset.l); }));
+  mp.querySelectorAll(".wrun").forEach(b=>b.onclick=()=>{ sfx.click(); openRunMenu(+b.dataset.w); });
+  $("goCur").onclick = ()=>{
+    sfx.click(); centre(cw, cl, true);
+    const n = mp.querySelector(".node.current"); if(n){ n.classList.remove("flash"); void n.offsetWidth; n.classList.add("flash"); }
+    say("第"+(cl+1)+"关，出发！");
+  };
   $("heroBtn").onclick = ()=>{ sfx.click(); openHeroes(); };
   $("bagBtn").onclick = ()=>{ sfx.click(); openBag(); };
   $("soundBtn").onclick = ()=>{ const on = !(S.sound||S.voice); S.sound = on; S.voice = on; save(); if(!on) try{speechSynthesis.cancel()}catch(e){} else { sfx.click(); say("声音打开啦"); } renderMap(); };
@@ -185,6 +239,9 @@ const isBetter = g => gearPower(g) > gearPower(S.equipped[g.slot]);
 const isWorn = g => !!g && !!S.equipped[g.slot] && S.equipped[g.slot].id===g.id;
 // placeholder look until the real art arrives: hero emoji with the four pieces stacked on head / hands / chest
 function avatarHTML(eq){
+  if(art("hero_base")) return '<span class="av lay"><img class="ei art" src="'+art("hero_base")+'" alt="">'
+    + SLOT_KEYS.map(k=>!eq[k] ? '' : art("gear_"+k) ? '<img class="agl q-'+eq[k].quality+'" style="--qc:'+qCol(eq[k])+'" src="'+art("gear_"+k)+'" alt="">'
+      : '<span class="ag '+k+' q-'+eq[k].quality+'" style="--qc:'+qCol(eq[k])+'">'+img(eq[k].e)+'</span>').join("")+'</span>';
   return '<span class="av">'+img(hero().e)+SLOT_KEYS.map(k=>eq[k] ? '<span class="ag '+k+' q-'+eq[k].quality+'" style="--qc:'+qCol(eq[k])+'">'+img(eq[k].e)+'</span>' : '').join("")+'</span>';
 }
 const gearTile = (g, cls, attrs) => '<button class="gt q-'+g.quality+(cls?" "+cls:"")+'" style="--qc:'+qCol(g)+'" '+(attrs||"")+' aria-label="'+g.name+'">'+img(g.e)+'</button>';
@@ -298,7 +355,7 @@ function openParent(tab){
       if(!confirmReset){ confirmReset = true; return render(false); }
       const keep = {voiceName:S.voiceName, rate:S.rate};
       S = Object.assign({}, DEFAULT, {stars:{},stats:{},mistakes:[],stickers:{},medals:{},tier:{},shiny:{},items:{heal:1,time:1,ice:1},crown:false,world:0,lv:{stars:{},tier:{}},lvMigrated:true,mapWorld:0}, keep);
-      save(); curWorld = 0; closePage();
+      save(); mapScroll = null; closePage();
     });
     if($("voiceSel")) $("voiceSel").onchange = e=>{ S.voiceName = e.target.value; save(); say("小勇士，准备好了吗？我们出发吧！", true); };
     on("vTest", ()=>say("小红比小白大三岁，小蓝比小白小两岁。小红和小蓝相差几岁？", true));
@@ -338,7 +395,7 @@ function startLevel(w,l,run){
   const hb = $("heroBox"); hb.style.setProperty("--hcol", h.col); hb.classList.toggle("gold", goldAura());
   $("heroSprite").className = "sprite"; $("heroSprite").innerHTML = avatarHTML(S.equipped); $("heroName").innerHTML = emo((S.crown?"👑":"")+h.n);
   $("shield").hidden = !B.shield; $("shield").className = "shield";
-  const ms = $("monSprite"); ms.className = "sprite"; ms.innerHTML = img(L.m);
+  const ms = $("monSprite"); ms.className = "sprite"; ms.innerHTML = monImg(w,l);
   $("monGrow").style.transform = ""; $("monBox").classList.remove("angry","frozen");
   $("iceBlock").hidden = true; $("iceChip").hidden = true; $("frost").classList.remove("on");
   $("monName").textContent = (diff?TIERS[diff].n+"·":"")+L.n;
@@ -752,7 +809,6 @@ function win(){
   if(!B.run && stars===3 && (S.lv.tier[key]||0)===B.diff && B.diff<4){ S.lv.tier[key] = B.diff+1; info.tierUp = B.diff+1; }
   if(info.boss){ info.firstMedal = !S.medals[B.W.id]; S.medals[B.W.id] = true; }
   if(B.run){ B.run.hearts = Math.min(5, B.hearts+1); B.run.i++; info.runDone = B.run.i>=B.run.seq.length; }
-  if(info.newWorld){ curWorld = B.w+1; S.mapWorld = curWorld; }
   daily().n++;   // every win counts, replays and 连闯 battles included
   save();
   $("monBox").classList.remove("angry","frozen"); $("iceBlock").hidden = true; $("iceChip").hidden = true; $("frost").classList.remove("on"); $("items").innerHTML = "";
@@ -817,7 +873,7 @@ function showWin(info){
     c.querySelector("small").textContent = taps===1 ? "宝箱在发光！再点！" : "最后一下！！";
   };
   const {w,l} = info;
-  if($("rNext")) $("rNext").onclick = ()=>{ closePage(); isLast ? (curWorld = w+1, startLevel(w+1,0)) : startLevel(w,l+1); };
+  if($("rNext")) $("rNext").onclick = ()=>{ closePage(); isLast ? startLevel(w+1,0) : startLevel(w,l+1); };
   $("rAgain").onclick = ()=>{ closePage(); startLevel(w,l); };
   $("rMap").onclick = ()=>{ closePage(); toMap(); };
   if($("rMap2")) $("rMap2").onclick = ()=>{ closePage(); toMap(); };
@@ -869,7 +925,7 @@ function toMap(){
   cancelAnimationFrame(rafId);
   try{ speechSynthesis.cancel(); }catch(e){}
   $("battle").hidden = true; $("map").hidden = false;
-  renderMap();
+  renderMap(true);   // back on the map: centre the (new) current level
 }
 
 /* ================= Boss 连闯（地图上的特别挑战） =================
@@ -884,7 +940,7 @@ const RUN_RW = {1:{cards:1, items:3}, 2:{cards:2, items:6, crown:true}};
 const runIcons = mode => runDef(mode).seq.map(([w,l])=>WORLDS_V2[w].levels[l].emoji);
 const runProgress = run => runIcons(run.mode).map((e,i)=>'<span class="'+(i<run.i?"":i===run.i?"c":"d")+'">'+img(i<run.i?"✅":e)+'</span>').join("");
 function openRunMenu(w){
-  w = w==null ? curWorld : w;
+  w = w==null ? curLevel()[0] : w;
   const id = WORLDS_V2[w].id, worldOK = S.openAll || starOf(w, NLV-1)>0;
   const bosses = WORLDS_V2.filter((_,i)=>starOf(i, NLV-1)>0).length;
   const epicOK = S.openAll || bosses>=WORLDS_V2.length;
