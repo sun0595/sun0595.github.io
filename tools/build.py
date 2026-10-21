@@ -148,6 +148,10 @@ def art_table():
                 sys.exit("ERROR: art file name must be lower-case letters, digits and _ (e.g. mon_add_3.webp): %s" % f)
             with open(os.path.join(ART_DIR, f), "rb") as fh:
                 data = fh.read()
+            # a broken file would leave a blank monster / hero on screen: refuse it
+            ok = (data[:8] == b"\x89PNG\r\n\x1a\n") if ext.lower() == ".png" else (data[:4] == b"RIFF" and data[8:12] == b"WEBP")
+            if not data or not ok:
+                sys.exit("ERROR: art file is empty or not a real %s picture: %s" % (ext.lower()[1:], f))
             total += len(data)
             table[name] = [ART_MIME[ext.lower()], base64.b64encode(data).decode()]
     if total > ART_WARN:

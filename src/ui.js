@@ -29,7 +29,13 @@ for(const k in ART_D){
   catch(e){ ART[k] = "data:"+mime+";base64,"+d; }
 }
 const art = name => ART[name] || null;
-const artImg = (name, emoji, cls) => art(name) ? '<img class="ei art'+(cls?" "+cls:"")+'" src="'+art(name)+'" alt="">' : img(emoji, cls);
+// every art <img> carries its fallback (data-fb); a picture that fails to load is swapped for it (see the error listener below)
+const artTag = (url, cls, fb, style) => '<img class="'+cls+'"'+(style?' style="'+style+'"':'')+' src="'+url+'" alt="" data-fb="'+encodeURIComponent(fb||"")+'">';
+const artImg = (name, emoji, cls) => art(name) ? artTag(art(name), "ei art"+(cls?" "+cls:""), img(emoji, cls)) : img(emoji, cls);
+document.addEventListener("error", e=>{
+  const t = e.target;
+  if(t && t.tagName==="IMG" && t.dataset && "fb" in t.dataset){ const fb = decodeURIComponent(t.dataset.fb); if(fb) t.outerHTML = fb; else t.remove(); }
+}, true);
 document.documentElement.style.setProperty("--warn-img", 'url("'+(IMG["❗"]||"")+'")');
 
 /* ================= art: painted world scenes ================= */
@@ -75,7 +81,7 @@ sfx.shatter = ()=>{ noise(.4,.5,5000); tone([2600,1900,1300],.05,"triangle",.07)
    Each world is one band (段) with its own colours / decorations, a sign at its bottom and the Boss (第 15 关) at its top;
    the top of every band fades into the colour of the next one. Only the map scrolls (native scrolling, with momentum on iOS);
    the top bar stays put. Map background art: art("map_<世界id>") is tiled down the band if it exists. */
-const MAP_STEP = 68, MAP_PAD_B = 150, MAP_PAD_T = 84;
+const MAP_STEP = 68, MAP_PAD_B = 158, MAP_PAD_T = 84;
 const SEG_H = MAP_PAD_B + (NLV-1)*MAP_STEP + MAP_PAD_T;
 const MODE_ICON = {match:"🃏", link:"🔗", blend:"🔤"};
 const MODE_NAME = {battle:"打怪", match:"算术消除", link:"连连看", blend:"拼读"};
@@ -111,8 +117,9 @@ function renderMap(focus){
     + '<button class="ibtn" id="bagBtn" aria-label="背包">'+img("🎒")+(S.chests>0?'<span class="badge pulse">'+S.chests+'</span>':'')+'</button>'
     + '<button class="ibtn" id="soundBtn" aria-label="声音">'+img(S.sound||S.voice?"🔊":"🔇")+'</button>'
     + '<button class="ibtn" id="parentBtn" aria-label="家长设置">'+img("⚙️")+'</button></div>';
-  html += next ? '<div class="nexthero">'+dayTag+img(next.e)+'再拿 <span class="num">'+(next.need-ts)+'</span> '+img("⭐")+' 解锁「'+next.n+'」</div>'
-               : '<div class="nexthero">'+dayTag+img("🏆")+'所有勇士都解锁了！</div>';
+  // 今天进度 | 下一个勇士 | 📍当前关 (kept off the map so it never covers a level)
+  html += '<div class="nexthero">'+dayTag+'<span class="nh">'+(next ? img(next.e)+'再拿 <span class="num">'+(next.need-ts)+'</span>'+img("⭐")+'解锁「'+next.n+'」' : img("🏆")+'勇士全解锁！')+'</span>'
+    + '<button class="btn white wcur" id="goCur">'+img("📍")+'当前关</button></div>';
   const total = SEG_H*WORLDS_V2.length;
   let segs = "", nodes = "", pts = [];
   for(let wi=WORLDS_V2.length-1; wi>=0; wi--){
@@ -120,8 +127,8 @@ function renderMap(focus){
     const deco = [0,1,2].map(k=>SCENES[w.id].deco.map(([e,x,y,s],j)=>'<span class="deco" style="left:'+(x<50?Math.min(x,3):Math.max(x,86))+'%;top:'+Math.round(k*SEG_H/3 + 40 + ((y+j*23)%80)/80*SEG_H/4)+'px;font-size:'+Math.round(s*.6)+'px">'+img(e)+'</span>').join("")).join("");
     const bossDone = starOf(wi, NLV-1)>0;
     segs += '<div class="band'+(bg?" art":"")+'" data-w="'+wi+'" style="top:'+top+'px;height:'+SEG_H+'px">'+deco
-      + '<div class="wsign'+(worldOpen(wi)?"":" locked")+'"><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><small>'+w.sub+'</small>'
-      + (bossDone ? '<button class="btn white wrun" data-w="'+wi+'">'+img("🏅")+'连闯</button>' : '')+'</div></div>';
+      + '<div class="wsign'+(worldOpen(wi)?"":" locked")+'"><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><span class="wsub2"><small>'+w.sub+'</small>'
+      + (bossDone ? '<button class="btn white wrun" data-w="'+wi+'">'+img("🏅")+'连闯</button>' : '')+'</span></div></div>';
   }
   for(let wi=0; wi<WORLDS_V2.length; wi++) WORLDS_V2[wi].levels.forEach((L,li)=>{
     const lo = levelOpen(wi,li), st = starOf(wi,li), m = mastery(wi,li), x = nodeX(wi,li), y = nodeY(wi,li), mode = L.boss ? "battle" : LEVEL_MODES[wi].modes[li];
@@ -144,12 +151,14 @@ function renderMap(focus){
   html += '<div class="wview"><div class="lscroll" id="lscroll"><div class="lmap" style="height:'+total+'px">'+segs
     + '<svg class="wpath" viewBox="0 0 100 '+total+'" preserveAspectRatio="none" style="height:'+total+'px"><path d="M'+pts.join(" L")+'" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="6" stroke-linecap="round" stroke-dasharray="0.1 13" vector-effect="non-scaling-stroke"/></svg>'
     + nodes+'</div></div>'
-    + '<button class="btn white wcur" id="goCur">'+img("📍")+'当前关</button>'
     + (IS_BETA?'<span class="pill beta" id="betaTag">试玩版</span>':'')+'</div>';
   const mp = $("map"); mp.innerHTML = html;
   // band backgrounds are set as properties (the data: URLs contain quotes)
   mp.querySelectorAll(".band").forEach(el=>{ const wi = +el.dataset.w, id = WORLDS_V2[wi].id, bg = art("map_"+id);
-    el.style.backgroundImage = bg ? 'url("'+bg+'")' : stripURL(id, WORLDS_V2[wi+1] && WORLDS_V2[wi+1].id); });
+    const strip = () => { el.classList.remove("art"); el.style.backgroundImage = stripURL(id, WORLDS_V2[wi+1] && WORLDS_V2[wi+1].id); };
+    if(!bg) return strip();
+    el.style.backgroundImage = 'url("'+bg+'")';
+    const t = new Image(); t.onerror = strip; t.src = bg; });
   const sc = $("lscroll");
   const centre = (wi, li, smooth) => {
     const t = Math.max(0, nodeY(wi,li) - sc.clientHeight/2);
@@ -239,9 +248,9 @@ const isBetter = g => gearPower(g) > gearPower(S.equipped[g.slot]);
 const isWorn = g => !!g && !!S.equipped[g.slot] && S.equipped[g.slot].id===g.id;
 // placeholder look until the real art arrives: hero emoji with the four pieces stacked on head / hands / chest
 function avatarHTML(eq){
-  if(art("hero_base")) return '<span class="av lay"><img class="ei art" src="'+art("hero_base")+'" alt="">'
-    + SLOT_KEYS.map(k=>!eq[k] ? '' : art("gear_"+k) ? '<img class="agl q-'+eq[k].quality+'" style="--qc:'+qCol(eq[k])+'" src="'+art("gear_"+k)+'" alt="">'
-      : '<span class="ag '+k+' q-'+eq[k].quality+'" style="--qc:'+qCol(eq[k])+'">'+img(eq[k].e)+'</span>').join("")+'</span>';
+  const emoGear = k => '<span class="ag '+k+' q-'+eq[k].quality+'" style="--qc:'+qCol(eq[k])+'">'+img(eq[k].e)+'</span>';
+  if(art("hero_base")) return '<span class="av lay">'+artTag(art("hero_base"), "ei art", img(hero().e))
+    + SLOT_KEYS.map(k=>!eq[k] ? '' : art("gear_"+k) ? artTag(art("gear_"+k), "agl q-"+eq[k].quality, emoGear(k), "--qc:"+qCol(eq[k])) : emoGear(k)).join("")+'</span>';
   return '<span class="av">'+img(hero().e)+SLOT_KEYS.map(k=>eq[k] ? '<span class="ag '+k+' q-'+eq[k].quality+'" style="--qc:'+qCol(eq[k])+'">'+img(eq[k].e)+'</span>' : '').join("")+'</span>';
 }
 const gearTile = (g, cls, attrs) => '<button class="gt q-'+g.quality+(cls?" "+cls:"")+'" style="--qc:'+qCol(g)+'" '+(attrs||"")+' aria-label="'+g.name+'">'+img(g.e)+'</button>';
@@ -782,6 +791,7 @@ function boardRight(){
   if(cleared) dmg = Math.max(dmg, B.hp);   // last pair: always the finishing blow
   B.lastHit = dmg; B.combo = B.bcombo + 1;
   if(B.bcombo>0){ setCombo((fast ? "⚡闪电连击 ×" : "连击 ×")+(B.bcombo+1)); if(fast) restart($("battle"),"quake"); }
+  else $("combo").textContent = "";   // combo timed out: take the old 「连击 ×N」 off the screen
   const st = S.stats[B.W.id] || (S.stats[B.W.id]={r:0,w:0}); st.r++; save();
   heroAttack({dmg, crit:fast});
 }
