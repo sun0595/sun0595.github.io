@@ -78,7 +78,8 @@ function renderMap(dir){
     + decoHTML(w.id)
     + '<svg class="wpath" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="'+PATH_D+'" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="7" stroke-linecap="round" stroke-dasharray="0.1 16" vector-effect="non-scaling-stroke"/></svg>'
     + '<div class="whead"><span class="ribbon'+(wi===WORLDS.length-1?" blue":"")+'">'+(wi+1)+' · '+w.name+'</span></div><span class="wsub">'+w.sub+'</span>'
-    + (S.medals[w.id]?'<span class="wmedal">'+img("🏅")+'</span>':'');
+    + (S.medals[w.id]?'<span class="wmedal">'+img("🏅")+'</span>':'')
+    + (IS_BETA?'<span class="pill beta" id="betaTag">试玩版</span>':'');
   let currentMarked = false;
   w.levels.forEach((L,li)=>{
     const lo = levelOpen(wi,li), st = starOf(wi,li), m = mastery(wi,li), fin = isFinal(wi,li), [x,y] = NODE_POS[li];
