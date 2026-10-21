@@ -15,7 +15,8 @@ How it works:
   src/logic.js   save data, sound/voice, question banks (math / pinyin / word problems), worlds, heroes, stickers
   src/ui.js      everything on screen: map, pages, battle, rewards, runs, effects
   src/art/       optional original art (webp/png, names like map_add / hero_base / gear_weapon / mon_add_3),
-                 embedded as ART_D; the game shows it instead of the 3D emoji when present (warning above 3 MB)
+                 embedded as ART_D; the game shows it instead of the 3D emoji when present (warning above 5 MB);
+                 tools/art_prep.py turns the painted originals into these files
 Every emoji used anywhere in src/ is swapped for its Fluent 3D image (embedded as base64 webp),
 and the fonts are subset to the characters actually used and embedded as woff2.
 The output makes ZERO external requests, so it works in mainland China.
@@ -67,7 +68,7 @@ const shuffle = a => { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.ran
 TEST_HOOK = ("window.__t={showRunReward,startRun,openRunMenu,useItem,qTime,openBag,get B(){return B},get S(){return S},G,WP,LEVEL_PLAN,"
              "WORLDS_V2,LEVEL_MODES,img,startLevel,nextQuestion,toMap,levelDef,matchGenFor,matchPoolOK,curLevel,renderMap,hitCap,"
              "pyQ,pyBlend,pyBlendHz,blendQ,PY,LLK_SETS,llkPairs,pyLegal,pySplit,pyMark,"
-             "setArt(k,url){ if(url) ART[k] = url; else delete ART[k]; },"
+             "art,setArt(k,url){ if(url) ART[k] = url; else delete ART[k]; },"
              "setDaily(n){ daily().n = n; save(); renderMap(); }};\n")
 
 EMOJI_RANGES = [(0x1F000, 0x1FAFF), (0x2600, 0x27BF), (0x2300, 0x23FF), (0x2B00, 0x2BFF), (0x2190, 0x21FF),
@@ -133,11 +134,25 @@ def font_faces(text):
 BETA_TITLE = "（试玩版）"
 
 ART_DIR = os.path.join(ROOT, "src", "art")
-ART_WARN = 3 * 1024 * 1024
+ART_WARN = 5 * 1024 * 1024
 ART_MIME = {".webp": "image/webp", ".png": "image/png"}
 
+def pic_size(data, ext):
+    """(width, height) read from the PNG / WebP header (the map needs it to place levels on the painted road)"""
+    if ext == ".png":
+        return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+    kind = data[12:16]
+    if kind == b"VP8X":
+        return 1 + int.from_bytes(data[24:27], "little"), 1 + int.from_bytes(data[27:30], "little")
+    if kind == b"VP8 ":
+        return int.from_bytes(data[26:28], "little") & 0x3FFF, int.from_bytes(data[28:30], "little") & 0x3FFF
+    if kind == b"VP8L":
+        b = int.from_bytes(data[21:25], "little")
+        return 1 + (b & 0x3FFF), 1 + ((b >> 14) & 0x3FFF)
+    return 0, 0
+
 def art_table():
-    """embed src/art/*.webp|png as ART_D = {name: [mime, base64]}; JS art(name) uses it, else falls back to the 3D emoji"""
+    """embed src/art/*.webp|png as ART_D = {name: [mime, base64, width, height]}; JS art(name) uses it, else falls back to the 3D emoji"""
     table, total = {}, 0
     if os.path.isdir(ART_DIR):
         for f in sorted(os.listdir(ART_DIR)):
@@ -153,9 +168,9 @@ def art_table():
             if not data or not ok:
                 sys.exit("ERROR: art file is empty or not a real %s picture: %s" % (ext.lower()[1:], f))
             total += len(data)
-            table[name] = [ART_MIME[ext.lower()], base64.b64encode(data).decode()]
+            table[name] = [ART_MIME[ext.lower()], base64.b64encode(data).decode(), *pic_size(data, ext.lower())]
     if total > ART_WARN:
-        print("WARNING: embedded art is %.1f MB (over 3 MB) - the page gets slow to open on a phone; shrink or convert to webp" % (total / 1048576))
+        print("WARNING: embedded art is %.1f MB (over 5 MB) - the page gets slow to open on a phone; shrink or convert to webp" % (total / 1048576))
     return "const ART_D = %s;\n" % json.dumps(table), len(table), total
 
 def make_page(head, body, logic, ui, imgjs, beta):

@@ -351,28 +351,43 @@ async function playAll(view) {
   // Boss 连闯入口
   await p.evaluate(() => __t.openRunMenu(0)); await p.waitForTimeout(300); await shot('28-run-menu');
   await tap('#pgBack');
-  // 原画接口：有 art("…") 就用原画（地图背景、分层主角 + 装备层、怪兽），没有就退回 3D emoji
-  await p.evaluate(() => {
-    const pic = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d')); return c.toDataURL('image/png'); };
-    __t.setArt('map_add', pic(40, 80, g => { g.fillStyle = '#ffd6e7'; g.fillRect(0, 0, 40, 80); g.fillStyle = '#ff7ab6'; g.fillRect(0, 60, 40, 20); }));
-    __t.setArt('hero_base', pic(64, 64, g => { g.fillStyle = '#ffcc88'; g.beginPath(); g.arc(32, 26, 16, 0, 7); g.fill(); g.fillRect(20, 40, 24, 22); }));
-    __t.setArt('gear_weapon', pic(64, 64, g => { g.fillStyle = '#ddd'; g.fillRect(50, 10, 6, 44); }));
-    __t.setArt('mon_add_2', pic(64, 64, g => { g.fillStyle = '#5ad14f'; g.beginPath(); g.arc(32, 32, 28, 0, 7); g.fill(); }));
-    equipGear({ id: 'art_w', slot: 'weapon', quality: 'purple', name: '测试', e: '🗡️', affixes: [{ id: 'atk', val: 1 }] });
-    __t.renderMap(true);
+  // 原画（src/art，tools/art_prep.py 处理过的正式素材）：森林段地图、小勇士、毛毛虫、猩猩大王；穿紫甲换紫装外观
+  await p.evaluate(() => { for (const k of ['weapon', 'helmet', 'armor', 'shield']) __t.S.equipped[k] = null; __t.S.hero = 0; __t.renderMap(true); });
+  await p.evaluate(() => { const b = document.querySelector('.band[data-w="0"]'), s = document.getElementById('lscroll'); s.scrollTop = b.offsetTop + b.offsetHeight / 2 - s.clientHeight / 2; }); await p.waitForTimeout(300);
+  await shot('30-art-map-forest');
+  const am = await p.evaluate(() => {
+    const ns = [...Array(15)].map((_, l) => document.querySelector(`.node[data-w="0"][data-l="${l}"]`).getBoundingClientRect());
+    let gap = 1e9; for (let l = 1; l < 15; l++) gap = Math.min(gap, Math.hypot(ns[l].x - ns[l - 1].x, ns[l].y - ns[l - 1].y));
+    return { band: document.querySelector('.band[data-w="0"]').classList.contains('art'), node: !!document.querySelector('.node[data-w="0"][data-l="0"] img.art'), boss: !!document.querySelector('.node[data-w="0"][data-l="14"] img.art'), face: !!document.querySelector('#heroBtn img.art'), gap: Math.round(gap) };
   });
-  await p.waitForTimeout(300); await shot('29-art-map');
-  const am = await p.evaluate(() => ({ bg: document.querySelector('.band[data-w="0"]').style.backgroundImage.startsWith('url("blob:') || document.querySelector('.band[data-w="0"]').style.backgroundImage.includes('data:image/png'), mon: !!document.querySelector('.node[data-w="0"][data-l="1"] img.art') }));
-  await tapNode(0, 1); await p.waitForTimeout(1900); await shot('29b-art-battle');
-  const ab = await p.evaluate(() => ({ hero: !!document.querySelector('#heroSprite .av.lay img.art'), gear: !!document.querySelector('#heroSprite .agl.q-purple'), mon: !!document.querySelector('#monSprite img.art') }));
-  if (!am.bg || !am.mon || !ab.hero || !ab.gear || !ab.mon) problems.push(`[${view.name}] art() pictures are not used: ${JSON.stringify({ ...am, ...ab })}`);
-  // a broken picture must fall back to the 3D emoji instead of leaving a blank (monster, hero layer, map band)
-  await p.evaluate(() => { for (const k of ['map_add', 'hero_base', 'gear_weapon', 'mon_add_2']) __t.setArt(k, 'data:image/png;base64,AAAA'); __t.toMap(); });
-  await tapNode(0, 1); await p.waitForTimeout(1900); await shot('29c-art-broken');
-  const brk = await p.evaluate(() => ({ art: document.querySelectorAll('#heroSprite img.art, #heroSprite .agl, #monSprite img.art').length, mon: !!document.querySelector('#monSprite img.ei'), hero: !!document.querySelector('#heroSprite img.ei'), gear: !!document.querySelector('#heroSprite .ag img'), nodeArt: document.querySelectorAll('#map img.art').length, band: document.querySelector('.band[data-w="0"]').style.backgroundImage.includes('svg') }));
-  if (brk.art || !brk.mon || !brk.hero || !brk.gear || brk.nodeArt || !brk.band) problems.push(`[${view.name}] broken art should fall back to the 3D emoji / painted map: ${JSON.stringify(brk)}`);
-  await p.evaluate(() => { for (const k of ['map_add', 'hero_base', 'gear_weapon', 'mon_add_2']) __t.setArt(k, null); __t.toMap(); });
-  if (await p.evaluate(() => document.querySelectorAll('#map img.art').length)) problems.push(`[${view.name}] without art the game must fall back to the 3D emoji`);
+  if (!am.band || !am.node || !am.boss || !am.face) problems.push(`[${view.name}] map art not used: ${JSON.stringify(am)}`);
+  if (am.gap < 52) problems.push(`[${view.name}] levels on the painted forest road are too close together (${am.gap}px)`);
+  await tapNode(0, 0); await p.waitForTimeout(1900); await shot('31-art-battle');
+  const ab = await p.evaluate(() => ({ hero: document.querySelector('#heroSprite .av.lay img.art')?.getAttribute('src') === __t.art('hero_base'), mon: document.querySelector('#monSprite img.art')?.getAttribute('src') === __t.art('mon_add_1') }));
+  await p.evaluate(() => __t.toMap()); await tapNode(0, 14); await p.waitForTimeout(2700); await shot('32-art-boss');
+  ab.boss = await p.evaluate(() => document.querySelector('#monSprite img.art')?.getAttribute('src') === __t.art('mon_add_15'));
+  // armour quality → whole look (hero_purple); a weapon picture sits in the hand (test picture; no real weapon art yet)
+  await p.evaluate(() => {
+    __t.toMap();
+    const c = document.createElement('canvas'); c.width = 40; c.height = 80; const g = c.getContext('2d'); g.fillStyle = '#ccc'; g.fillRect(16, 0, 8, 60); g.fillStyle = '#a5f'; g.fillRect(6, 56, 28, 8);
+    __t.setArt('weapon_purple', c.toDataURL('image/png'));
+    equipGear({ id: 'art_a', slot: 'armor', quality: 'purple', name: '紫甲', e: '🥋', affixes: [{ id: 'atk', val: 1 }] });
+    equipGear({ id: 'art_w', slot: 'weapon', quality: 'purple', name: '紫剑', e: '🗡️', affixes: [{ id: 'atk', val: 1 }] });
+    __t.openBag('armor');
+  });
+  await p.waitForTimeout(500); await shot('33-art-bag-purple');
+  Object.assign(ab, await p.evaluate(() => ({ purple: document.querySelector('.bagav .av.lay img.art')?.getAttribute('src') === __t.art('hero_purple'), hand: !!document.querySelector('.bagav .av.lay .hand.rh'), noShield: !document.querySelector('.bagav .hand.lh') })));
+  await tap('#pgBack');
+  if (!ab.hero || !ab.mon || !ab.boss || !ab.purple || !ab.hand || !ab.noShield) problems.push(`[${view.name}] hero / monster art not used as expected: ${JSON.stringify(ab)}`);
+  // a broken picture must fall back to the 3D emoji instead of leaving a blank (monster, hero, map band); then restore
+  const keep = await p.evaluate(() => Object.fromEntries(['map_add', 'hero_purple', 'mon_add_1'].map(k => [k, __t.art(k)])));
+  await p.evaluate(() => { for (const k of ['map_add', 'hero_purple', 'mon_add_1', 'weapon_purple']) __t.setArt(k, 'data:image/png;base64,AAAA'); __t.toMap(); });
+  await tapNode(0, 0); await p.waitForTimeout(1900); await shot('29c-art-broken');
+  const brk = await p.evaluate(() => ({ art: document.querySelectorAll('#heroSprite img.art, #heroSprite .hand, #monSprite img.art').length, mon: !!document.querySelector('#monSprite img.ei'), hero: !!document.querySelector('#heroSprite img.ei'), nodeArt: !!document.querySelector('.node[data-w="0"][data-l="0"] img.art'), band: document.querySelector('.band[data-w="0"]').style.backgroundImage.includes('svg') }));
+  if (brk.art || !brk.mon || !brk.hero || brk.nodeArt || !brk.band) problems.push(`[${view.name}] broken art should fall back to the 3D emoji / painted map: ${JSON.stringify(brk)}`);
+  await p.evaluate(keep => { for (const k in keep) __t.setArt(k, keep[k]); __t.setArt('weapon_purple', null); for (const k of ['weapon', 'helmet', 'armor', 'shield']) __t.S.equipped[k] = null; __t.toMap(); }, keep);
+  // a world without any art keeps the drawn island
+  if (await p.evaluate(() => document.querySelector('.band[data-w="1"]').classList.contains('art') || !document.querySelector('.band[data-w="1"] .cliff'))) problems.push(`[${view.name}] worlds without map art should keep the drawn island`);
   if (await p.evaluate(k => localStorage.getItem(k), BETA) !== null) problems.push(`[${view.name}] 正式版 wrote the 试玩版 save "${BETA}"`);
   await ctx.close();
 }
