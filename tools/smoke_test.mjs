@@ -49,7 +49,12 @@ async function shotCheck(p, view, dir, name) {
     const m = document.querySelector('.pbody');
     if (m && m.scrollHeight > m.clientHeight + 2) out.push(`page needs scrolling (${m.scrollHeight}>${m.clientHeight})`);
     const bt = document.getElementById('battle');
-    if (!bt.hidden) { const a = document.getElementById('answers').getBoundingClientRect(); if (a.bottom > H - bottom + 1) out.push(`answers bottom ${Math.round(a.bottom)} > ${H - bottom}`); }
+    if (!bt.hidden) {
+      const a = document.getElementById('answers').getBoundingClientRect(); if (a.bottom > H - bottom + 1) out.push(`answers bottom ${Math.round(a.bottom)} > ${H - bottom}`);
+      const hs = document.getElementById('hearts'), ar = document.getElementById('arena').getBoundingClientRect(), hr = hs.getBoundingClientRect();
+      if (!hs.checkVisibility()) out.push('hearts hidden');
+      else if (hr.top < ar.top - 0.5 || hr.left < ar.left - 0.5 || hr.bottom > ar.bottom + 0.5) out.push(`hearts cut off by the arena (${Math.round(hr.top)} < ${Math.round(ar.top)})`);
+    }
     const desc = el => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\s+/).join('.') : '') + (el.textContent.trim() ? ` "${el.textContent.trim().slice(0, 12)}"` : '');
     for (const el of document.querySelectorAll(sel)) {
       if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
@@ -84,10 +89,33 @@ async function playAll(view) {
   const wrong = await p.evaluate(() => { const a = String(__t.B.q.answer); return [...document.querySelectorAll('.ans')].map(b => b.dataset.v).find(v => v !== a); });
   await tap(`.ans[data-v="${wrong}"]`); await p.waitForTimeout(900); await shot('05-hint');
   await winLevel(); await p.waitForTimeout(1500); await shot('06-win');
-  await tap('#chest'); await p.waitForTimeout(1200); await shot('07-chest');
+  // 本关掉落: one piece of gear, worn with 「穿上」
+  const bag0 = await p.evaluate(() => __t.S.bag.length);
+  await tap('#chest'); await p.waitForTimeout(1200); await shot('07-drop');
+  const drop = await p.evaluate(() => { const g = __t.S.bag[__t.S.bag.length - 1]; return { n: __t.S.bag.length, g }; });
+  if (drop.n !== bag0 + 1 || !drop.g || !drop.g.slot) problems.push(`[${view.name}] winning did not drop a piece of gear`);
+  if (!(await p.isVisible('.gcard'))) problems.push(`[${view.name}] drop card not shown`);
+  await tap('#dWear'); await p.waitForTimeout(300); await shot('07b-drop-worn');
+  const worn = await p.evaluate(id => ({ ok: Object.values(__t.S.equipped).some(g => g && g.id === id), dis: document.getElementById('dWear').disabled, txt: document.getElementById('dWear').textContent }), drop.g && drop.g.id);
+  if (!worn.ok || !worn.dis || !worn.txt.includes('已穿戴')) problems.push(`[${view.name}] 「穿上」 did not equip the drop: ${JSON.stringify(worn)}`);
   await tap('#rMap'); await p.waitForTimeout(300);
-  await tap('#albumBtn'); await p.waitForTimeout(500); await shot('08-album');
-  await tap('.tab[data-t="craft"]'); await p.waitForTimeout(300); await shot('09-craft');
+  // the old save had stickers: migrate() turned them into chests, the bag must show how many
+  const chests = await p.evaluate(() => __t.S.chests);
+  await tap('#bagBtn'); await p.waitForTimeout(500); await shot('08-bag');
+  if (!(chests > 0)) problems.push(`[${view.name}] old sticker save was not converted into chests (${chests})`);
+  else if ((await p.textContent('#chestN').catch(() => '')).replace(/\D/g, '') !== String(chests)) problems.push(`[${view.name}] bag does not show the ${chests} chests`);
+  await tap('#chestBtn'); await p.waitForTimeout(400); await shot('09-bag-chest-open');
+  await p.waitForTimeout(1200); await shot('09b-bag-chest-gear');
+  const after = await p.evaluate(() => ({ c: __t.S.chests, n: __t.S.bag.length }));
+  if (after.c !== chests - 1 || after.n !== drop.n) problems.push(`[${view.name}] opening a chest should use 1 chest and add 1 gear (bag counts equipped separately): ${JSON.stringify(after)}`);
+  await tap('#cBack'); await p.waitForTimeout(300);
+  const other = await p.evaluate(() => ['weapon', 'helmet', 'armor', 'shield'].find(k => !document.querySelector(`.tab.on[data-s="${k}"]`)));
+  await tap(`.tab[data-s="${other}"]`); await p.waitForTimeout(300); await shot('09c-bag-tab');
+  // lots of gear: the slot list pages (8 per page) instead of scrolling
+  await p.evaluate(() => { for (let i = 0; i < 11; i++) addGear(Object.assign(rollGear(20, i % 3 === 0), { slot: 'armor', e: ['🥋', '🦺', '👕', '🧥'][i % 4], id: 'many_' + i })); });
+  await tap('.tab[data-s="armor"]'); await p.waitForTimeout(300); await shot('09d-bag-pages');
+  if (!(await p.isVisible('#gNext'))) problems.push(`[${view.name}] bag with many armors should show a next-page button`);
+  else { await tap('#gNext'); await p.waitForTimeout(200); await tap('.gt[data-id="many_10"]').catch(() => problems.push(`[${view.name}] page 2 of the bag does not list the last armor`)); }
   await tap('#pgBack'); await tap('#heroBtn'); await p.waitForTimeout(300); await shot('10-heroes');
   await tap('#pgBack'); await tap('#parentBtn'); await p.waitForTimeout(300); await shot('11-parent');
   await tap('.tab[data-t="rep"]'); await shot('12-report'); await tap('#pgBack');
@@ -96,8 +124,11 @@ async function playAll(view) {
   await tap('.node[data-l="4"]'); await p.waitForTimeout(2700); await shot('13-word-boss');
   await tap('#hintBtn'); await p.waitForTimeout(300); await tap('#stNext').catch(() => {}); await tap('#stNext').catch(() => {}); await p.waitForTimeout(300); await shot('14-word-hint');
   await tap('#bBack'); await p.evaluate(() => __t.showRunReward({ run: { mode: 'epic' }, firstMedal: true })); await p.waitForTimeout(400); await shot('15-run-reward');
+  const runBag = await p.evaluate(() => __t.S.bag.length);
+  await tap('.card[data-i="0"]'); await p.waitForTimeout(700); await shot('15b-run-card');
+  if (await p.evaluate(() => __t.S.bag.length) !== runBag + 1) problems.push(`[${view.name}] run treasure card did not give gear`);
   // 当天第 16 次通关前起进入「狂暴 ×2」：怪兽每次攻击扣 2 颗心、每题 10 秒
-  await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.world = 0; localStorage.setItem(k, JSON.stringify(s)); }, V1);
+  await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.world = 0; s.equipped = { weapon: null, helmet: null, armor: null, shield: null }; localStorage.setItem(k, JSON.stringify(s)); }, V1);
   await p.reload(); await p.waitForTimeout(500);
   await p.evaluate(() => __t.setDaily(15)); await p.waitForTimeout(200); await shot('17-map-rage');
   if ((await p.textContent('#dayTag')).trim() !== '狂暴中') problems.push(`[${view.name}] map day tag should say 狂暴中`);
@@ -110,6 +141,17 @@ async function playAll(view) {
   await tap(`.ans[data-v="${wrong2}"]`); await p.waitForTimeout(900); await shot('19-rage-hit');
   const lost = rage.hearts - await p.evaluate(() => __t.B.hearts);
   if (lost !== 2) problems.push(`[${view.name}] rage x2 hit should cost 2 hearts, cost ${lost}`);
+  // gear in battle: ⏳ +5 秒 makes the time limit longer, ⚔️ +3 makes every hit stronger
+  const mk = (slot, e, id, val, q) => ({ id: 't_' + id, slot, quality: q, name: '测试·' + id, e, affixes: [{ id, val }] });
+  await tap('#bBack'); await p.waitForTimeout(300);
+  await p.evaluate(([a, b, c]) => { equipGear(a); equipGear(b); equipGear(c); }, [mk('weapon', '🗡️', 'atk', 3, 'red'), mk('helmet', '👑', 'time', 5, 'orange'), mk('shield', '🔮', 'critDmg', 1, 'purple')]);
+  await tap('.node[data-l="1"]'); await p.waitForTimeout(1900); await shot('20-battle-gear');
+  const tg = await p.evaluate(() => __t.qTime());
+  if (Math.abs(tg - (rage.t + 5)) > 1e-9) problems.push(`[${view.name}] ⏳+5 gear should make the time limit ${rage.t + 5} s, got ${tg}`);
+  const ra = await p.evaluate(() => { const B = __t.B; B.hp = B.maxHp = 50; B.combo = 0; return String(B.q.answer); });
+  await tap(`.ans[data-v="${ra}"]`); await p.waitForTimeout(800); await shot('21-battle-gear-hit');
+  const hit = 50 - await p.evaluate(() => __t.B.hp);
+  if (hit !== 4) problems.push(`[${view.name}] ⚔️+3 gear: a normal hit should do 1+3 = 4 damage, did ${hit}`);
   if (await p.evaluate(k => localStorage.getItem(k), BETA) !== null) problems.push(`[${view.name}] 正式版 wrote the 试玩版 save "${BETA}"`);
   await ctx.close();
 }
