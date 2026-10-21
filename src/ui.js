@@ -168,7 +168,8 @@ function renderMap(focus, width){
   const dayTag = dn<15 ? '<span class="pill tag" id="dayTag">今天 <span class="num">'+dn+'/15</span></span>'
                        : '<span class="pill tag hot" id="dayTag">狂暴中</span>';
   let html = '<div class="topbar">'
-    + '<button class="ibtn round avatarbtn" id="heroBtn" aria-label="换勇士">'+heroFace()+'</button>'
+    + '<button class="ibtn round avatarbtn" id="heroBtn" aria-label="换勇士">'+heroFace()
+    + '<span class="lvb" id="heroLv">Lv.<b class="num">'+(S.heroLv||1)+'</b><i style="width:'+pctOf(S.exp||0, expNeed(S.heroLv||1))+'%"></i></span></button>'
     + '<span class="pill">'+img("⭐")+'<span class="num">'+ts+'</span></span>'
     + '<span class="grow"></span>'
     + '<button class="ibtn" id="bagBtn" aria-label="背包">'+img("🎒")+(S.chests>0?'<span class="badge pulse">'+S.chests+'</span>':'')+'</button>'
@@ -311,6 +312,7 @@ const QIDX = Object.fromEntries(GEAR_QUALITIES.map((q,i)=>[q.key,i]));
 const qCol = g => (GEAR_QUALITY_MAP[g.quality]||GEAR_QUALITIES[0]).col;
 // affixes are shown as icon + number, e.g. ⚔️+3  ⏳+2秒
 const AFX_NUM = {atk:v=>"+"+v, critRate:v=>"+"+v+"%", critDmg:v=>"+"+v, time:v=>"+"+v+"秒", shield:v=>"+"+v, comboHeal:v=>"+"+v, lucky:v=>"+"+v, slow:v=>"+"+v+"%"};
+const afxVal = (g, a) => Math.round((a.val||0) * (1 + 0.2*((g.lv||1)-1)));   // what the battle uses at this gear level
 const afxChip = (id, v) => '<span class="afx">'+img(GEAR_AFFIXES[id].e)+'<b class="num">'+AFX_NUM[id](v)+'</b></span>';
 // how good a piece is: quality first, then each affix as a share of its best possible (red) value
 const gearPower = g => !g ? -1 : QIDX[g.quality]*2 + g.affixes.reduce((s,a)=>s + (GEAR_AFFIXES[a.id] ? a.val/GEAR_AFFIXES[a.id].ranges.red[1] : 0), 0);
@@ -337,9 +339,14 @@ function gearCard(g, o){
   return '<div class="gcard q-'+g.quality+(o.cls?" "+o.cls:"")+'" style="--qc:'+q.col+';--qb:'+q.bg+'">'
     + '<div class="gmain"><span class="gicon">'+img(g.e)+(o.up && isBetter(g) ? '<span class="gup" aria-label="比现在的好"><span class="chev"></span></span>' : '')+'</span>'
     + '<div class="ginfo"><b>'+g.name+'</b><small>'+q.title+' · '+(GEAR_SLOTS[g.slot]||{}).name+'</small>'
-    + '<div class="afxs">'+g.affixes.map(a=>GEAR_AFFIXES[a.id] ? afxChip(a.id, a.val) : '').join("")+'</div></div>'
+    + '<div class="afxs">'+g.affixes.map(a=>GEAR_AFFIXES[a.id] ? afxChip(a.id, afxVal(g,a)) : '').join("")+'</div>'+(o.lv ? gearLvHTML(g) : '')+'</div>'
     + (o.preview ? '<span class="gprev">'+avatarHTML(Object.assign({}, S.equipped, {[g.slot]:g}))+'</span>' : '')+'</div>'
     + (o.btn||"")+'</div>';
+}
+// gear level (Lv1–5) and its experience bar
+function gearLvHTML(g){
+  const lv = g.lv||1, max = lv>=GEAR_LV_MAX, need = gearExpNeed(lv);
+  return '<div class="glv"><b class="num">Lv'+lv+'</b><span class="gxbar"><i style="width:'+(max?100:Math.round(100*(g.exp||0)/need))+'%"></i></span><small class="num">'+(max?"满级":(g.exp||0)+"/"+need)+'</small></div>';
 }
 const wearBtn = (g, id) => isWorn(g) ? '<button class="btn white gwear" id="'+id+'" disabled>已穿戴</button>' : '<button class="btn green gwear" id="'+id+'">'+img("👕")+' 穿上</button>';
 function statsHTML(){
@@ -347,53 +354,85 @@ function statsHTML(){
   return on.length ? '<div class="gstats">'+on.map(k=>afxChip(k, gs[k])).join("")+'</div>' : '<p class="gempty">穿上装备，<br>勇士会变强！</p>';
 }
 
+/* 背包：按部位分页列出装备；每件显示等级和经验条。未穿的可以「分解」成装备经验；满级且有进阶石可以「进阶」
+   （💎×1，品质升一档）；「合成」= 3 件同品质未穿的 → 1 件高一档；旧宝箱一次「一键全开」。 */
 function openBag(slot){
-  slot = slot || "weapon";
-  let sel = null, pg = 0;
+  slot = slot || SLOT_KEYS.find(k=>S.equipped[k] || S.bag.some(g=>g && g.slot===k)) || "weapon";   // open on a slot that has something
+  let sel = null, pg = 0, note = "";
   const PER = 8;
   const render = first => {
     const list = S.bag.filter(g=>g && g.slot===slot), worn = S.equipped[slot];
     const all = (worn ? [worn] : []).concat(list);
     const pages = Math.max(1, Math.ceil(all.length/PER)); pg = Math.min(pg, pages-1);
     const cur = all.find(g=>g.id===sel) || all[0] || null;
+    const synthOK = Q_ORDER.some(q=>canSynth(q));
     let body = '<div class="bagtop"><span class="bagav">'+avatarHTML(S.equipped)+'</span><div class="bagside">'+statsHTML()
-      + (S.chests>0 ? '<button class="btn bagchest" id="chestBtn">'+img("🎁")+' 开宝箱 <b class="num" id="chestN">×'+S.chests+'</b></button>' : '')+'</div></div>'
+      + '<div class="bagbtns"><span class="pill tag stones" id="stoneN">'+img("💎")+'<span class="num">×'+(S.stones||0)+'</span></span>'
+      + '<button class="btn white bagsm" id="synthBtn">'+img("✨")+'合成'+(synthOK?'<span class="badge pulse">!</span>':'')+'</button>'
+      + (S.chests>0 ? '<button class="btn bagsm" id="chestAll">'+img("🎁")+'一键全开<b class="num" id="chestN">×'+S.chests+'</b></button>' : '')+'</div></div></div>'
       + '<div class="tabs">'+SLOT_KEYS.map(k=>'<button class="tab'+(k===slot?" on":"")+'" data-s="'+k+'">'+img(GEAR_SLOTS[k].e)+GEAR_SLOTS[k].name+'</button>').join("")+'</div>';
-    body += cur ? gearCard(cur, {cls:"mini", btn: isWorn(cur) ? '<button class="btn white gwear" id="gOff">卸下</button>' : '<button class="btn green gwear" id="gOn">'+img("👕")+' 穿上</button>', up:true})
-                : '<div class="gnone">'+img(GEAR_SLOTS[slot].e)+'<span>还没有'+GEAR_SLOTS[slot].name+'<br>打败怪兽就会掉落！</span></div>';
-    body += '<div class="ggrid">'+all.slice(pg*PER, pg*PER+PER).map(g=>gearTile(g, (cur && g.id===cur.id?"sel":"")+(isWorn(g)?" worn":""), 'data-id="'+g.id+'"')).join("")+'</div>';
+    if(cur){
+      const nq = nextQuality(cur.quality), maxed = (cur.lv||1) >= GEAR_LV_MAX;
+      let btns = isWorn(cur) ? '<button class="btn white gwear" id="gOff">卸下</button>'
+        : '<button class="btn green gwear" id="gOn">'+img("👕")+'穿上</button><button class="btn white gwear" id="gSalvage">'+img("♻️")+'分解</button>';
+      const asc = canAscend(cur) ? '<button class="btn purple gwear gascend" id="gAscend">进阶：'+img("💎")+'<b class="num">×1</b> → <b style="color:'+GEAR_QUALITY_MAP[nq].bg+'">'+GEAR_QUALITY_MAP[nq].name+'色</b></button>' : '';
+      body += gearCard(cur, {cls:"mini", lv:true, up:true, btn:'<div class="gbtns">'+btns+'</div>'+asc
+        + (maxed && nq && !canAscend(cur) ? '<small class="ghint">满级啦！有进阶石 '+img("💎")+' 就能进阶成'+GEAR_QUALITY_MAP[nq].name+'色</small>' : '')
+        + (note ? '<small class="ghint" id="bagNote">'+note+'</small>' : '')});
+    } else body += '<div class="gnone">'+img(GEAR_SLOTS[slot].e)+'<span>还没有'+GEAR_SLOTS[slot].name+'<br>打怪兽、升级都会得到！</span></div>';
+    note = "";
+    body += '<div class="ggrid">'+all.slice(pg*PER, pg*PER+PER).map(g=>gearTile(g, (cur && g.id===cur.id?"sel":"")+(isWorn(g)?" worn":""), 'data-id="'+g.id+'" data-lv="Lv'+(g.lv||1)+'"')).join("")+'</div>';
     if(pages>1) body += '<div class="gpager"><button class="ibtn round" id="gPrev"'+(pg?'':' disabled')+' aria-label="上一页">'+chev()+'</button><b class="num">'+(pg+1)+' / '+pages+'</b><button class="ibtn round" id="gNext"'+(pg<pages-1?'':' disabled')+' aria-label="下一页">'+chev(true)+'</button></div>';
     if(first) openPage({title:"🎒 背包", back:true, onClose:renderMap, body}); else setBody(body);
     const P = $("pbody");
     P.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ sfx.click(); slot = b.dataset.s; sel = null; pg = 0; render(false); });
     P.querySelectorAll(".gt").forEach(b=>b.onclick=()=>{ sfx.click(); sel = b.dataset.id; render(false); });
-    if($("gOn")) $("gOn").onclick = ()=>{ equipGear(cur.id); sel = cur.id; sfx.right(); say("穿上了"+cur.name+"！"); render(false); };
-    if($("gOff")) $("gOff").onclick = ()=>{ unequipGear(slot); sel = cur.id; sfx.click(); render(false); };
-    if($("gPrev")) $("gPrev").onclick = ()=>{ pg--; render(false); };
-    if($("gNext")) $("gNext").onclick = ()=>{ pg++; render(false); };
-    if($("chestBtn")) $("chestBtn").onclick = ()=>bagChest(g=>{ slot = g.slot; sel = g.id; pg = 0; render(false); });
+    const on = (id,f) => { if($(id)) $(id).onclick = f; };
+    on("gOn", ()=>{ equipGear(cur.id); applySpareExp(); save(); sel = cur.id; sfx.right(); say("穿上了"+cur.name+"！"); render(false); });
+    on("gOff", ()=>{ unequipGear(slot); sel = cur.id; sfx.click(); render(false); });
+    on("gSalvage", ()=>{ const r = salvageGear(cur.id); if(!r.ok) return; sfx.click(); sel = null; note = img("♻️")+' 分解成 <b class="num">'+r.exp+'</b> 点装备经验'; say("分解成"+r.exp+"点装备经验"); render(false); });
+    on("gAscend", ()=>{ const r = ascendGear(cur.id); if(!r.ok) return; sfx.chest(); confetti(120); sel = cur.id; note = '进阶成功！变成 <b style="color:'+qCol(r.gear)+'">'+GEAR_QUALITY_MAP[r.gear.quality].name+'色</b> 啦'; say("进阶成功！"); render(false); });
+    on("gPrev", ()=>{ pg--; render(false); });
+    on("gNext", ()=>{ pg++; render(false); });
+    on("synthBtn", ()=>{ sfx.click(); openSynth(()=>render(false)); });
+    on("chestAll", ()=>{ sfx.chest(); const got = openAllChests(); confetti(160); showChestHaul(got, ()=>render(false)); });
   };
   render(true);
 }
-// open one saved chest inside the bag: the chest shakes, bursts, then shows the new piece
-function bagChest(back){
-  if(!(S.chests>0)) return;
-  const seq = pageSeq;
-  setBody('<div class="chestopen"><div class="chest s2">'+img("🎁")+'</div></div>');
-  sfx.star(1); setTimeout(()=>sfx.star(2), 300);
-  setTimeout(()=>{
-    if(seq!==pageSeq) return;
-    const stage = Math.max(1, Object.keys(S.lv.stars).length);
-    const g = openGearChest(stage, false);
-    if(!g) return back({slot:"weapon"});
-    sfx.chest(); confetti(QIDX[g.quality]>=3 ? 160 : 80);
-    setBody('<p class="gsay">'+img("🎁")+' 宝箱里是……</p>'+gearCard(g, {preview:true, up:true, cls:"pop"})
-      + '<div class="btnrow"><button class="btn white" id="cBack">回背包</button>'+wearBtn(g, "cWear")+'</div>'
-      + (S.chests>0 ? '<p>还有 <b class="num">'+S.chests+'</b> 个宝箱</p>' : ''));
-    say(GEAR_QUALITY_MAP[g.quality].name+"色装备！"+g.name+"！");
-    $("cBack").onclick = ()=>{ sfx.click(); back(g); };
-    if(!isWorn(g)) $("cWear").onclick = ()=>{ equipGear(g.id); sfx.right(); say("穿上啦！"); back(g); };
-  }, 900);
+// 合成：选一个品质，再点 3 件同品质、没穿的装备 → 1 件高一档、部位随机
+function openSynth(back){
+  let q = Q_ORDER.find(x=>canSynth(x)) || "white", picked = [];
+  const render = () => {
+    const pool = bagOf(q), ok = picked.length===3;
+    let body = '<p class="gsay">'+img("✨")+' 选 3 件一样颜色的 → 换 1 件更好的</p>'
+      + '<div class="qtabs">'+Q_ORDER.slice(0,5).map(k=>'<button class="qtab q-'+k+(k===q?" on":"")+'" data-q="'+k+'" style="--qc:'+GEAR_QUALITY_MAP[k].col+'">'+GEAR_QUALITY_MAP[k].name+'<b class="num">'+bagOf(k).length+'</b></button>').join("")+'</div>'
+      + (pool.length ? '<div class="ggrid">'+pool.slice(0,12).map(g=>gearTile(g, picked.includes(g.id)?"sel picked":"", 'data-id="'+g.id+'" data-lv="Lv'+(g.lv||1)+'"')).join("")+'</div>'
+                     : '<div class="gnone">'+img("🎒")+'<span>没有'+GEAR_QUALITY_MAP[q].name+'色的空闲装备</span></div>')
+      + '<div class="btnrow"><button class="btn white" id="sBack">回背包</button><button class="btn green" id="sGo"'+(ok?'':' disabled')+'>合成 <b class="num">'+picked.length+'/3</b> → '+GEAR_QUALITY_MAP[nextQuality(q)].name+'</button></div>';
+    setBody(body);
+    const P = $("pbody");
+    P.querySelectorAll(".qtab").forEach(b=>b.onclick=()=>{ sfx.click(); q = b.dataset.q; picked = []; render(); });
+    P.querySelectorAll(".gt").forEach(b=>b.onclick=()=>{ const id = b.dataset.id; sfx.click(); picked = picked.includes(id) ? picked.filter(x=>x!==id) : picked.length<3 ? picked.concat(id) : picked; render(); });
+    $("sBack").onclick = ()=>{ sfx.click(); back(); };
+    $("sGo").onclick = ()=>{
+      const r = synthGear(picked); if(!r.ok) return;
+      sfx.chest(); confetti(140); say("合成成功！"+r.gear.name+"！");
+      setBody('<p class="gsay">'+img("✨")+' 合成成功！</p>'+gearCard(r.gear, {preview:true, up:true, cls:"pop", lv:true})
+        + '<div class="btnrow"><button class="btn white" id="sBack">回背包</button>'+wearBtn(r.gear, "sWear")+'</div>');
+      $("sBack").onclick = ()=>{ sfx.click(); back(); };
+      if(!isWorn(r.gear)) $("sWear").onclick = ()=>{ equipGear(r.gear.id); applySpareExp(); save(); sfx.right(); back(); };
+    };
+  };
+  render();
+}
+// 一键全开：旧存档里剩下的宝箱一次打开，列出得到的装备
+function showChestHaul(got, back){
+  setBody('<p class="gsay">'+img("🎁")+' 打开了 <b class="num">'+got.length+'</b> 个宝箱！</p>'
+    + '<div class="ggrid haul">'+got.slice(0,12).map(g=>gearTile(g, "", 'data-lv="Lv1"')).join("")+'</div>'
+    + (got.length>12 ? '<p>还有 <b class="num">'+(got.length-12)+'</b> 件，都放进背包啦</p>' : '<p>都放进背包啦</p>')
+    + '<div class="btnrow"><button class="btn green" id="hBack">回背包</button></div>');
+  say("打开了"+got.length+"个宝箱！");
+  $("hBack").onclick = ()=>{ sfx.click(); back(); };
 }
 
 function openParent(tab){
@@ -485,6 +524,10 @@ function startLevel(w,l,run){
   $("iceBlock").hidden = true; $("iceChip").hidden = true; $("frost").classList.remove("on");
   $("monName").textContent = (diff?TIERS[diff].n+"·":"")+L.n;
   $("monName").style.boxShadow = diff ? "0 0 0 2px "+TIERS[diff].c : "";
+  // what this monster may drop: 「🪖 头盔 20%」, a Boss always drops gear
+  const md = monsterDrop(Wd.id, l+1);
+  $("dropTag").innerHTML = !md ? "" : md.boss ? emo("🎁 必掉装备") : img(GEAR_SLOTS[md.slot].e)+GEAR_SLOTS[md.slot].name+' <b class="num">'+Math.round(md.chance*100)+'%</b>';
+  $("dropTag").classList.toggle("boss", !!(md && md.boss));
   $("chargeWrap").hidden = !S.timer;
   $("combo").textContent = ""; $("qTag").hidden = true;
   $("hint").hidden = true; $("answers").innerHTML = ""; $("qText").innerHTML = ""; $("qcard").className = "qcard panel";
@@ -923,6 +966,10 @@ function win(){
   if(!B.run && stars===3 && (S.lv.tier[key]||0)===B.diff && B.diff<4){ S.lv.tier[key] = B.diff+1; info.tierUp = B.diff+1; }
   if(info.boss){ info.firstMedal = !S.medals[B.W.id]; S.medals[B.W.id] = true; }
   if(B.run){ B.run.hearts = Math.min(5, B.hearts+1); B.run.i++; info.runDone = B.run.i>=B.run.seq.length; }
+  // 奖励（家长 10-21）：每关给勇士经验（升级时直接发装备）+ 身上装备经验，掉落变稀缺；不再开宝箱，Boss 也直接给
+  const lvBefore = S.heroLv||1, expBefore = S.exp||0;
+  const drops = (dropOverride || rollVictoryDrops)(B.W.id, B.l+1, info.boss, stars);
+  info.reward = {lvBefore, expBefore, res: applyDrops(drops)};
   daily().n++;   // every win counts, replays and 连闯 battles included
   save();
   $("monBox").classList.remove("angry","frozen"); $("iceBlock").hidden = true; $("iceChip").hidden = true; $("frost").classList.remove("on"); $("items").innerHTML = "";
@@ -955,6 +1002,68 @@ function bossFinale(cur, info){
   setTimeout(()=>{ if(B!==cur) return; info.run ? (info.runDone ? showRunReward(info) : showRunNext(info)) : showWin(info); }, 3000);
 }
 const itemTile = (k, delay, n) => '<div class="lt it" style="animation-delay:'+(delay||0)+'s">'+img(ITEMS[k].e)+'<span class="tagnew">道具'+(n>1?" ×"+n:"")+'</span></div>';
+let dropOverride = null;   // tests only (via __t.setDrops): decide what a win drops
+const pctOf = (n, d) => Math.max(0, Math.min(100, Math.round(100*n/(d||1))));
+// one piece of gear in the result list: tag (本关掉落 / 升级奖励), name, affixes; 穿上 and, for drops, 不要
+function dropRow(g, tag, id, canDrop){
+  const q = GEAR_QUALITY_MAP[g.quality]||GEAR_QUALITIES[0];
+  return '<div class="drow q-'+g.quality+'" id="'+id+'" style="--qc:'+q.col+';--qb:'+q.bg+'"><span class="gicon">'+img(g.e)+(isBetter(g)?'<span class="gup" aria-label="比现在的好"><span class="chev"></span></span>':'')+'</span>'
+    + '<div class="ginfo"><small><b class="dtag">'+tag+'</b> '+q.title+' · '+(GEAR_SLOTS[g.slot]||{}).name+'</small><b>'+g.name+'</b><div class="afxs">'+g.affixes.map(a=>GEAR_AFFIXES[a.id]?afxChip(a.id, afxVal(g,a)):'').join("")+'</div></div>'
+    + '<div class="dbtns"><button class="btn green dwear" data-id="'+g.id+'">'+img("👕")+'穿上</button>'+(canDrop?'<button class="btn white ddrop" data-id="'+g.id+'">不要</button>':'')+'</div></div>';
+}
+function rewardHTML(r){
+  const res = r.res;
+  let h = '<div class="rexp"><span class="rlv">Lv.<b class="num" id="rLv">'+r.lvBefore+'</b></span><span class="xbar"><i id="xFill" style="width:'+pctOf(r.expBefore, expNeed(r.lvBefore))+'%"></i></span><b class="num rgain">+'+res.exp+'</b></div>';
+  if(res.gearExp.length) h += '<div class="rgx">装备经验'+res.gearExp.map(x=>{ const g = gearById(x.id); return g ? '<span class="rgp q-'+g.quality+'" style="--qc:'+qCol(g)+'">'+img(g.e)+'<b class="num">'+(x.levels.length?'Lv'+g.lv+'↑':'+'+x.gain)+'</b></span>' : ''; }).join("")+'</div>';
+  const rows = [];
+  res.rewards.forEach(rw=>rw.items.forEach(it=>{ if(it.gear) rows.push(dropRow(it.gear, "升级奖励", "lvg_"+it.gear.id, false)); }));
+  if(res.gear) rows.push(dropRow(res.gear, "本关掉落", "drop_"+res.gear.id, true));
+  const chips = [];
+  if(res.item) chips.push('<span class="rchip">'+img(ITEMS[res.item].e)+'<b class="num">+1</b></span>');
+  if(res.itemNote) chips.push('<span class="rchip">'+img("🎒")+'道具'+res.itemNote+'</span>');
+  if(res.stone) chips.push('<span class="rchip">'+img("💎")+'进阶石<b class="num">+'+res.stone+'</b></span>');
+  if(rows.length || chips.length) h += '<div class="rdrops" id="rDrops">'+rows.slice(0,2).join("")+(chips.length?'<div class="rchips">'+chips.join("")+'</div>':'')+'</div>';
+  return h + '<div class="lvup" id="lvUp" hidden></div>';
+}
+// the hero's bar fills up; on a level-up it bursts, shows 「升级！」 and starts again from the new level
+function animateReward(r){
+  const res = r.res, fill = $("xFill"), seq = pageSeq;
+  if(!fill) return;
+  const end = () => { fill.style.transition = "none"; fill.style.width = "0%"; void fill.offsetWidth; fill.style.transition = ""; fill.style.width = pctOf(S.exp, expNeed(S.heroLv))+"%"; };
+  setTimeout(()=>{
+    if(seq!==pageSeq) return;
+    if(!res.levels.length){ fill.style.width = pctOf(S.exp, expNeed(S.heroLv))+"%"; return; }
+    fill.style.width = "100%";
+    setTimeout(()=>{
+      if(seq!==pageSeq) return;
+      $("rLv").textContent = S.heroLv;
+      const gear = res.rewards.flatMap(x=>x.items).map(x=>x.gear).filter(Boolean);
+      const lu = $("lvUp"); lu.innerHTML = emo('<b>⭐ 升级！Lv.'+S.heroLv+'</b>'+(gear.length?'<span>升级奖励：'+gear.map(g=>img(g.e)+g.name).join("、")+'</span>':'')); lu.hidden = false; restart(lu,"on");
+      sfx.win(); confetti(140); say("升级啦！"+(gear.length?"奖励"+gear[0].name+"！":""));
+      end();
+      setTimeout(()=>{ if(seq===pageSeq) lu.hidden = true; }, 2600);
+    }, 750);
+  }, 900);
+}
+function wireDrops(){
+  const P = $("pbody");
+  P.querySelectorAll(".dwear").forEach(b=>b.onclick=()=>{
+    const g = gearById(b.dataset.id); if(!g) return;
+    equipGear(g.id); sfx.right(); say("穿上啦！");
+    P.querySelectorAll(".dwear").forEach(x=>{ const gx = gearById(x.dataset.id); if(gx && isWorn(gx)){ x.className = "btn white dwear"; x.disabled = true; x.textContent = "已穿戴"; } else if(gx){ x.disabled = false; x.className = "btn green dwear"; x.innerHTML = emo("👕穿上"); } });
+    P.querySelectorAll(".ddrop").forEach(x=>{ x.disabled = isWorn(gearById(x.dataset.id)); });
+    P.querySelectorAll(".gup").forEach(u=>u.remove());
+  });
+  P.querySelectorAll(".ddrop").forEach(b=>b.onclick=()=>{
+    const g = gearById(b.dataset.id); if(!g || isWorn(g)) return;
+    removeGear(g.id);
+    const r = discardDrop(g);
+    sfx.click();
+    const row = b.closest(".drow");
+    row.classList.add("gone"); row.innerHTML = '<span class="dgone">'+emo("♻️ 已分解成 <b class=\"num\">"+r.exp+"</b> 点装备经验")+'</span>';
+    say("分解成"+r.exp+"点装备经验");
+  });
+}
 function showWin(info){
   const title = info.boss ? "👑 BOSS 击败！" : info.stars===3 ? "完美通关！" : "胜利！";
   const tf = info.diff;
@@ -970,48 +1079,31 @@ function showWin(info){
   if(info.boss) notes.push(img("🏅")+'<span>'+(info.firstMedal?"获得「"+info.W.name+"勋章」！":"「"+info.W.name+"勋章」已经是你的啦")+'</span>');
   if(info.newHero) notes.push(img(info.newHero.e)+'<span>解锁新勇士「'+info.newHero.n+'」！</span>');
   if(info.newWorld) notes.push(img("🗺️")+'<span>新世界「'+info.newWorld.name+'」打开了！</span>');
-  body += notes.slice(0,2).map(n=>'<div class="note">'+n+'</div>').join("");
-  body += '<div id="chestBox"><button class="chest'+(info.boss?" gold":"")+'" id="chest">'+img("🎁")+'<small>'+(info.boss?"黄金宝箱！连点 3 下":"点开宝箱！")+'</small></button></div>';
+  const res = info.reward.res, gearRows = (res.gear?1:0) + res.rewards.reduce((n,x)=>n+x.items.length,0);
+  body += notes.slice(0, gearRows>=2 ? 0 : gearRows ? 1 : 2).map(n=>'<div class="note">'+n+'</div>').join("");   // keep it on one screen
+  body += rewardHTML(info.reward);
   const isLast = info.l===NLV-1, hasNext = info.w<WORLDS_V2.length-1;
-  body += '<div class="btnrow" id="winBtns" hidden><button class="ibtn" id="rMap" aria-label="回地图">'+img("🗺️")+'</button><button class="ibtn" id="rAgain" aria-label="再玩一次">'+img("🔁")+'</button>'
+  body += '<div class="btnrow" id="winBtns"><button class="ibtn" id="rMap" aria-label="回地图">'+img("🗺️")+'</button><button class="ibtn" id="rAgain" aria-label="再玩一次">'+img("🔁")+'</button>'
     + (!isLast ? '<button class="btn green" id="rNext">下一关</button>'
        : hasNext ? '<button class="btn green" id="rNext">去'+WORLDS_V2[info.w+1].name+'</button>' : '<button class="btn green" id="rMap2">回地图</button>')+'</div>';
-  openPage({title, ribbon:"gold", cls:info.boss?"gold":"", body});
+  openPage({title, ribbon:"gold", cls:"win"+(info.boss?" gold":""), body});
   for(let i=0;i<info.stars;i++) setTimeout(()=>sfx.star(i), 300+i*350);
   if(!info.boss) say(info.tierUp>=4 ? "钻石关卡！你是大师！" : info.tierUp ? "完美通关！关卡升级啦！" : info.stars===3 ? "完美通关！太厉害了！" : "胜利！");
-  let taps = 0;
-  $("chest").onclick = ()=>{
-    if(!info.boss || ++taps>=3) return openChest(info);
-    const c = $("chest"); c.classList.remove("s1","s2"); c.classList.add("s"+taps);
-    sfx.star(taps+1);
-    c.querySelector("small").textContent = taps===1 ? "宝箱在发光！再点！" : "最后一下！！";
-  };
+  wireDrops(); animateReward(info.reward);
   const {w,l} = info;
   if($("rNext")) $("rNext").onclick = ()=>{ closePage(); isLast ? startLevel(w+1,0) : startLevel(w,l+1); };
   $("rAgain").onclick = ()=>{ closePage(); startLevel(w,l); };
   $("rMap").onclick = ()=>{ closePage(); toMap(); };
   if($("rMap2")) $("rMap2").onclick = ()=>{ closePage(); toMap(); };
 }
-function giveItems(n){ const ks = Object.keys(ITEMS), got = []; for(let i=0;i<n;i++){ const k = pick(ks); S.items[k] = (S.items[k]||0)+1; got.push(k); } return got; }
+// 道具每种最多 ITEM_CAP 个，满了换成装备经验（和普通掉落同一规则）
+function giveItems(n){
+  const ks = Object.keys(ITEMS), got = [];
+  for(let i=0;i<n;i++){ const k = pick(ks); if((S.items[k]||0) >= ITEM_CAP) distributeGearExp(ITEM_OVERFLOW_EXP); else { S.items[k] = (S.items[k]||0)+1; got.push(k); } }
+  return got;
+}
 // 关卡序号 (1, 2, 3 … across all worlds) drives the drop quality
 const stageNo = (w,l) => gIndex(w,l) + 1;
-function openChest(info){
-  sfx.chest(); confetti(info.boss?220:90);
-  const g = addGear(rollGear(stageNo(info.w, info.l), !!info.boss));   // 本关掉落: one piece of gear instead of stickers
-  const items = giveItems(info.boss ? 2 : (info.stars===3 || Math.random()<.5) ? 1 : 0);
-  save();
-  const cnt = {}; items.forEach(k=>cnt[k]=(cnt[k]||0)+1);
-  const extra = items.length ? '<div class="gextra">还得到 '+Object.keys(cnt).map(k=>img(ITEMS[k].e)+'<b class="num">×'+cnt[k]+'</b>').join(" ")+'</div>' : '';
-  $("chestBox").innerHTML = '<p class="gsay">'+img("🎁")+' 本关掉落</p>'+gearCard(g, {preview:true, up:true, cls:"pop", btn:extra+wearBtn(g, "dWear")});
-  $("winBtns").hidden = false;
-  say(QIDX[g.quality]>=3 ? "哇！"+GEAR_QUALITY_MAP[g.quality].name+"色装备！" : "掉落了"+g.name+"！");
-  if(!isWorn(g)) $("dWear").onclick = ()=>{
-    equipGear(g.id); sfx.right(); say("穿上啦！");
-    const b = $("dWear"); b.className = "btn white gwear"; b.disabled = true; b.textContent = "已穿戴";
-    const pv = $("chestBox").querySelector(".gprev"); if(pv) pv.innerHTML = avatarHTML(S.equipped);
-    const up = $("chestBox").querySelector(".gup"); if(up) up.remove();
-  };
-}
 function lose(){
   B.over = true; B.busy = true;
   const cur = B, run = B.run;
@@ -1075,12 +1167,22 @@ function startRun(mode){
   const [w,l] = run.seq[0];
   startLevel(w,l,run);
 }
+// a 连闯 battle gives the same rewards as a normal win; show them in one line (all is already in the bag)
+function runGain(info){
+  const res = info.reward && info.reward.res; if(!res) return "";
+  const gear = (res.gear ? [res.gear] : []).concat(res.rewards.flatMap(x=>x.items).map(x=>x.gear).filter(Boolean));
+  return '<div class="rchips">'+'<span class="rchip">'+img("⭐")+'经验<b class="num">+'+res.exp+'</b></span>'
+    + (res.levels.length ? '<span class="rchip">升级 <b class="num">Lv.'+S.heroLv+'</b></span>' : '')
+    + gear.map(g=>'<span class="rchip q-'+g.quality+'" style="--qc:'+qCol(g)+'">'+img(g.e)+g.name+'</span>').join("")
+    + (res.item ? '<span class="rchip">'+img(ITEMS[res.item].e)+'<b class="num">+1</b></span>' : '')
+    + (res.stone ? '<span class="rchip">'+img("💎")+'<b class="num">+1</b></span>' : '')+'</div>';
+}
 function showRunNext(info){
   const run = info.run, [w,l] = run.seq[run.i];
   sfx.win(); confetti(100);
   let hearts = ""; for(let i=0;i<5;i++) hearts += '<span style="'+(i<run.hearts?"":"filter:grayscale(1);opacity:.3")+'">'+img("❤️")+'</span>';
   openPage({title:"第 "+run.i+" 战胜利！", ribbon:"gold", body:'<div class="rprog">'+runProgress(run)+'</div>'
-    + '<div style="font-size:30px">'+hearts+'</div><p>下一战：'+img(WORLDS_V2[w].levels[l].emoji)+' '+WORLDS_V2[w].levels[l].name+'</p>'
+    + '<div style="font-size:30px">'+hearts+'</div>'+runGain(info)+'<p>下一战：'+img(WORLDS_V2[w].levels[l].emoji)+' '+WORLDS_V2[w].levels[l].name+'</p>'
     + '<div class="btnrow"><button class="ibtn" id="rQuit" aria-label="放弃">'+img("🏳️")+'</button><button class="btn green" id="rGo">'+img("⚔️")+' 下一战</button></div>'});
   say("胜利！准备下一战！");
   $("rGo").onclick = ()=>{ closePage(); startLevel(w,l,run); };
@@ -1092,7 +1194,7 @@ function showRunReward(info){
   if(rw.crown) S.crown = true;
   save();
   openPage({title:"🏆 大魔王倒下了！", ribbon:"gold", cls:"gold",
-    body:'<p>'+(info.firstMedal?"你拯救了整个王国！":"你又一次打败了大魔王！")+'</p><p style="font-size:20px;color:var(--ink)">'+img("🎴")+' 魔王宝藏：翻开 '+picks+' 张</p>'
+    body:'<p>'+(info.firstMedal?"你拯救了整个王国！":"你又一次打败了大魔王！")+'</p>'+runGain(info)+'<p style="font-size:20px;color:var(--ink)">'+img("🎴")+' 魔王宝藏：翻开 '+picks+' 张</p>'
       + '<div class="cards">'+[0,1,2].map(i=>'<button class="card" data-i="'+i+'">?</button>').join("")+'</div>'});
   say("大魔王的宝藏！选"+(picks===1?"一":"两")+"张牌！");
   const cards = [...$("pbody").querySelectorAll(".card")];
@@ -1159,7 +1261,33 @@ function fireworks(ms){
 }
 
 /* ================= wiring ================= */
-$("bBack").onclick = ()=>{ sfx.click(); toMap(); };
+/* 逃跑（家长 10-21）：战斗中点左上角地图按钮先确认；FLEE_RATE 的机会跑掉（扣身上装备经验，fleePenalty），
+   跑不掉怪兽打一下（按狂暴档扣心）再接着打。App 切到后台、锁屏都不算逃跑（这里只听这个按钮）。 */
+$("bBack").onclick = ()=>{
+  sfx.click();
+  if(!B || B.over) return toMap();
+  openPage({title:"要逃跑吗？", ribbon:"blue", back:true, body:'<div class="fleeart">'+img("🏃")+'</div><p>真的要逃跑吗？<br>逃跑会扣除装备经验</p>'
+    + '<div class="btnrow"><button class="btn green" id="fStay">'+img("⚔️")+' 继续战斗</button><button class="btn red" id="fGo">逃跑</button></div>'});
+  $("fStay").onclick = ()=>{ sfx.click(); closePage(); };
+  $("fGo").onclick = ()=>{
+    if(!B || B.over) return toMap();
+    const r = tryFlee(B.rage);
+    if(!r.ok){
+      closePage(); toast("💥","逃跑失败！"); say("逃跑失败！");
+      monsterAttack("flee");
+      return;
+    }
+    B.over = true; B.busy = true;
+    const pen = fleePenalty();
+    openPage({title:"逃跑成功", ribbon:"blue", body:'<div class="fleeart">'+img("🏃")+'</div>'
+      + (pen.lost ? '<p>装备经验 <b class="num" id="fleeLost">-'+pen.lost+'</b></p><div class="rgx">'+pen.pieces.filter(x=>x.lost).map(x=>{ const g = gearById(x.id); return g ? '<span class="rgp q-'+g.quality+'" style="--qc:'+qCol(g)+'">'+img(g.e)+'<b class="num">-'+x.lost+'</b></span>' : ''; }).join("")+'</div>'
+                  : '<p id="fleeLost">没有装备经验可扣</p>')
+      + (pen.removed ? '<p>弄丢了 '+img(pen.removed.e)+pen.removed.name+'</p>' : '')
+      + '<button class="btn green" id="fMap">'+img("🗺️")+' 回地图</button>'});
+    say("逃跑成功"+(pen.lost?"，装备经验少了"+pen.lost+"点":""));
+    $("fMap").onclick = ()=>{ closePage(); toMap(); };
+  };
+};
 const repeat = ()=>{ if(!B || !B.q) return; if(thinking()) say(strip(B.q.steps[B.step].t), true); else say(B.q.speak, true); };
 $("speakBtn").onclick = e=>{ e.stopPropagation(); repeat(); };
 $("qText").addEventListener("click", e=>{ if(e.target.closest("button")) return; repeat(); });

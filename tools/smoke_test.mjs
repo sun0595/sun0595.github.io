@@ -91,6 +91,7 @@ async function playAll(view) {
   const scrollToBand = async w => { await p.evaluate(w => { const b = document.querySelector(`.band[data-w="${w}"]`), s = document.getElementById('lscroll'); s.scrollTop = b.offsetTop + b.offsetHeight - s.clientHeight; }, w); await p.waitForTimeout(250); };
   // tap a level on the long map: scroll it to the middle first (so nothing floating covers it), then a real tap
   const tapNode = async (w, l) => { await p.evaluate(([w, l]) => { const n = document.querySelector(`.node[data-w="${w}"][data-l="${l}"]`), s = document.getElementById('lscroll'); s.scrollTop = n.offsetTop - s.clientHeight / 2; }, [w, l]); await p.waitForTimeout(100); await tap(`.node[data-w="${w}"][data-l="${l}"]`); };
+  const leaveBattle = () => p.evaluate(() => __t.toMap());
   const winLevel = async () => { for (let i = 0; i < 30; i++) { if (await p.isVisible('#modal')) return; const a = await p.evaluate(() => { const B = __t.B; if (!B || !B.q || B.busy) return null; B.hp = Math.min(B.hp, 1); return String(B.q.answer); }); if (a) await tap(`.ans[data-v="${a}"]`).catch(() => {}); await p.waitForTimeout(450); } };
   await shot('01-map');
   // 旧进度迁移：旧 add 第 l 关 → 新 add 第 l+1 关（星星、档位照搬）；旧 think 不映射但星星算进总数
@@ -104,32 +105,76 @@ async function playAll(view) {
   if (!(cen.inView && cen.off < 40)) problems.push(`[${view.name}] map should open centred on the current level: ${JSON.stringify(cen)}`);
   await scrollToBand(1); await shot('02-map-world2');
   await tapNode(0, 1); await p.waitForTimeout(1700); await shot('03-battle');
+  const dt = await p.evaluate(() => document.getElementById('dropTag').textContent.replace(/\s+/g, ''));
+  if (dt !== '头盔20%') problems.push(`[${view.name}] 加法森林 第 2 关 should show its possible drop 「🪖 头盔 20%」, got "${dt}"`);
   await p.evaluate(() => __t.useItem('ice')); await p.waitForTimeout(800); await shot('04-freeze');
   const wrong = await p.evaluate(() => { const a = String(__t.B.q.answer); return [...document.querySelectorAll('.ans')].map(b => b.dataset.v).find(v => v !== a); });
   await tap(`.ans[data-v="${wrong}"]`); await p.waitForTimeout(900); await shot('05-hint');
-  await winLevel(); await p.waitForTimeout(1500); await shot('06-win');
-  // 本关掉落: one piece of gear, worn with 「穿上」
-  const bag0 = await p.evaluate(() => __t.S.bag.length);
-  await tap('#chest'); await p.waitForTimeout(1200); await shot('07-drop');
-  const drop = await p.evaluate(() => { const g = __t.S.bag[__t.S.bag.length - 1]; return { n: __t.S.bag.length, g }; });
-  if (drop.n !== bag0 + 1 || !drop.g || !drop.g.slot) problems.push(`[${view.name}] winning did not drop a piece of gear`);
-  if (!(await p.isVisible('.gcard'))) problems.push(`[${view.name}] drop card not shown`);
-  await tap('#dWear'); await p.waitForTimeout(300); await shot('07b-drop-worn');
-  const worn = await p.evaluate(id => ({ ok: Object.values(__t.S.equipped).some(g => g && g.id === id), dis: document.getElementById('dWear').disabled, txt: document.getElementById('dWear').textContent }), drop.g && drop.g.id);
-  if (!worn.ok || !worn.dis || !worn.txt.includes('已穿戴')) problems.push(`[${view.name}] 「穿上」 did not equip the drop: ${JSON.stringify(worn)}`);
+  // 奖励（家长 10-21）：胜利直接涨经验，不再开宝箱；掉落稀缺（这里用 setDrops 指定这一局掉什么）
+  const chests0 = await p.evaluate(() => __t.S.chests);
+  await p.evaluate(() => __t.setDrops(() => ({ exp: 15, gear: null, item: null, stone: 0, gearExp: 10 })));
+  await winLevel(); await p.waitForTimeout(2300); await shot('06-win');
+  const w0 = await p.evaluate(() => ({ chest: !!document.querySelector('#chest, .chest'), drops: !!document.getElementById('rDrops'), exp: __t.S.exp, chests: __t.S.chests, bar: document.getElementById('xFill').style.width, btns: !!document.getElementById('rNext') }));
+  if (w0.chest || w0.drops || w0.exp !== 15 || w0.chests !== chests0 || w0.bar !== '30%' || !w0.btns) problems.push(`[${view.name}] a win without drops: no chest step, no drop area, +15 exp, no new chests: ${JSON.stringify(w0)}`);
+  // a win with a drop (gear + item + 进阶石); 「不要」 turns the gear into gear experience
+  await tap('#rAgain');
+  await p.evaluate(() => __t.setDrops(() => ({ exp: 15, gear: rollGear(10, false, { slot: 'weapon', quality: 'blue' }), item: 'heal', stone: 1, gearExp: 10 })));
+  const k1 = await p.evaluate(() => ({ bag: __t.S.bag.length, heal: __t.S.items.heal || 0, stones: __t.S.stones || 0, spare: __t.S.spareExp || 0 }));
+  await winLevel(); await p.waitForTimeout(1500); await shot('06b-win-drop');
+  const k2 = await p.evaluate(() => ({ bag: __t.S.bag.length, heal: __t.S.items.heal || 0, stones: __t.S.stones || 0, rows: document.querySelectorAll('.drow').length, chips: document.querySelectorAll('.rchip').length, chest: !!document.querySelector('#chest, .chest') }));
+  if (k2.bag !== k1.bag + 1 || k2.heal !== k1.heal + 1 || k2.stones !== k1.stones + 1 || k2.rows !== 1 || k2.chips !== 2 || k2.chest) problems.push(`[${view.name}] drops should be shown and kept at once: ${JSON.stringify({ k1, k2 })}`);
+  await tap('.ddrop'); await p.waitForTimeout(400); await shot('06c-win-discard');
+  const k3 = await p.evaluate(() => ({ bag: __t.S.bag.length, spare: __t.S.spareExp || 0, worn: Object.values(__t.S.equipped).filter(Boolean).length, txt: document.querySelector('.dgone') && document.querySelector('.dgone').textContent }));
+  if (k3.bag !== k1.bag || k3.spare - k1.spare !== 20 || !/20/.test(k3.txt || '')) problems.push(`[${view.name}] 「不要」 on a blue drop should give exactly 20 gear experience: ${JSON.stringify({ k1, k3 })}`);
+  // level up: the bar fills, 「升级！」 and the level reward; an item at the cap (5) turns into experience
+  await tap('#rAgain');
+  await p.evaluate(() => { __t.S.items.heal = 5; __t.S.exp = expNeed(__t.S.heroLv) - 5; __t.setDrops(() => ({ exp: 20, gear: null, item: 'heal', stone: 0, gearExp: 10 })); });
+  const lv0 = await p.evaluate(() => ({ lv: __t.S.heroLv, bag: __t.S.bag.length }));
+  await winLevel(); await p.waitForTimeout(2000); await shot('06d-win-levelup');
+  const lv1 = await p.evaluate(() => ({ lv: __t.S.heroLv, bag: __t.S.bag.length, heal: __t.S.items.heal, up: !document.getElementById('lvUp').hidden, upTxt: document.getElementById('lvUp').textContent, full: [...document.querySelectorAll('.rchip')].some(c => c.textContent.includes('已满')), lvRow: document.querySelectorAll('.drow').length }));
+  if (lv1.lv !== lv0.lv + 1 || lv1.bag !== lv0.bag + 1 || !lv1.up || !/升级/.test(lv1.upTxt) || lv1.lvRow !== 1) problems.push(`[${view.name}] level up should celebrate and give the level reward gear: ${JSON.stringify({ lv0, lv1 })}`);
+  if (lv1.heal !== 5 || !lv1.full) problems.push(`[${view.name}] items stay at 5 and a full item turns into experience: ${JSON.stringify(lv1)}`);
+  // 「穿上」 on the reward row
+  const rid = await p.evaluate(() => document.querySelector('.dwear').dataset.id);
+  await tap('.dwear'); await p.waitForTimeout(300); await shot('07b-drop-worn');
+  const worn = await p.evaluate(id => ({ ok: Object.values(__t.S.equipped).some(g => g && g.id === id), dis: document.querySelector('.dwear').disabled, txt: document.querySelector('.dwear').textContent }), rid);
+  if (!worn.ok || !worn.dis || !worn.txt.includes('已穿戴')) problems.push(`[${view.name}] 「穿上」 did not equip the reward: ${JSON.stringify(worn)}`);
+  await p.evaluate(() => __t.setDrops(null));
   await tap('#rMap'); await p.waitForTimeout(300);
-  // the old save had stickers: migrate() turned them into chests, the bag must show how many
+  const lvb = await p.evaluate(() => document.getElementById('heroLv').textContent);
+  if (lvb !== 'Lv.' + lv1.lv) problems.push(`[${view.name}] the map should show the hero level next to the avatar: ${lvb}`);
+  // bag: old chests open all at once; levels and exp bars; 进阶, 分解, 合成
   const chests = await p.evaluate(() => __t.S.chests);
   await tap('#bagBtn'); await p.waitForTimeout(500); await shot('08-bag');
   if (!(chests > 0)) problems.push(`[${view.name}] old sticker save was not converted into chests (${chests})`);
   else if ((await p.textContent('#chestN').catch(() => '')).replace(/\D/g, '') !== String(chests)) problems.push(`[${view.name}] bag does not show the ${chests} chests`);
-  await tap('#chestBtn'); await p.waitForTimeout(400); await shot('09-bag-chest-open');
-  await p.waitForTimeout(1200); await shot('09b-bag-chest-gear');
-  const after = await p.evaluate(() => ({ c: __t.S.chests, n: __t.S.bag.length }));
-  if (after.c !== chests - 1 || after.n !== drop.n) problems.push(`[${view.name}] opening a chest should use 1 chest and add 1 gear (bag counts equipped separately): ${JSON.stringify(after)}`);
-  await tap('#cBack'); await p.waitForTimeout(300);
-  const other = await p.evaluate(() => ['weapon', 'helmet', 'armor', 'shield'].find(k => !document.querySelector(`.tab.on[data-s="${k}"]`)));
-  await tap(`.tab[data-s="${other}"]`); await p.waitForTimeout(300); await shot('09c-bag-tab');
+  if (!(await p.isVisible('.glv'))) problems.push(`[${view.name}] bag should show the gear level and exp bar`);
+  const bagA = await p.evaluate(() => __t.S.bag.length);
+  await tap('#chestAll'); await p.waitForTimeout(500); await shot('09-bag-open-all');
+  const afterAll = await p.evaluate(() => ({ c: __t.S.chests, n: __t.S.bag.length }));
+  if (afterAll.c !== 0 || afterAll.n !== bagA + chests) problems.push(`[${view.name}] 一键全开 should open every chest into the bag: ${JSON.stringify({ chests, bagA, afterAll })}`);
+  await tap('#hBack'); await p.waitForTimeout(300);
+  await p.evaluate(() => { addGear({ id: 'asc1', slot: 'weapon', quality: 'blue', name: '测试·长剑', e: '🗡️', lv: 5, exp: 0, affixes: [{ id: 'atk', val: 2 }] }); __t.S.stones = Math.max(1, __t.S.stones || 0); });
+  await tap('.tab[data-s="helmet"]'); await tap('.tab[data-s="weapon"]'); await p.waitForTimeout(200);
+  await tap('.gt[data-id="asc1"]'); await p.waitForTimeout(300); await shot('09b-bag-ascend');
+  const st0 = await p.evaluate(() => __t.S.stones);
+  await tap('#gAscend'); await p.waitForTimeout(400); await shot('09c-bag-ascended');
+  const asc = await p.evaluate(() => { const g = __t.S.bag.find(x => x.id === 'asc1'); return { q: g.quality, lv: g.lv, stones: __t.S.stones }; });
+  if (asc.q !== 'pink' || asc.lv !== 1 || asc.stones !== st0 - 1) problems.push(`[${view.name}] 进阶 should use 1 stone and turn blue → pink at Lv1: ${JSON.stringify(asc)}`);
+  const n0 = await p.evaluate(() => __t.S.bag.length);
+  await tap('#gSalvage'); await p.waitForTimeout(300); await shot('09d-bag-salvage');
+  const sal = await p.evaluate(() => ({ n: __t.S.bag.length, gone: !__t.S.bag.some(x => x.id === 'asc1'), note: (document.getElementById('bagNote') || {}).textContent }));
+  if (sal.n !== n0 - 1 || !sal.gone || !/35/.test(sal.note || '')) problems.push(`[${view.name}] 分解 a pink piece should remove it and give 35 gear experience: ${JSON.stringify(sal)}`);
+  await p.evaluate(() => { for (let i = 1; i <= 3; i++) addGear({ id: 'syn' + i, slot: 'shield', quality: 'white', name: '测试·盾' + i, e: '🛡️', lv: 1, exp: 0, affixes: [{ id: 'shield', val: 1 }] }); });
+  await tap('#synthBtn'); await p.waitForTimeout(300);
+  await tap('.qtab[data-q="white"]'); await p.waitForTimeout(200);
+  for (const id of ['syn1', 'syn2', 'syn3']) { await tap(`.gt[data-id="${id}"]`); await p.waitForTimeout(100); }
+  await shot('09e-bag-synth');
+  const n1 = await p.evaluate(() => __t.S.bag.length);
+  await tap('#sGo'); await p.waitForTimeout(400); await shot('09f-bag-synth-done');
+  const syn = await p.evaluate(() => ({ n: __t.S.bag.length, left: __t.S.bag.filter(x => /^syn/.test(x.id)).length, q: __t.S.bag[__t.S.bag.length - 1].quality }));
+  if (syn.n !== n1 - 2 || syn.left || syn.q !== 'blue') problems.push(`[${view.name}] 合成 3 white → 1 blue: ${JSON.stringify({ n1, syn })}`);
+  await tap('#sBack'); await p.waitForTimeout(300);
   // lots of gear: the slot list pages (8 per page) instead of scrolling
   await p.evaluate(() => { for (let i = 0; i < 11; i++) addGear(Object.assign(rollGear(20, i % 3 === 0), { slot: 'armor', e: ['🥋', '🦺', '👕', '🧥'][i % 4], id: 'many_' + i })); });
   await tap('.tab[data-s="armor"]'); await p.waitForTimeout(300); await shot('09d-bag-pages');
@@ -142,10 +187,11 @@ async function playAll(view) {
   await p.reload(); await p.waitForTimeout(500);
   await tapNode(2, 14); await p.waitForTimeout(2700); await shot('13-boss');
   if (await p.evaluate(() => __t.B.mode !== 'battle' || !__t.B.L.boss)) problems.push(`[${view.name}] level 15 must be a Boss battle`);
+  if (!/必掉装备/.test(await p.textContent('#dropTag'))) problems.push(`[${view.name}] a Boss should show 「必掉装备」`);
   // 第 3 个世界起 battle 关会混入应用题：这里直接换成一道应用题看讲解
   await p.evaluate(() => { __t.B.L = Object.assign({}, __t.B.L, { g: () => __t.WP.compareTrap() }); __t.nextQuestion(); }); await p.waitForTimeout(300);
   await tap('#hintBtn'); await p.waitForTimeout(300); await tap('#stNext').catch(() => {}); await tap('#stNext').catch(() => {}); await p.waitForTimeout(300); await shot('14-word-hint');
-  await tap('#bBack'); await p.evaluate(() => __t.showRunReward({ run: { mode: 'epic' }, firstMedal: true })); await p.waitForTimeout(400); await shot('15-run-reward');
+  await leaveBattle(); await p.evaluate(() => __t.showRunReward({ run: { mode: 'epic' }, firstMedal: true })); await p.waitForTimeout(400); await shot('15-run-reward');
   const runBag = await p.evaluate(() => __t.S.bag.length);
   await tap('.card[data-i="0"]'); await p.waitForTimeout(700); await shot('15b-run-card');
   if (await p.evaluate(() => __t.S.bag.length) !== runBag + 1) problems.push(`[${view.name}] run treasure card did not give gear`);
@@ -165,7 +211,7 @@ async function playAll(view) {
   if (lost !== 2) problems.push(`[${view.name}] rage x2 hit should cost 2 hearts, cost ${lost}`);
   // gear in battle: ⏳ +5 秒 makes the time limit longer, ⚔️ +3 adds floor(3/3) = 1 to every hit
   const mk = (slot, e, id, val, q) => ({ id: 't_' + id, slot, quality: q, name: '测试·' + id, e, affixes: [{ id, val }] });
-  await tap('#bBack'); await p.waitForTimeout(300);
+  await leaveBattle(); await p.waitForTimeout(300);
   await p.evaluate(([a, b, c]) => { equipGear(a); equipGear(b); equipGear(c); }, [mk('weapon', '🗡️', 'atk', 3, 'red'), mk('helmet', '👑', 'time', 5, 'orange'), mk('shield', '🔮', 'critDmg', 1, 'purple')]);
   await tapNode(0, 1); await p.waitForTimeout(1900); await shot('20-battle-gear');
   const tg = await p.evaluate(() => __t.qTime());
@@ -175,7 +221,7 @@ async function playAll(view) {
   const hit = 50 - await p.evaluate(() => __t.B.hp);
   if (hit !== 2) problems.push(`[${view.name}] ⚔️+3 gear: a normal hit should do 1 + floor(3/3) = 2 damage, did ${hit}`);
   // best possible gear: four red pieces with ⚔️+8 → 1 + floor(32/3) = 11, but one hit never takes more than 1/4 of the monster's HP
-  await tap('#bBack'); await p.waitForTimeout(300);
+  await leaveBattle(); await p.waitForTimeout(300);
   await p.evaluate(() => { for (const [slot, e] of [['weapon', '🗡️'], ['helmet', '👑'], ['armor', '🥋'], ['shield', '🔮']]) equipGear({ id: 'best_' + slot, slot, quality: 'red', name: '最强·' + slot, e, affixes: [{ id: 'atk', val: 8 }] }); });
   await tapNode(0, 1); await p.waitForTimeout(1900);
   const best = await p.evaluate(() => { const B = __t.B; return { maxHp: B.maxHp, cap: __t.hitCap(), a: String(B.q.answer) }; });
@@ -187,7 +233,27 @@ async function playAll(view) {
   const a50 = await p.evaluate(() => __t.B.q && !__t.B.busy ? String(__t.B.q.answer) : null);
   if (a50) { await tap(`.ans[data-v="${a50}"]`); await p.waitForTimeout(800); const h50 = 50 - await p.evaluate(() => __t.B.hp); if (h50 !== 11) problems.push(`[${view.name}] best gear on a 50 HP monster should hit 1 + floor(32/3) = 11, did ${h50}`); }
   await p.evaluate(() => { for (const k of ['weapon', 'helmet', 'armor', 'shield']) __t.S.equipped[k] = null; });
+  await leaveBattle(); await p.waitForTimeout(300);
+  // 逃跑：🗺️ 先确认；跑不掉怪兽打一下（扣心）、留在战斗里；跑掉扣身上装备经验、回地图；切到后台不算逃跑
+  await p.evaluate(() => { equipGear({ id: 'flee_w', slot: 'weapon', quality: 'white', name: '测试·木剑', e: '🗡️', lv: 2, exp: 25, affixes: [{ id: 'atk', val: 1 }] }); });
+  await tapNode(0, 1); await p.waitForTimeout(1900);
+  await p.evaluate(() => { document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('pagehide')); window.dispatchEvent(new Event('blur')); });
+  await p.waitForTimeout(400);
+  if (await p.evaluate(() => document.getElementById('battle').hidden || !document.getElementById('modal').hidden || __t.B.over)) problems.push(`[${view.name}] going to the background must not count as fleeing`);
+  await tap('#bBack'); await p.waitForTimeout(300); await shot('34-flee-confirm');
+  if (!(await p.isVisible('#fGo')) || !/扣除装备经验/.test(await p.textContent('#pbody'))) problems.push(`[${view.name}] 🗺️ in battle should ask 「真的要逃跑吗？」 first`);
+  const fl0 = await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 0; window.__rnd = Math.random; Math.random = () => 0.99; return { h: __t.B.hearts, d: __t.B.dmg }; });
+  await tap('#fGo'); await p.waitForTimeout(250); await shot('34b-flee-fail'); await p.waitForTimeout(700);
+  const fl1 = await p.evaluate(() => { Math.random = window.__rnd; return { h: __t.B.hearts, over: __t.B.over, battle: !document.getElementById('battle').hidden, modal: !document.getElementById('modal').hidden }; });
+  if (fl1.h !== fl0.h - fl0.d || fl1.over || !fl1.battle || fl1.modal) problems.push(`[${view.name}] a failed flee should cost ${fl0.d} heart(s) and keep fighting: ${JSON.stringify({ fl0, fl1 })}`);
   await tap('#bBack'); await p.waitForTimeout(300);
+  await p.evaluate(() => { window.__rnd = Math.random; Math.random = () => 0; });
+  await tap('#fGo'); await p.waitForTimeout(300); await shot('34c-flee-ok');
+  const fl2 = await p.evaluate(() => { Math.random = window.__rnd; return { exp: __t.S.equipped.weapon.exp, lv: __t.S.equipped.weapon.lv, txt: document.getElementById('fleeLost').textContent }; });
+  if (fl2.exp !== 15 || fl2.lv !== 2 || !/-10/.test(fl2.txt)) problems.push(`[${view.name}] a successful flee should take 10 gear exp (25 → 15, still Lv2): ${JSON.stringify(fl2)}`);
+  await tap('#fMap'); await p.waitForTimeout(400);
+  if (await p.evaluate(() => document.getElementById('map').hidden)) problems.push(`[${view.name}] after fleeing the map should be back`);
+  await p.evaluate(() => { __t.S.equipped.weapon = null; __t.renderMap(); });
   // every world's map page (all open), then 「当前关」 jumps back to the current level
   // with a beaten Boss the sign grows a 「连闯」 button: it must not touch level 1 (or its stars)
   await p.evaluate(() => { __t.S.lv.stars['add-15'] = 3; __t.renderMap(); });
@@ -237,7 +303,7 @@ async function playAll(view) {
       await tap(`.mcard[data-id="${pair.id}"]`); await tap(`.mcard[data-id="${mate.id}"]`); await p.waitForTimeout(700);
       if (i === 0 && name) await shot(name);
     }
-    if (!(await p.isVisible('.gcard, #chest'))) problems.push(`[${view.name}] clearing the board should win the level`);
+    if (!(await p.isVisible('#winBtns'))) problems.push(`[${view.name}] clearing the board should win the level`);
     await p.evaluate(() => { document.getElementById('modal').hidden = true; __t.toMap(); });
   };
   await p.evaluate(() => __t.startLevel(0, 3)); await p.waitForTimeout(1800); await shot('24-match');
@@ -317,7 +383,7 @@ async function playAll(view) {
     await tap(`.lnk[data-id="${pr.l}"]`); await tap(`.lnk[data-id="${pr.r}"]`); await p.waitForTimeout(700);
     if (i === 1) await shot('26b-link-lines');
   }
-  await p.waitForSelector('#chest', { timeout: 4000 }).catch(() => problems.push(`[${view.name}] finishing 连连看 should win the level`));
+  await p.waitForSelector('#winBtns', { timeout: 4000 }).catch(() => problems.push(`[${view.name}] finishing 连连看 should win the level`));
   await p.evaluate(() => { document.getElementById('modal').hidden = true; __t.toMap(); });
   // 拼读关：整关都出拼读题（b + ā → bā 或看音节选汉字），不再是普通拼音题
   await p.evaluate(() => __t.startLevel(1, 7)); await p.waitForTimeout(1800); await shot('27-blend');
