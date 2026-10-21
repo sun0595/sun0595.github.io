@@ -518,10 +518,14 @@ img{-webkit-user-drag:none;pointer-events:none}
 .av .ag.armor{bottom:-8%;left:33%;width:34%}
 /* original art (src/art): 小勇士's whole look comes from one picture (hero_base / hero_<品质>), weapon and shield pictures in the hands */
 .ei.art{object-fit:contain}
-.av.lay>.ei.art{height:1.3em}
-.av.lay .hand{position:absolute;bottom:16%;width:46%;height:auto;pointer-events:none;filter:drop-shadow(0 0 2px var(--qc)) drop-shadow(0 0 5px var(--qc))}
-.av.lay .hand.rh{left:-18%}
-.av.lay .hand.lh{right:-16%;width:42%}
+/* the box is exactly the hero picture; --fr / --fl / --fy = where its right / left fist is (fractions of the picture).
+   The sword's grip (84% down the blade picture) sits in the right fist, the shield's centre on the left fist. */
+.av.lay{--fr:.22;--fl:.80;--fy:.71}
+.av.lay.a-orange{--fy:.62;--fl:.77}
+.av.lay>.ei.art{height:1.3em;width:auto}
+.av.lay .hand{position:absolute;height:auto;pointer-events:none;filter:drop-shadow(0 0 2px var(--qc)) drop-shadow(0 0 5px var(--qc))}
+.av.lay .hand.rh{width:36%;left:calc(var(--fr)*100% - 18%);top:calc(var(--fy)*100% - 52%);transform:rotate(-18deg);transform-origin:50% 84%}
+.av.lay .hand.lh{width:42%;left:calc(var(--fl)*100% - 21%);top:calc(var(--fy)*100% - 17%);transform:rotate(6deg)}
 /* rewards (家长 10-21): experience bar, gear experience, drops — no chest step */
 .page.win .pbody{gap:10px}
 .rexp{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:16px;border:3px solid var(--ink);background:#fff}
@@ -620,6 +624,16 @@ img{-webkit-user-drag:none;pointer-events:none}
 .gpager{display:flex;align-items:center;justify-content:center;gap:14px}
 .gpager .ibtn{width:40px;height:40px}
 .gpager b{font:800 17px var(--f-num);color:var(--ink2)}
+/* short screens (375×667): the bag (and 合成, same page) is the fullest page; on macOS / iOS its fonts are taller than on
+   Linux, so tighten it to keep ≥ 24px free there (smoke_test checks 16px spare on Linux) */
+@media (max-height:700px){
+  .page.bag .pbody{gap:8px}
+  .page.bag .bagav{height:94px;padding-top:10px}
+  .page.bag .bagav .av>.ei{font-size:56px}
+  .page.bag .ggrid{gap:8px}
+  .page.bag .gt{width:min(100%,56px);max-height:56px;justify-self:center}
+  .page.bag .gpager .ibtn{width:36px;height:36px}
+}
 .chestopen{display:grid;place-items:center;min-height:220px}
 .card.flip{border-color:var(--qc,var(--ink))}
 /* heroes */

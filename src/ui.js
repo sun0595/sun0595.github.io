@@ -104,7 +104,9 @@ function nodePos(l){
    the rest and the Boss stands at the road's end. No road listed → the usual rows of three. */
 const ART_BAND_H = 1250, ART_SIGN = 150;
 const ART_ROADS = {
-  add: [[0.38,1.0],[0.52,0.86],[0.62,0.77],[0.52,0.70],[0.36,0.655],[0.30,0.61],[0.39,0.567],[0.56,0.53],[0.70,0.47],[0.67,0.42],[0.55,0.378],[0.45,0.342],[0.43,0.305],[0.52,0.265]]
+  add: [[0.38,1.0],[0.52,0.86],[0.62,0.77],[0.52,0.70],[0.36,0.655],[0.30,0.61],[0.39,0.567],[0.56,0.53],[0.70,0.47],[0.67,0.42],[0.55,0.378],[0.45,0.342],[0.43,0.305],[0.52,0.265]],
+  // 雪山：小路从左下起，S 形绕上山（经过冰晶小岛左边），顶端弯钩处是 Boss；x 收在 0.30–0.70 以内，窄屏裁边后节点也不出界
+  hundreds: [[0.30,0.88],[0.45,0.876],[0.58,0.852],[0.68,0.81],[0.70,0.76],[0.66,0.71],[0.55,0.677],[0.42,0.648],[0.34,0.615],[0.31,0.56],[0.32,0.51],[0.37,0.475],[0.48,0.445],[0.60,0.422],[0.68,0.38],[0.70,0.345],[0.66,0.318],[0.52,0.315],[0.38,0.305],[0.32,0.275],[0.33,0.24],[0.42,0.224],[0.55,0.222],[0.64,0.235]]
 };
 let MAPL = null;
 function layoutMap(W){
@@ -328,17 +330,20 @@ function avatarHTML(eq){
   const base = heroArtURL(eq);
   if(base){
     const hand = (slot, side) => eq[slot] && art(slot+"_"+eq[slot].quality) ? artTag(art(slot+"_"+eq[slot].quality), "hand "+side+" q-"+eq[slot].quality, "", "--qc:"+qCol(eq[slot])) : "";
-    return '<span class="av lay">'+artTag(base, "ei art", img(hero().e))+hand("weapon","rh")+hand("shield","lh")+'</span>';
+    const look = eq.armor && art("hero_"+eq.armor.quality) ? eq.armor.quality : "base";   // fists sit a little differently per look
+    return '<span class="av lay a-'+look+'">'+artTag(base, "ei art", img(hero().e))+hand("weapon","rh")+hand("shield","lh")+'</span>';
   }
   return '<span class="av">'+img(hero().e)+SLOT_KEYS.map(k=>eq[k] ? '<span class="ag '+k+' q-'+eq[k].quality+'" style="--qc:'+qCol(eq[k])+'">'+img(eq[k].e)+'</span>' : '').join("")+'</span>';
 }
-const gearTile = (g, cls, attrs) => '<button class="gt q-'+g.quality+(cls?" "+cls:"")+'" style="--qc:'+qCol(g)+'" '+(attrs||"")+' aria-label="'+g.name+'">'+img(g.e)+'</button>';
+// gear icon: weapons and shields use their painted picture (weapon_<品质> / shield_<品质>) if there is one; helmets and armour stay 3D
+const gearImg = g => (g.slot==="weapon" || g.slot==="shield") ? artImg(g.slot+"_"+g.quality, g.e) : img(g.e);
+const gearTile = (g, cls, attrs) => '<button class="gt q-'+g.quality+(cls?" "+cls:"")+'" style="--qc:'+qCol(g)+'" '+(attrs||"")+' aria-label="'+g.name+'">'+gearImg(g)+'</button>';
 // one piece of gear as a card: quality frame + glow (stronger / animated for rarer pieces), slot, affixes, optional preview
 function gearCard(g, o){
   o = o || {};
   const q = GEAR_QUALITY_MAP[g.quality]||GEAR_QUALITIES[0];
   return '<div class="gcard q-'+g.quality+(o.cls?" "+o.cls:"")+'" style="--qc:'+q.col+';--qb:'+q.bg+'">'
-    + '<div class="gmain"><span class="gicon">'+img(g.e)+(o.up && isBetter(g) ? '<span class="gup" aria-label="比现在的好"><span class="chev"></span></span>' : '')+'</span>'
+    + '<div class="gmain"><span class="gicon">'+gearImg(g)+(o.up && isBetter(g) ? '<span class="gup" aria-label="比现在的好"><span class="chev"></span></span>' : '')+'</span>'
     + '<div class="ginfo"><b>'+g.name+'</b><small>'+q.title+' · '+(GEAR_SLOTS[g.slot]||{}).name+'</small>'
     + '<div class="afxs">'+g.affixes.map(a=>GEAR_AFFIXES[a.id] ? afxChip(a.id, afxVal(g,a)) : '').join("")+'</div>'+(o.lv ? gearLvHTML(g) : '')+'</div>'
     + (o.preview ? '<span class="gprev">'+avatarHTML(Object.assign({}, S.equipped, {[g.slot]:g}))+'</span>' : '')+'</div>'
@@ -390,7 +395,7 @@ function openBag(slot){
     note = ""; gone = null;
     body += '<div class="ggrid">'+all.slice(pg*PER, pg*PER+PER).map(g=>gearTile(g, (cur && g.id===cur.id?"sel":"")+(isWorn(g)?" worn":""), 'data-id="'+g.id+'" data-lv="Lv'+(g.lv||1)+'"')).join("")+'</div>';
     body += pagerHTML(pg, pages);
-    if(first) openPage({title:"🎒 背包", back:true, onClose:renderMap, body}); else setBody(body);
+    if(first) openPage({title:"🎒 背包", cls:"bag", back:true, onClose:renderMap, body}); else setBody(body);
     const P = $("pbody");
     P.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ sfx.click(); slot = b.dataset.s; sel = null; pg = 0; render(false); });
     P.querySelectorAll(".gt").forEach(b=>b.onclick=()=>{ sfx.click(); sel = b.dataset.id; render(false); });
@@ -1018,14 +1023,14 @@ const pctOf = (n, d) => Math.max(0, Math.min(100, Math.round(100*n/(d||1))));
 // one piece of gear in the result list: tag (本关掉落 / 升级奖励), name, affixes; 穿上 and, for drops, 不要
 function dropRow(g, tag, id, canDrop){
   const q = GEAR_QUALITY_MAP[g.quality]||GEAR_QUALITIES[0];
-  return '<div class="drow q-'+g.quality+'" id="'+id+'" style="--qc:'+q.col+';--qb:'+q.bg+'"><span class="gicon">'+img(g.e)+(isBetter(g)?'<span class="gup" aria-label="比现在的好"><span class="chev"></span></span>':'')+'</span>'
+  return '<div class="drow q-'+g.quality+'" id="'+id+'" style="--qc:'+q.col+';--qb:'+q.bg+'"><span class="gicon">'+gearImg(g)+(isBetter(g)?'<span class="gup" aria-label="比现在的好"><span class="chev"></span></span>':'')+'</span>'
     + '<div class="ginfo"><small><b class="dtag">'+tag+'</b> '+q.title+' · '+(GEAR_SLOTS[g.slot]||{}).name+'</small><b>'+g.name+'</b><div class="afxs">'+g.affixes.map(a=>GEAR_AFFIXES[a.id]?afxChip(a.id, afxVal(g,a)):'').join("")+'</div></div>'
     + '<div class="dbtns"><button class="btn green dwear" data-id="'+g.id+'">'+img("👕")+'穿上</button>'+(canDrop?'<button class="btn white ddrop" data-id="'+g.id+'">不要</button>':'')+'</div></div>';
 }
 function rewardHTML(r){
   const res = r.res;
   let h = '<div class="rexp"><span class="rlv">Lv.<b class="num" id="rLv">'+r.lvBefore+'</b></span><span class="xbar"><i id="xFill" style="width:'+pctOf(r.expBefore, expNeed(r.lvBefore))+'%"></i></span><b class="num rgain">+'+res.exp+'</b></div>';
-  if(res.gearExp.length) h += '<div class="rgx">装备经验'+res.gearExp.map(x=>{ const g = gearById(x.id); return g ? '<span class="rgp q-'+g.quality+'" style="--qc:'+qCol(g)+'">'+img(g.e)+'<b class="num">'+(x.levels.length?'Lv'+g.lv+'↑':'+'+x.gain)+'</b></span>' : ''; }).join("")+'</div>';
+  if(res.gearExp.length) h += '<div class="rgx">装备经验'+res.gearExp.map(x=>{ const g = gearById(x.id); return g ? '<span class="rgp q-'+g.quality+'" style="--qc:'+qCol(g)+'">'+gearImg(g)+'<b class="num">'+(x.levels.length?'Lv'+g.lv+'↑':'+'+x.gain)+'</b></span>' : ''; }).join("")+'</div>';
   const rows = [];
   res.rewards.forEach(rw=>rw.items.forEach(it=>{ if(it.gear) rows.push(dropRow(it.gear, "升级奖励", "lvg_"+it.gear.id, false)); }));
   if(res.gear) rows.push(dropRow(res.gear, "本关掉落", "drop_"+res.gear.id, true));
@@ -1050,7 +1055,7 @@ function animateReward(r){
       if(seq!==pageSeq || !lv || !lu || !fill.isConnected) return;
       lv.textContent = S.heroLv;
       const gear = res.rewards.flatMap(x=>x.items).map(x=>x.gear).filter(Boolean);
-      lu.innerHTML = emo('<b>⭐ 升级！Lv.'+S.heroLv+'</b>'+(gear.length?'<span>升级奖励：'+gear.map(g=>img(g.e)+g.name).join("、")+'</span>':'')); lu.hidden = false; restart(lu,"on");
+      lu.innerHTML = emo('<b>⭐ 升级！Lv.'+S.heroLv+'</b>'+(gear.length?'<span>升级奖励：'+gear.map(g=>gearImg(g)+g.name).join("、")+'</span>':'')); lu.hidden = false; restart(lu,"on");
       sfx.win(); confetti(140); say("升级啦！"+(gear.length?"奖励"+gear[0].name+"！":""));
       end();
       setTimeout(()=>{ if(seq===pageSeq) lu.hidden = true; }, 2600);
@@ -1155,8 +1160,8 @@ const runDef = mode => mode==="epic"
   ? {name:"勇者远征", seq:WORLDS_V2.map((_,w)=>[w,NLV-1]), lvl:2}
   : (w => ({name:WORLDS_V2[w].name+"连闯", seq:[[w,4],[w,9],[w,NLV-1]], lvl:1}))(Math.max(0, WORLDS_V2.findIndex(x=>x.id===mode)));
 const RUN_RW = {1:{cards:1, items:3}, 2:{cards:2, items:6, crown:true}};
-const runIcons = mode => runDef(mode).seq.map(([w,l])=>WORLDS_V2[w].levels[l].emoji);
-const runProgress = run => runIcons(run.mode).map((e,i)=>'<span class="'+(i<run.i?"":i===run.i?"c":"d")+'">'+img(i<run.i?"✅":e)+'</span>').join("");
+const runIcons = mode => runDef(mode).seq.map(([w,l])=>monImg(w,l));   // monster pictures (原画 if there is one)
+const runProgress = run => runIcons(run.mode).map((e,i)=>'<span class="'+(i<run.i?"":i===run.i?"c":"d")+'">'+(i<run.i?img("✅"):e)+'</span>').join("");
 function openRunMenu(w){
   w = w==null ? curLevel()[0] : w;
   const id = WORLDS_V2[w].id, worldOK = S.openAll || starOf(w, NLV-1)>0;
@@ -1164,7 +1169,7 @@ function openRunMenu(w){
   const epicOK = S.openAll || bosses>=WORLDS_V2.length;
   const card = (mode, ok, lock, cls) => { const d = runDef(mode), rw = RUN_RW[d.lvl];
     return '<button class="runcard '+cls+'" id="run_'+(mode==="epic"?"epic":"world")+'"'+(ok?"":" disabled")+'><b>'+d.name+'</b>'
-      + '<div class="rpath">'+runIcons(mode).map(e=>img(e)).join("")+'</div>'
+      + '<div class="rpath">'+runIcons(mode).join("")+'</div>'
       + '<div class="rrw">'+img("🎴")+'×'+rw.cards+' '+img("🎒")+'×'+rw.items+(rw.crown?' '+img("👑"):'')+'</div>'
       + (ok?'':'<span class="lk">'+img("🔒")+' '+lock+'</span>')+'</button>'; };
   openPage({title:"👹 Boss 连闯", ribbon:"blue", back:true, onClose:renderMap,
@@ -1185,7 +1190,7 @@ function runGain(info){
   const gear = (res.gear ? [res.gear] : []).concat(res.rewards.flatMap(x=>x.items).map(x=>x.gear).filter(Boolean));
   return '<div class="rchips">'+'<span class="rchip">'+img("⭐")+'经验<b class="num">+'+res.exp+'</b></span>'
     + (res.levels.length ? '<span class="rchip">升级 <b class="num">Lv.'+S.heroLv+'</b></span>' : '')
-    + gear.map(g=>'<span class="rchip q-'+g.quality+'" style="--qc:'+qCol(g)+'">'+img(g.e)+g.name+'</span>').join("")
+    + gear.map(g=>'<span class="rchip q-'+g.quality+'" style="--qc:'+qCol(g)+'">'+gearImg(g)+g.name+'</span>').join("")
     + (res.item ? '<span class="rchip">'+img(ITEMS[res.item].e)+'<b class="num">+1</b></span>' : '')
     + (res.stone ? '<span class="rchip">'+img("💎")+'<b class="num">+1</b></span>' : '')+'</div>';
 }
@@ -1194,7 +1199,7 @@ function showRunNext(info){
   sfx.win(); confetti(100);
   let hearts = ""; for(let i=0;i<5;i++) hearts += '<span style="'+(i<run.hearts?"":"filter:grayscale(1);opacity:.3")+'">'+img("❤️")+'</span>';
   openPage({title:"第 "+run.i+" 战胜利！", ribbon:"gold", body:'<div class="rprog">'+runProgress(run)+'</div>'
-    + '<div style="font-size:30px">'+hearts+'</div>'+runGain(info)+'<p>下一战：'+img(WORLDS_V2[w].levels[l].emoji)+' '+WORLDS_V2[w].levels[l].name+'</p>'
+    + '<div style="font-size:30px">'+hearts+'</div>'+runGain(info)+'<p>下一战：'+monImg(w,l)+' '+WORLDS_V2[w].levels[l].name+'</p>'
     + '<div class="btnrow"><button class="ibtn" id="rQuit" aria-label="放弃">'+img("🏳️")+'</button><button class="btn green" id="rGo">'+img("⚔️")+' 下一战</button></div>'});
   say("胜利！准备下一战！");
   $("rGo").onclick = ()=>{ closePage(); startLevel(w,l,run); };
@@ -1214,7 +1219,7 @@ function showRunReward(info){
     if(picks<=0 || c.classList.contains("flip")) return;
     picks--;
     const g = addGear(rollGear(stageNo(WORLDS_V2.length-1, NLV-1) + 10*runDef(info.run.mode).lvl, true));
-    c.classList.add("flip","q-"+g.quality); c.style.setProperty("--qc", qCol(g)); c.innerHTML = img(g.e);
+    c.classList.add("flip","q-"+g.quality); c.style.setProperty("--qc", qCol(g)); c.innerHTML = gearImg(g);
     sfx.chest(); confetti(120);
     say(GEAR_QUALITY_MAP[g.quality].name+"色装备！"+g.name+"！");
     if(picks===0){ cards.forEach(x=>{ if(!x.classList.contains("flip")) x.disabled = true; }); setTimeout(()=>showRunItems(info), 1500); }
@@ -1292,7 +1297,7 @@ $("bBack").onclick = ()=>{
     B.over = true; B.busy = true;
     const pen = fleePenalty();
     openPage({title:"逃跑成功", ribbon:"blue", body:'<div class="fleeart">'+img("🏃")+'</div>'
-      + (pen.lost ? '<p>装备经验 <b class="num" id="fleeLost">-'+pen.lost+'</b></p><div class="rgx">'+pen.pieces.filter(x=>x.lost).map(x=>{ const g = gearById(x.id); return g ? '<span class="rgp q-'+g.quality+'" style="--qc:'+qCol(g)+'">'+img(g.e)+'<b class="num">-'+x.lost+'</b></span>' : ''; }).join("")+'</div>'
+      + (pen.lost ? '<p>装备经验 <b class="num" id="fleeLost">-'+pen.lost+'</b></p><div class="rgx">'+pen.pieces.filter(x=>x.lost).map(x=>{ const g = gearById(x.id); return g ? '<span class="rgp q-'+g.quality+'" style="--qc:'+qCol(g)+'">'+gearImg(g)+'<b class="num">-'+x.lost+'</b></span>' : ''; }).join("")+'</div>'
                   : '<p id="fleeLost">没有装备经验可扣</p>')
       + (pen.removed ? '<p>弄丢了 '+img(pen.removed.e)+pen.removed.name+'</p>' : '')
       + '<button class="btn green" id="fMap">'+img("🗺️")+' 回地图</button>'});
