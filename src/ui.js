@@ -164,7 +164,7 @@ function renderMap(focus){
     pts.push([x, y]);
     let cls = (L.boss?" boss":"")+(lo?"":" closed")+(m>=4?" dia":"")+(st?" passed":"");
     const here = wi===cw && li===cl && !st;
-    if(here) cls += " current"+(flashCur?" flash":"");
+    if(here) cls += " current"+(flashCur?" cur-flash":"");
     let stars = "";
     if(st){
       if(m>=4) stars = img("💎")+img("💎")+img("💎");
@@ -213,7 +213,7 @@ function renderMap(focus){
   mp.querySelectorAll(".wrun").forEach(b=>b.onclick=()=>{ sfx.click(); openRunMenu(+b.dataset.w); });
   $("goCur").onclick = ()=>{
     sfx.click(); centre(cw, cl, true);
-    const n = mp.querySelector(".node.current"); if(n){ n.classList.remove("flash"); void n.offsetWidth; n.classList.add("flash"); }
+    const n = mp.querySelector(".node.current"); if(n){ n.classList.remove("cur-flash"); void n.offsetWidth; n.classList.add("cur-flash"); }
     say("第"+(cl+1)+"关，出发！");
   };
   $("heroBtn").onclick = ()=>{ sfx.click(); openHeroes(); };

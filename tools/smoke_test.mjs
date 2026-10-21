@@ -204,6 +204,12 @@ async function playAll(view) {
   await tap('#goCur'); await p.waitForTimeout(1200); await shot('23-go-current');
   const back = await centred('.node.current[data-w="0"][data-l="5"]');
   if (!(back.inView && back.off < 40)) problems.push(`[${view.name}] 「当前关」 should scroll back to 加法森林 第 6 关: ${JSON.stringify(back)}`);
+  // the highlighted current level must stay visible and tappable (its class once clashed with the battle's .flash layer)
+  const cn = await p.evaluate(() => { const n = document.querySelector('.node.current'), r = n.getBoundingClientRect(), cs = getComputedStyle(n); return { cls: n.className, op: +cs.opacity, pos: cs.position, w: Math.round(r.width), h: Math.round(r.height) }; });
+  if (!(cn.op > 0) || cn.pos !== 'absolute' || cn.w > 120 || cn.h > 120) problems.push(`[${view.name}] current level broken after 「当前关」: ${JSON.stringify(cn)}`);
+  await tap('.node.current'); await p.waitForTimeout(1900);
+  if (await p.evaluate(() => document.getElementById('battle').hidden || !__t.B || __t.B.w !== 0 || __t.B.l !== 5)) problems.push(`[${view.name}] tapping the current level after 「当前关」 should start it`);
+  await p.evaluate(() => __t.toMap()); await p.waitForTimeout(300);
   // all 120 levels can be entered and have the right kind of content
   const all = await p.evaluate(() => {
     const bad = [];
