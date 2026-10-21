@@ -66,7 +66,8 @@ const MODE_NAME = {battle:"打怪", match:"算术消除", link:"连连看", blen
 let curWorld = null, flashCur = false;
 function renderMap(dir){
   const [cw, cl] = curLevel();
-  if(curWorld===null) curWorld = cw;
+  // first time: the world looked at last (S.mapWorld), else the current level's world; 「当前关」 always jumps back
+  if(curWorld===null) curWorld = (Number.isInteger(S.mapWorld) && S.mapWorld>=0 && S.mapWorld<WORLDS_V2.length) ? S.mapWorld : cw;
   const ts = totalStars(), h = hero(), wi = curWorld, w = WORLDS_V2[wi], open = worldOpen(wi);
   const next = HEROES.find(x=>x.need!=null && x.need>ts);
   const dn = daily().n;   // 当天进度：前 15 次通关正常，之后进入狂暴
@@ -313,8 +314,9 @@ $("bBack").innerHTML = img("🗺️");
 $("speakBtn").innerHTML = img("🔊");
 
 function startLevel(w,l,run){
-  const Wd = WORLDS_V2[w], L = levelDef(w,l);
-  const mode = run ? "battle" : L.mode;          // 连闯和 Boss 一律是答题打怪
+  const Wd = WORLDS_V2[w], L0 = levelDef(w,l);
+  const mode = run ? "battle" : L0.mode;          // 连闯和 Boss 一律是答题打怪
+  const L = run ? Object.assign({}, L0, {g:L0.math}) : L0;   // 连闯里一律出本关的计算题（拼读关也不例外）
   const diff = run ? 0 : diffOf(w,l), rage = rageLevel();
   const maxH = run ? 5 : (L.boss ? 5 : 3);
   const h = hero(), gs = gearStats(S.equipped);
@@ -657,15 +659,17 @@ function monsterAttack(reason){
 // 连连看：makeLinkBoard / linkPick / linkDone（logic.js），字对取自课本字表 PY。
 const linkPairs = () => shuffle(PY.slice()).map(e=>({hz:e[0], py:pyMark(e[1],e[2]), e:e[3]}));
 function startBoard(){
-  B.q = {kind:"board"}; B.charge = 0; B.lastTick = 0; B.sel = null;
+  B.charge = 0; B.lastTick = 0; B.sel = null;
+  // speak = the board's one-line instruction, so the 🔊 button repeats it
   if(B.mode==="match"){
     const layers = B.l >= 7 ? 2 : 1;
     B.board = makeMatchBoard(matchGenFor(B.w,B.l) || (()=>G.add(10)), {layers, cols: layers===2 ? 3 : 4});
-    say(layers===2 ? "找出得数一样的两张卡片！上面的卡片拿走，下面的才能用哦！" : "找出得数一样的两张卡片！");
+    B.q = {kind:"board", speak: layers===2 ? "找出得数一样的两张卡片！上面的卡片拿走，下面的才能用哦！" : "找出得数一样的两张卡片！"};
   } else {
     B.board = makeLinkBoard(linkPairs(), {n:LINK_N});
-    say("把汉字和它的拼音连起来！");
+    B.q = {kind:"board", speak:"把汉字和它的拼音连起来！"};
   }
+  say(B.q.speak);
   renderBoard();
   B.busy = false; drawCharge();
 }
@@ -705,10 +709,11 @@ function boardRight(){
   heroAttack(true);
 }
 function boardWrong(els){
+  const cur = B;
   els.forEach(el=>{ if(el){ el.classList.remove("shake"); void el.offsetWidth; el.classList.add("shake","bad"); } });
   sfx.wrong(); B.combo = 0; $("combo").textContent = "";
   const st = S.stats[B.W.id] || (S.stats[B.W.id]={r:0,w:0}); st.w++; save();
-  setTimeout(()=>{ if(B && !B.over) renderBoard(); }, 600);
+  setTimeout(()=>{ if(B===cur && !B.over) renderBoard(); }, 600);
   if(B.lucky>0){ B.lucky--; B.charge = 0; B.lastTick = 0; sfx.shield(); toast("🍀","幸运光环！不扣心"); }
   else monsterAttack("wrong");
 }
