@@ -143,6 +143,14 @@ async function playAll(view) {
   await tap('#rMap'); await p.waitForTimeout(300);
   const lvb = await p.evaluate(() => document.getElementById('heroLv').textContent);
   if (lvb !== 'Lv.' + lv1.lv) problems.push(`[${view.name}] the map should show the hero level next to the avatar: ${lvb}`);
+  // 「下一关」 right after a level-up win: the level-up animation of the closed page must not throw
+  await p.evaluate(() => { __t.S.exp = expNeed(__t.S.heroLv) - 5; __t.setDrops(() => ({ exp: 20, gear: null, item: null, stone: 0, gearExp: 10 })); });
+  await tapNode(0, 1); await p.waitForTimeout(1700); await winLevel();
+  const errs0 = problems.filter(x => x.includes('JS error')).length;
+  await p.waitForTimeout(150); await tap('#rNext'); await p.waitForTimeout(2200);
+  if (problems.filter(x => x.includes('JS error')).length !== errs0) problems.push(`[${view.name}] 「下一关」 within 200ms of a level-up win threw a JS error`);
+  if (await p.evaluate(() => document.getElementById('battle').hidden)) problems.push(`[${view.name}] 「下一关」 should start the next level`);
+  await p.evaluate(() => __t.setDrops(null)); await leaveBattle(); await p.waitForTimeout(300);
   // bag: old chests open all at once; levels and exp bars; 进阶, 分解, 合成
   const chests = await p.evaluate(() => __t.S.chests);
   await tap('#bagBtn'); await p.waitForTimeout(500); await shot('08-bag');
@@ -161,10 +169,15 @@ async function playAll(view) {
   await tap('#gAscend'); await p.waitForTimeout(400); await shot('09c-bag-ascended');
   const asc = await p.evaluate(() => { const g = __t.S.bag.find(x => x.id === 'asc1'); return { q: g.quality, lv: g.lv, stones: __t.S.stones }; });
   if (asc.q !== 'pink' || asc.lv !== 1 || asc.stones !== st0 - 1) problems.push(`[${view.name}] 进阶 should use 1 stone and turn blue → pink at Lv1: ${JSON.stringify(asc)}`);
-  const n0 = await p.evaluate(() => __t.S.bag.length);
-  await tap('#gSalvage'); await p.waitForTimeout(300); await shot('09d-bag-salvage');
-  const sal = await p.evaluate(() => ({ n: __t.S.bag.length, gone: !__t.S.bag.some(x => x.id === 'asc1'), note: (document.getElementById('bagNote') || {}).textContent }));
-  if (sal.n !== n0 - 1 || !sal.gone || !/35/.test(sal.note || '')) problems.push(`[${view.name}] 分解 a pink piece should remove it and give 35 gear experience: ${JSON.stringify(sal)}`);
+  // 分解 tapped twice quickly on the same spot: only one piece goes, what is worn stays on
+  const n0 = await p.evaluate(() => ({ n: __t.S.bag.length, worn: Object.values(__t.S.equipped).map(g => g && g.id).join() }));
+  await p.waitForTimeout(400);
+  const sb = await p.locator('#gSalvage').boundingBox();
+  await p.touchscreen.tap(sb.x + sb.width / 2, sb.y + sb.height / 2); await p.waitForTimeout(80);
+  await p.touchscreen.tap(sb.x + sb.width / 2, sb.y + sb.height / 2); await p.waitForTimeout(300); await shot('09d-bag-salvage');
+  const sal = await p.evaluate(() => ({ n: __t.S.bag.length, gone: !__t.S.bag.some(x => x.id === 'asc1'), worn: Object.values(__t.S.equipped).map(g => g && g.id).join(), note: (document.getElementById('gGone') || {}).textContent, btns: document.querySelectorAll('.gwear').length }));
+  if (sal.n !== n0.n - 1 || !sal.gone || !/35/.test(sal.note || '') || sal.btns) problems.push(`[${view.name}] 分解 a pink piece should remove it, give 35 gear experience and leave a card with no buttons: ${JSON.stringify(sal)}`);
+  if (sal.worn !== n0.worn) problems.push(`[${view.name}] a double tap on 分解 must not change the worn gear`);
   await p.evaluate(() => { for (let i = 1; i <= 3; i++) addGear({ id: 'syn' + i, slot: 'shield', quality: 'white', name: '测试·盾' + i, e: '🛡️', lv: 1, exp: 0, affixes: [{ id: 'shield', val: 1 }] }); });
   await tap('#synthBtn'); await p.waitForTimeout(300);
   await tap('.qtab[data-q="white"]'); await p.waitForTimeout(200);
@@ -175,11 +188,27 @@ async function playAll(view) {
   const syn = await p.evaluate(() => ({ n: __t.S.bag.length, left: __t.S.bag.filter(x => /^syn/.test(x.id)).length, q: __t.S.bag[__t.S.bag.length - 1].quality }));
   if (syn.n !== n1 - 2 || syn.left || syn.q !== 'blue') problems.push(`[${view.name}] 合成 3 white → 1 blue: ${JSON.stringify({ n1, syn })}`);
   await tap('#sBack'); await p.waitForTimeout(300);
+  // 合成 with 15 pieces of one colour: 12 per page, the 13th is on page 2 and can be picked
+  await p.evaluate(() => { for (let i = 0; i < 15; i++) addGear({ id: 'p15_' + i, slot: 'helmet', quality: 'orange', name: '测试·头盔' + i, e: '🪖', lv: 1, exp: 0, affixes: [{ id: 'atk', val: 4 }] }); });
+  await tap('#synthBtn'); await p.waitForTimeout(300);
+  await tap('.qtab[data-q="orange"]'); await p.waitForTimeout(200); await shot('09g-bag-synth-pages');
+  const id13 = await p.evaluate(() => { const worn = Object.values(__t.S.equipped).filter(Boolean).map(g => g.id); return __t.S.bag.filter(g => g && g.quality === 'orange' && !worn.includes(g.id))[12].id; });
+  if (await p.isVisible(`.gt[data-id="${id13}"]`) || !(await p.isVisible('#gNext'))) problems.push(`[${view.name}] 合成 should show 12 pieces per page with a next-page button`);
+  else {
+    await tap('#gNext'); await p.waitForTimeout(200); await shot('09h-bag-synth-page2');
+    await tap(`.gt[data-id="${id13}"]`).catch(() => {}); await p.waitForTimeout(150);
+    if (!(await p.evaluate(id => !!document.querySelector(`.gt.picked[data-id="${id}"]`), id13))) problems.push(`[${view.name}] 合成 page 2 should let the 13th piece be picked`);
+  }
+  await p.evaluate(() => { for (let i = 0; i < 15; i++) removeGear('p15_' + i); });
+  await tap('#sBack'); await p.waitForTimeout(300);
   // lots of gear: the slot list pages (8 per page) instead of scrolling
   await p.evaluate(() => { for (let i = 0; i < 11; i++) addGear(Object.assign(rollGear(20, i % 3 === 0), { slot: 'armor', e: ['🥋', '🦺', '👕', '🧥'][i % 4], id: 'many_' + i })); });
   await tap('.tab[data-s="armor"]'); await p.waitForTimeout(300); await shot('09d-bag-pages');
   if (!(await p.isVisible('#gNext'))) problems.push(`[${view.name}] bag with many armors should show a next-page button`);
-  else { await tap('#gNext'); await p.waitForTimeout(200); await tap('.gt[data-id="many_10"]').catch(() => problems.push(`[${view.name}] page 2 of the bag does not list the last armor`)); }
+  else {   // level rewards are random, so the last armor may be on page 2 or later
+    for (let i = 0; i < 5 && !(await p.isVisible('.gt[data-id="many_10"]')) && await p.isEnabled('#gNext'); i++) { await tap('#gNext'); await p.waitForTimeout(200); }
+    await p.click('.gt[data-id="many_10"]', { force: true, timeout: 2000 }).catch(() => problems.push(`[${view.name}] the bag pages do not list the last armor`));
+  }
   await tap('#pgBack'); await tap('#heroBtn'); await p.waitForTimeout(300); await shot('10-heroes');
   await tap('#pgBack'); await tap('#parentBtn'); await p.waitForTimeout(300); await shot('11-parent');
   await tap('.tab[data-t="rep"]'); await shot('12-report'); await tap('#pgBack');
@@ -242,6 +271,7 @@ async function playAll(view) {
   if (await p.evaluate(() => document.getElementById('battle').hidden || !document.getElementById('modal').hidden || __t.B.over)) problems.push(`[${view.name}] going to the background must not count as fleeing`);
   await tap('#bBack'); await p.waitForTimeout(300); await shot('34-flee-confirm');
   if (!(await p.isVisible('#fGo')) || !/扣除装备经验/.test(await p.textContent('#pbody'))) problems.push(`[${view.name}] 🗺️ in battle should ask 「真的要逃跑吗？」 first`);
+  for (const id of ['fStay', 'fGo']) if (await p.evaluate(id => { const w = document.createTreeWalker(document.getElementById(id), NodeFilter.SHOW_TEXT); let n, r = document.createRange(); while ((n = w.nextNode())) { if (!n.textContent.trim()) continue; r.selectNodeContents(n); if (new Set([...r.getClientRects()].map(x => Math.round(x.top))).size > 1) return true; } return false; }, id)) problems.push(`[${view.name}] flee confirm button #${id} wraps onto two lines`);
   const fl0 = await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 0; window.__rnd = Math.random; Math.random = () => 0.99; return { h: __t.B.hearts, d: __t.B.dmg }; });
   await tap('#fGo'); await p.waitForTimeout(250); await shot('34b-flee-fail'); await p.waitForTimeout(700);
   const fl1 = await p.evaluate(() => { Math.random = window.__rnd; return { h: __t.B.hearts, over: __t.B.over, battle: !document.getElementById('battle').hidden, modal: !document.getElementById('modal').hidden }; });
