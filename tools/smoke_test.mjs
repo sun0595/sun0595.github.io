@@ -38,40 +38,43 @@ async function newPage(view) {
   return { ctx, p };
 }
 
+// screenshot + layout check: nothing scrolls, key UI stays on screen and out of the safe areas
+async function shotCheck(p, view, dir, name) {
+  await p.screenshot({ path: path.join(dir, name + '.png') });
+  const bad = await p.evaluate(({ top, bottom, sel }) => {
+    const W = innerWidth, H = innerHeight, out = [];
+    const se = document.scrollingElement;
+    if (se.scrollHeight > H + 1 || se.scrollWidth > W + 1) out.push(`document scrolls (${se.scrollWidth}x${se.scrollHeight})`);
+    for (const id of ['map', 'battle']) { const s = document.getElementById(id); if (!s.hidden && s.scrollHeight > s.clientHeight + 2) out.push(`#${id} needs scrolling (${s.scrollHeight}>${s.clientHeight})`); }
+    const m = document.querySelector('.pbody');
+    if (m && m.scrollHeight > m.clientHeight + 2) out.push(`page needs scrolling (${m.scrollHeight}>${m.clientHeight})`);
+    const bt = document.getElementById('battle');
+    if (!bt.hidden) { const a = document.getElementById('answers').getBoundingClientRect(); if (a.bottom > H - bottom + 1) out.push(`answers bottom ${Math.round(a.bottom)} > ${H - bottom}`); }
+    const desc = el => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\s+/).join('.') : '') + (el.textContent.trim() ? ` "${el.textContent.trim().slice(0, 12)}"` : '');
+    for (const el of document.querySelectorAll(sel)) {
+      if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) continue;
+      const why = [];
+      if (r.top < top - 0.5) why.push(`top ${Math.round(r.top)} < ${top}`);
+      if (r.bottom > H - bottom + 0.5) why.push(`bottom ${Math.round(r.bottom)} > ${H - bottom}`);
+      if (r.left < -0.5) why.push(`left ${Math.round(r.left)} < 0`);
+      if (r.right > W + 0.5) why.push(`right ${Math.round(r.right)} > ${W}`);
+      if (why.length) out.push(desc(el) + ': ' + why.join(', '));
+    }
+    return out;
+  }, { ...view.safe, sel: KEY_UI });
+  for (const x of bad) problems.push(`[${view.name}] ${name}: ${x}`);
+  console.log(bad.length ? 'BAD' : 'ok ', view.name, name);
+}
+
 async function playAll(view) {
   const SHOTS = path.join(ROOT, 'build', 'shots', view.name); mkdirSync(SHOTS, { recursive: true });
   const { ctx, p } = await newPage(view);
   await p.goto('file://' + path.join(ROOT, 'build', 'test.html'));
   await p.evaluate(([k, s]) => localStorage.setItem(k, JSON.stringify(s)), [V1, SAVE]);
   await p.reload(); await p.waitForTimeout(600);
-  const shot = async name => {
-    await p.screenshot({ path: path.join(SHOTS, name + '.png') });
-    const bad = await p.evaluate(({ top, bottom, sel }) => {
-      const W = innerWidth, H = innerHeight, out = [];
-      const se = document.scrollingElement;
-      if (se.scrollHeight > H + 1 || se.scrollWidth > W + 1) out.push(`document scrolls (${se.scrollWidth}x${se.scrollHeight})`);
-      for (const id of ['map', 'battle']) { const s = document.getElementById(id); if (!s.hidden && s.scrollHeight > s.clientHeight + 2) out.push(`#${id} needs scrolling (${s.scrollHeight}>${s.clientHeight})`); }
-      const m = document.querySelector('.pbody');
-      if (m && m.scrollHeight > m.clientHeight + 2) out.push(`page needs scrolling (${m.scrollHeight}>${m.clientHeight})`);
-      const bt = document.getElementById('battle');
-      if (!bt.hidden) { const a = document.getElementById('answers').getBoundingClientRect(); if (a.bottom > H - bottom + 1) out.push(`answers bottom ${Math.round(a.bottom)} > ${H - bottom}`); }
-      const desc = el => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\s+/).join('.') : '') + (el.textContent.trim() ? ` "${el.textContent.trim().slice(0, 12)}"` : '');
-      for (const el of document.querySelectorAll(sel)) {
-        if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
-        const r = el.getBoundingClientRect();
-        if (r.width < 1 || r.height < 1) continue;
-        const why = [];
-        if (r.top < top - 0.5) why.push(`top ${Math.round(r.top)} < ${top}`);
-        if (r.bottom > H - bottom + 0.5) why.push(`bottom ${Math.round(r.bottom)} > ${H - bottom}`);
-        if (r.left < -0.5) why.push(`left ${Math.round(r.left)} < 0`);
-        if (r.right > W + 0.5) why.push(`right ${Math.round(r.right)} > ${W}`);
-        if (why.length) out.push(desc(el) + ': ' + why.join(', '));
-      }
-      return out;
-    }, { ...view.safe, sel: KEY_UI });
-    for (const x of bad) problems.push(`[${view.name}] ${name}: ${x}`);
-    console.log(bad.length ? 'BAD' : 'ok ', view.name, name);
-  };
+  const shot = name => shotCheck(p, view, SHOTS, name);
   const tap = sel => p.click(sel, { force: true });
   const winLevel = async () => { for (let i = 0; i < 30; i++) { if (await p.isVisible('#modal')) return; const a = await p.evaluate(() => { const B = __t.B; if (!B || !B.q || B.busy) return null; B.hp = Math.min(B.hp, 1); return String(B.q.answer); }); if (a) await tap(`.ans[data-v="${a}"]`).catch(() => {}); await p.waitForTimeout(450); } };
   await shot('01-map');
@@ -93,6 +96,20 @@ async function playAll(view) {
   await tap('.node[data-l="4"]'); await p.waitForTimeout(2700); await shot('13-word-boss');
   await tap('#hintBtn'); await p.waitForTimeout(300); await tap('#stNext').catch(() => {}); await tap('#stNext').catch(() => {}); await p.waitForTimeout(300); await shot('14-word-hint');
   await tap('#bBack'); await p.evaluate(() => __t.showRunReward({ run: { mode: 'epic' }, firstMedal: true })); await p.waitForTimeout(400); await shot('15-run-reward');
+  // 当天第 16 次通关前起进入「狂暴 ×2」：怪兽每次攻击扣 2 颗心、每题 10 秒
+  await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.world = 0; localStorage.setItem(k, JSON.stringify(s)); }, V1);
+  await p.reload(); await p.waitForTimeout(500);
+  await p.evaluate(() => __t.setDaily(15)); await p.waitForTimeout(200); await shot('17-map-rage');
+  if ((await p.textContent('#dayTag')).trim() !== '狂暴中') problems.push(`[${view.name}] map day tag should say 狂暴中`);
+  await tap('.node[data-l="1"]'); await p.waitForTimeout(1900); await shot('18-battle-rage');
+  const rage = await p.evaluate(() => ({ rage: __t.B.rage, t: __t.qTime(), tag: document.getElementById('rageTag').textContent.trim(), tagShown: !document.getElementById('rageTag').hidden, hearts: __t.B.hearts }));
+  if (rage.rage !== 1 || !rage.tagShown || rage.tag.replace(/\s+/g, '') !== '狂暴×2') problems.push(`[${view.name}] rage x2 not shown: ${JSON.stringify(rage)}`);
+  if (Math.abs(rage.t - 10) > 1e-9) problems.push(`[${view.name}] rage x2 time limit should be 10 s, got ${rage.t}`);
+  await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 0; });
+  const wrong2 = await p.evaluate(() => { const a = String(__t.B.q.answer); return [...document.querySelectorAll('.ans')].map(b => b.dataset.v).find(v => v !== a); });
+  await tap(`.ans[data-v="${wrong2}"]`); await p.waitForTimeout(900); await shot('19-rage-hit');
+  const lost = rage.hearts - await p.evaluate(() => __t.B.hearts);
+  if (lost !== 2) problems.push(`[${view.name}] rage x2 hit should cost 2 hearts, cost ${lost}`);
   if (await p.evaluate(k => localStorage.getItem(k), BETA) !== null) problems.push(`[${view.name}] 正式版 wrote the 试玩版 save "${BETA}"`);
   await ctx.close();
 }
@@ -110,7 +127,7 @@ async function betaCheck() {
   await p.reload(); await p.waitForTimeout(600);
   if (!(await p.title()).includes('试玩版')) fail('title does not say 试玩版: ' + await p.title());
   if (!(await p.isVisible('#betaTag'))) fail('「试玩版」 tag not shown on the map');
-  await p.screenshot({ path: path.join(SHOTS, '16-beta-map.png') });
+  await shotCheck(p, view, SHOTS, '16-beta-map');
   const first = await p.evaluate(k => localStorage.getItem(k), BETA);
   let fs = null; try { fs = JSON.parse(first); } catch (e) {}
   if (!fs || fs.stars['sub-3'] !== 3 || fs.stickers['🐶'] !== 3) fail('first run did not copy the 正式版 save into ' + BETA);

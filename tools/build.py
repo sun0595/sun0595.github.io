@@ -62,7 +62,8 @@ const ri = (a,b) => a + Math.floor(Math.random()*(b-a+1));
 const pick = arr => arr[Math.floor(Math.random()*arr.length)];
 const shuffle = a => { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]} return a; };
 '''
-TEST_HOOK = "window.__t={showRunReward,startRun,openRunMenu,useItem,get B(){return B},G,WP,LEVEL_PLAN};\n"
+TEST_HOOK = ("window.__t={showRunReward,startRun,openRunMenu,useItem,qTime,get B(){return B},G,WP,LEVEL_PLAN,"
+             "setDaily(n){ daily().n = n; save(); renderMap(); }};\n")
 
 def emoji_table(src, emoji_dir):
     """map every emoji string that appears in the source to an embedded webp"""
@@ -142,6 +143,9 @@ def write(page, out):
 
 def main():
     test, beta = "--test" in sys.argv, "--beta" in sys.argv
+    if test and beta:
+        print("note: --test already builds both build/test.html and build/test-beta.html; --beta is ignored "
+              "(run `python3 tools/build.py --beta` on its own for xiaoyongshi/beta/index.html)")
     emoji_dir = ensure_assets()
     head, body, logic, ui = read("head.html"), read("body.html"), read("logic.js"), read("ui.js")
     if test:
