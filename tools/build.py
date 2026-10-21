@@ -14,6 +14,8 @@ How it works:
   src/body.html  static DOM skeleton
   src/logic.js   save data, sound/voice, question banks (math / pinyin / word problems), worlds, heroes, stickers
   src/ui.js      everything on screen: map, pages, battle, rewards, runs, effects
+  src/art/       optional original art (webp/png, names like map_add / hero_base / gear_weapon / mon_add_3),
+                 embedded as ART_D; the game shows it instead of the 3D emoji when present (warning above 3 MB)
 Every emoji used anywhere in src/ is swapped for its Fluent 3D image (embedded as base64 webp),
 and the fonts are subset to the characters actually used and embedded as woff2.
 The output makes ZERO external requests, so it works in mainland China.
@@ -65,6 +67,7 @@ const shuffle = a => { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.ran
 TEST_HOOK = ("window.__t={showRunReward,startRun,openRunMenu,useItem,qTime,openBag,get B(){return B},get S(){return S},G,WP,LEVEL_PLAN,"
              "WORLDS_V2,LEVEL_MODES,img,startLevel,nextQuestion,toMap,levelDef,matchGenFor,matchPoolOK,curLevel,renderMap,hitCap,"
              "pyQ,pyBlend,pyBlendHz,blendQ,PY,LLK_SETS,llkPairs,pyLegal,pySplit,pyMark,"
+             "setArt(k,url){ if(url) ART[k] = url; else delete ART[k]; },"
              "setDaily(n){ daily().n = n; save(); renderMap(); }};\n")
 
 EMOJI_RANGES = [(0x1F000, 0x1FAFF), (0x2600, 0x27BF), (0x2300, 0x23FF), (0x2B00, 0x2BFF), (0x2190, 0x21FF),
@@ -129,6 +132,32 @@ def font_faces(text):
 
 BETA_TITLE = "（试玩版）"
 
+ART_DIR = os.path.join(ROOT, "src", "art")
+ART_WARN = 3 * 1024 * 1024
+ART_MIME = {".webp": "image/webp", ".png": "image/png"}
+
+def art_table():
+    """embed src/art/*.webp|png as ART_D = {name: [mime, base64]}; JS art(name) uses it, else falls back to the 3D emoji"""
+    table, total = {}, 0
+    if os.path.isdir(ART_DIR):
+        for f in sorted(os.listdir(ART_DIR)):
+            name, ext = os.path.splitext(f)
+            if ext.lower() not in ART_MIME:
+                continue
+            if not re.fullmatch(r"[a-z0-9_]+", name):
+                sys.exit("ERROR: art file name must be lower-case letters, digits and _ (e.g. mon_add_3.webp): %s" % f)
+            with open(os.path.join(ART_DIR, f), "rb") as fh:
+                data = fh.read()
+            # a broken file would leave a blank monster / hero on screen: refuse it
+            ok = (data[:8] == b"\x89PNG\r\n\x1a\n") if ext.lower() == ".png" else (data[:4] == b"RIFF" and data[8:12] == b"WEBP")
+            if not data or not ok:
+                sys.exit("ERROR: art file is empty or not a real %s picture: %s" % (ext.lower()[1:], f))
+            total += len(data)
+            table[name] = [ART_MIME[ext.lower()], base64.b64encode(data).decode()]
+    if total > ART_WARN:
+        print("WARNING: embedded art is %.1f MB (over 3 MB) - the page gets slow to open on a phone; shrink or convert to webp" % (total / 1048576))
+    return "const ART_D = %s;\n" % json.dumps(table), len(table), total
+
 def make_page(head, body, logic, ui, imgjs, beta):
     """assemble one page; the 试玩版 gets its own title and IS_BETA = true (logic.js then uses its own save key)"""
     title = re.search(r"<title>(.*?)</title>", head)
@@ -168,6 +197,8 @@ def main():
         ui = ui.rstrip() + "\n" + TEST_HOOK
     src = head + body + logic + ui + BETA_TITLE
     imgjs, nimg = emoji_table(src, emoji_dir)
+    artjs, nart, artsize = art_table()
+    imgjs += artjs
     head = head.replace("<style>", "<style>\n" + font_faces(src), 1)
     if test:   # the smoke test plays both the normal game and the 试玩版
         outs = [(os.path.join(ROOT, "build", "test.html"), False), (os.path.join(ROOT, "build", "test-beta.html"), True)]
@@ -178,7 +209,7 @@ def main():
     for out, b in outs:
         page = make_page(head, body, logic, ui, imgjs, b)
         write(page, out)
-        print("wrote %s  (%d KB, %d 3D images)" % (os.path.relpath(out, ROOT), len(page.encode()) // 1024, nimg))
+        print("wrote %s  (%d KB, %d 3D images, %d art pictures %d KB)" % (os.path.relpath(out, ROOT), len(page.encode()) // 1024, nimg, nart, artsize // 1024))
 
 if __name__ == "__main__":
     main()

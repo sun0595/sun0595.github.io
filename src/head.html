@@ -76,7 +76,7 @@ img{-webkit-user-drag:none;pointer-events:none}
 .pill.tag{flex:none;height:28px;padding:0 10px;gap:2px;font:400 15px/1 var(--f-ui);white-space:nowrap}
 .pill.tag .num{font:800 15px/1 var(--f-num)}
 .pill.hot{background:linear-gradient(#ff6b6b,#d7263d);color:#fff}
-.pill.beta{position:absolute;left:8px;top:50px;z-index:3;height:30px;padding:0 10px;font:400 15px/1 var(--f-ui);color:var(--gold);pointer-events:none}
+.pill.beta{position:absolute;left:12px;top:10px;z-index:3;height:30px;padding:0 10px;font:400 15px/1 var(--f-ui);color:var(--gold);pointer-events:none}
 .bar{position:relative;height:20px;border:3px solid var(--ink);border-radius:999px;background:#3b2f6b;overflow:hidden}
 .bar>i{position:absolute;left:0;top:0;bottom:0;width:100%;border-radius:999px;background:linear-gradient(#ff9a9a,#ff4d5e);box-shadow:inset 0 3px 0 rgba(255,255,255,.45);transition:width .35s}
 .bar>span{position:absolute;inset:0;display:grid;place-items:center;font:800 13px/1 var(--f-num);color:#fff;-webkit-text-stroke:3px var(--ink);paint-order:stroke fill}
@@ -93,20 +93,29 @@ img{-webkit-user-drag:none;pointer-events:none}
 .topbar .grow{flex:1}
 .topbar .avatarbtn{width:56px;height:56px;border-radius:50%}
 .topbar .avatarbtn .ei{font-size:40px}
-.nexthero{display:flex;align-items:center;gap:8px;justify-content:center;color:#fff;font-size:15px;opacity:.95}
-.nexthero .ei{font-size:26px}
+.nexthero{display:flex;align-items:center;gap:6px;justify-content:center;color:#fff;font-size:15px}
+.nexthero .ei{font-size:24px}
+.nexthero .nh{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:2px;white-space:nowrap;overflow:hidden;opacity:.95}
 .nexthero .num{color:var(--gold)}
-.wview{position:relative;flex:1;min-height:0;touch-action:pan-y}
-.wcard{position:absolute;inset:0;border-radius:28px;border:4px solid var(--ink);overflow:hidden;box-shadow:0 6px 0 var(--ink);background:var(--wbg) center/cover no-repeat;animation:wIn .35s ease-out}
-@keyframes wIn{from{transform:translateX(var(--wdir,0)) scale(.96);opacity:0}}
-.wcard .deco{position:absolute;opacity:.9;filter:drop-shadow(0 6px 6px rgba(0,0,0,.25))}
-.wmedal{position:absolute;top:6px;right:6px;z-index:3;display:flex;flex-direction:column;align-items:center;line-height:1;filter:drop-shadow(0 3px 0 var(--ink))}
-.wmedal .ei{font-size:40px}
-.wmedal small{margin-top:-4px;font-size:13px;color:#fff;background:var(--red);border:2px solid var(--ink);border-radius:9px;padding:1px 6px}
-.wcur{position:absolute;top:8px;left:8px;z-index:3;min-height:34px;padding:2px 10px 2px 4px;gap:2px;font-size:15px;border-radius:14px;box-shadow:inset 0 3px 0 rgba(255,255,255,.55),0 3px 0 var(--ink)}
-.wcur .ei{font-size:24px}
-.wpath{position:absolute;inset:0;width:100%;height:100%;z-index:1}
-/* 15 nodes per world: small balls, the Boss bigger; current one glows */
+/* the long map: only .lscroll scrolls (native, momentum on iOS); the bars above stay put */
+.wview{position:relative;flex:1;min-height:0}
+.lscroll{position:absolute;inset:0;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y;
+  border-radius:28px;border:4px solid var(--ink);box-shadow:0 6px 0 var(--ink);background:var(--night)}
+.lmap{position:relative;width:100%;overflow:hidden}
+.band{position:absolute;left:0;right:0;background-size:100% 100%;background-repeat:no-repeat}
+.band.art{background-size:100% auto;background-repeat:repeat-y}
+.band .deco{position:absolute;opacity:.85;filter:drop-shadow(0 6px 6px rgba(0,0,0,.25));z-index:0}
+.wsign{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:2;display:flex;flex-direction:column;align-items:center;gap:4px;white-space:nowrap}
+.wsign .ribbon{font-size:20px;padding:5px 20px}
+.wsign .ribbon .num{font:800 20px/1 var(--f-num)}
+.wsub2{display:flex;align-items:center;gap:8px}
+.wsign small{font-size:13px;color:#fff;background:rgba(42,33,80,.6);padding:2px 10px;border-radius:10px}
+.wsign.locked{filter:grayscale(.7);opacity:.85}
+.wrun{min-height:36px;padding:2px 12px 2px 6px;font-size:15px;gap:2px;border-radius:14px;box-shadow:inset 0 3px 0 rgba(255,255,255,.55),0 3px 0 var(--ink)}
+.wrun .ei{font-size:24px}
+.wcur{flex:none;min-height:34px;padding:2px 10px 2px 4px;gap:2px;font-size:15px;border-radius:14px;box-shadow:inset 0 3px 0 rgba(255,255,255,.55),0 3px 0 var(--ink)}
+.wcur .ei{font-size:22px}
+.wpath{position:absolute;left:0;top:0;width:100%;z-index:1;pointer-events:none}
 .node{position:absolute;z-index:2;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:1px}
 .node .ball{position:relative;width:50px;height:50px;border-radius:50%;border:3px solid var(--ink);display:grid;place-items:center;
   background:radial-gradient(circle at 35% 30%,#ffffff,#e5e1f5);box-shadow:inset 0 -4px 0 rgba(0,0,0,.08),0 4px 0 var(--ink)}
@@ -128,14 +137,6 @@ img{-webkit-user-drag:none;pointer-events:none}
 .node.current.flash .ball{animation:bounce 1s ease-in-out infinite,curGlow .4s ease-in-out 6}
 @keyframes curGlow{50%{box-shadow:inset 0 -4px 0 rgba(0,0,0,.08),0 4px 0 var(--ink),0 0 0 6px #fff,0 0 22px 8px #ffd23f}}
 @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-.wlock{position:absolute;inset:0;z-index:4;background:rgba(27,22,64,.62);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#fff;font-size:20px;text-align:center;padding:20px}
-.wlock .ei{font-size:72px}
-.wnav{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.wnav .ibtn{width:58px;height:58px}
-.wtitle{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px}
-.wtitle .ribbon{font-size:19px;padding:4px 18px}
-.wtitle .ribbon .num{font:800 19px/1 var(--f-num)}
-.wtitle small{font-size:13px;color:#fff;opacity:.85;white-space:nowrap}
 
 /* ---------- BATTLE ---------- */
 #battle{background:var(--night);padding:8px 10px 12px;gap:8px}
@@ -505,6 +506,15 @@ img{-webkit-user-drag:none;pointer-events:none}
 .av .ag.weapon{right:-22%;bottom:4%;width:44%}
 .av .ag.shield{left:-20%;bottom:4%}
 .av .ag.armor{bottom:-8%;left:33%;width:34%}
+/* original art (src/art): layered hero; each gear layer is one light-grey picture tinted per quality with CSS */
+.ei.art{object-fit:contain}
+.av.lay .agl{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;filter:var(--tint,brightness(1)) drop-shadow(0 0 2px var(--qc)) drop-shadow(0 0 5px var(--qc))}
+.agl.q-white{--tint:grayscale(.2) brightness(1.08)}
+.agl.q-blue{--tint:sepia(1) saturate(4) hue-rotate(175deg)}
+.agl.q-pink{--tint:sepia(1) saturate(4) hue-rotate(285deg)}
+.agl.q-purple{--tint:sepia(1) saturate(4) hue-rotate(225deg)}
+.agl.q-orange{--tint:sepia(1) saturate(6) hue-rotate(-12deg)}
+.agl.q-red{--tint:sepia(1) saturate(7) hue-rotate(-45deg)}
 /* bag page */
 .bagtop{display:flex;align-items:center;gap:12px}
 .bagav{flex:none;width:118px;height:108px;display:grid;place-items:center;border-radius:18px;border:3px solid var(--ink);background:radial-gradient(circle at 50% 45%,#fff,#e5e1f5);padding-top:14px}

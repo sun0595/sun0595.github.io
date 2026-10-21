@@ -22,7 +22,7 @@ const V1 = 'math-hero-v1', BETA = 'math-hero-beta';
 const stars = { 'think-1': 3 }; for (const w of ['add', 'sub', 'ten']) for (let l = 0; l < 5; l++) stars[w + '-' + l] = 3; stars['add-2'] = 2;
 const SAVE = { stars, stickers: { '🐶': 3, '🐱': 2, '💎': 2 }, medals: { add: 1, sub: 1, ten: 1 }, tier: { 'add-1': 2 }, py: 0, sound: false, voice: false, world: 0 };
 // buttons, titles and panels that must stay fully on screen and out of the safe areas
-const KEY_UI = 'button, .btn, .ibtn, .ribbon, .ttl, .wintitle, .pill, .tab, .ans, .item, .node, .wtitle, .nexthero, #bTitle, .qcard, .hint, .note, .page, .mboard, .lboard';
+const KEY_UI = 'button, .btn, .ibtn, .ribbon, .ttl, .wintitle, .pill, .tab, .ans, .item, .node, .wtitle, .nexthero, #bTitle, .qcard, .hint, .note, .page, .mboard, .lboard, .wview';
 
 async function newPage(view) {
   const ctx = await b.newContext({ viewport: view.viewport, deviceScaleFactor: view.dpr, isMobile: true, hasTouch: true });
@@ -57,7 +57,11 @@ async function shotCheck(p, view, dir, name) {
       else if (hr.top < ar.top - 0.5 || hr.left < ar.left - 0.5 || hr.bottom > ar.bottom + 0.5) out.push(`hearts cut off by the arena (${Math.round(hr.top)} < ${Math.round(ar.top)})`);
     }
     const desc = el => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\s+/).join('.') : '') + (el.textContent.trim() ? ` "${el.textContent.trim().slice(0, 12)}"` : '');
+    // the long map is the one thing allowed to scroll: what is inside it may be scrolled out of sight (the .wview box itself is checked)
+    const ls = document.getElementById('lscroll');
+    if (ls && !document.getElementById('map').hidden && ls.scrollHeight <= ls.clientHeight) out.push('the long map should scroll');
     for (const el of document.querySelectorAll(sel)) {
+      if (el.closest('#lscroll')) continue;
       if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
       const r = el.getBoundingClientRect();
       if (r.width < 1 || r.height < 1) continue;
@@ -82,6 +86,11 @@ async function playAll(view) {
   await p.reload(); await p.waitForTimeout(600);
   const shot = name => shotCheck(p, view, SHOTS, name);
   const tap = sel => p.click(sel, { force: true });
+  // where a node sits inside the scrolled map: in view? how far from the middle?
+  const centred = sel => p.evaluate(sel => { const n = document.querySelector(sel), s = document.getElementById('lscroll'); if (!n) return { missing: sel }; const a = n.getBoundingClientRect(), b = s.getBoundingClientRect(); const c = (a.top + a.bottom) / 2; return { inView: a.top >= b.top - 1 && a.bottom <= b.bottom + 1, off: Math.round(Math.abs(c - (b.top + b.bottom) / 2)) }; }, sel);
+  const scrollToBand = async w => { await p.evaluate(w => { const b = document.querySelector(`.band[data-w="${w}"]`), s = document.getElementById('lscroll'); s.scrollTop = b.offsetTop + b.offsetHeight - s.clientHeight; }, w); await p.waitForTimeout(250); };
+  // tap a level on the long map: scroll it to the middle first (so nothing floating covers it), then a real tap
+  const tapNode = async (w, l) => { await p.evaluate(([w, l]) => { const n = document.querySelector(`.node[data-w="${w}"][data-l="${l}"]`), s = document.getElementById('lscroll'); s.scrollTop = n.offsetTop - s.clientHeight / 2; }, [w, l]); await p.waitForTimeout(100); await tap(`.node[data-w="${w}"][data-l="${l}"]`); };
   const winLevel = async () => { for (let i = 0; i < 30; i++) { if (await p.isVisible('#modal')) return; const a = await p.evaluate(() => { const B = __t.B; if (!B || !B.q || B.busy) return null; B.hp = Math.min(B.hp, 1); return String(B.q.answer); }); if (a) await tap(`.ans[data-v="${a}"]`).catch(() => {}); await p.waitForTimeout(450); } };
   await shot('01-map');
   // 旧进度迁移：旧 add 第 l 关 → 新 add 第 l+1 关（星星、档位照搬）；旧 think 不映射但星星算进总数
@@ -90,8 +99,11 @@ async function playAll(view) {
   if (mig.old !== 3) problems.push(`[${view.name}] old S.stars must be kept`);
   if (String(mig.cur) !== '0,5') problems.push(`[${view.name}] current level after migration should be 加法森林 第 6 关, got ${mig.cur}`);
   if (mig.total !== String(14 * 3 + 2 + 3)) problems.push(`[${view.name}] total stars should keep the old 智慧山谷 star(s): ${mig.total}`);
-  await tap('#wNext'); await p.waitForTimeout(300); await shot('02-map-world2'); await tap('#wPrev');
-  await tap('.node[data-l="1"]'); await p.waitForTimeout(1700); await shot('03-battle');
+  // opening the map centres the current level
+  const cen = await centred('.node.current');
+  if (!(cen.inView && cen.off < 40)) problems.push(`[${view.name}] map should open centred on the current level: ${JSON.stringify(cen)}`);
+  await scrollToBand(1); await shot('02-map-world2');
+  await tapNode(0, 1); await p.waitForTimeout(1700); await shot('03-battle');
   await p.evaluate(() => __t.useItem('ice')); await p.waitForTimeout(800); await shot('04-freeze');
   const wrong = await p.evaluate(() => { const a = String(__t.B.q.answer); return [...document.querySelectorAll('.ans')].map(b => b.dataset.v).find(v => v !== a); });
   await tap(`.ans[data-v="${wrong}"]`); await p.waitForTimeout(900); await shot('05-hint');
@@ -128,7 +140,7 @@ async function playAll(view) {
   await tap('.tab[data-t="rep"]'); await shot('12-report'); await tap('#pgBack');
   await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.openAll = true; s.mapWorld = 2; localStorage.setItem(k, JSON.stringify(s)); }, V1);
   await p.reload(); await p.waitForTimeout(500);
-  await tap('.node[data-l="14"]'); await p.waitForTimeout(2700); await shot('13-boss');
+  await tapNode(2, 14); await p.waitForTimeout(2700); await shot('13-boss');
   if (await p.evaluate(() => __t.B.mode !== 'battle' || !__t.B.L.boss)) problems.push(`[${view.name}] level 15 must be a Boss battle`);
   // 第 3 个世界起 battle 关会混入应用题：这里直接换成一道应用题看讲解
   await p.evaluate(() => { __t.B.L = Object.assign({}, __t.B.L, { g: () => __t.WP.compareTrap() }); __t.nextQuestion(); }); await p.waitForTimeout(300);
@@ -142,7 +154,7 @@ async function playAll(view) {
   await p.reload(); await p.waitForTimeout(500);
   await p.evaluate(() => __t.setDaily(15)); await p.waitForTimeout(200); await shot('17-map-rage');
   if ((await p.textContent('#dayTag')).trim() !== '狂暴中') problems.push(`[${view.name}] map day tag should say 狂暴中`);
-  await tap('.node[data-l="1"]'); await p.waitForTimeout(1900); await shot('18-battle-rage');
+  await tapNode(0, 1); await p.waitForTimeout(1900); await shot('18-battle-rage');
   const rage = await p.evaluate(() => ({ rage: __t.B.rage, t: __t.qTime(), tag: document.getElementById('rageTag').textContent.trim(), tagShown: !document.getElementById('rageTag').hidden, hearts: __t.B.hearts }));
   if (rage.rage !== 1 || !rage.tagShown || rage.tag.replace(/\s+/g, '') !== '狂暴×2') problems.push(`[${view.name}] rage x2 not shown: ${JSON.stringify(rage)}`);
   if (Math.abs(rage.t - 10) > 1e-9) problems.push(`[${view.name}] rage x2 time limit should be 10 s, got ${rage.t}`);
@@ -155,7 +167,7 @@ async function playAll(view) {
   const mk = (slot, e, id, val, q) => ({ id: 't_' + id, slot, quality: q, name: '测试·' + id, e, affixes: [{ id, val }] });
   await tap('#bBack'); await p.waitForTimeout(300);
   await p.evaluate(([a, b, c]) => { equipGear(a); equipGear(b); equipGear(c); }, [mk('weapon', '🗡️', 'atk', 3, 'red'), mk('helmet', '👑', 'time', 5, 'orange'), mk('shield', '🔮', 'critDmg', 1, 'purple')]);
-  await tap('.node[data-l="1"]'); await p.waitForTimeout(1900); await shot('20-battle-gear');
+  await tapNode(0, 1); await p.waitForTimeout(1900); await shot('20-battle-gear');
   const tg = await p.evaluate(() => __t.qTime());
   if (Math.abs(tg - (rage.t + 5)) > 1e-9) problems.push(`[${view.name}] ⏳+5 gear should make the time limit ${rage.t + 5} s, got ${tg}`);
   const ra = await p.evaluate(() => { const B = __t.B; B.hp = B.maxHp = 50; B.combo = 0; return String(B.q.answer); });
@@ -165,7 +177,7 @@ async function playAll(view) {
   // best possible gear: four red pieces with ⚔️+8 → 1 + floor(32/3) = 11, but one hit never takes more than 1/4 of the monster's HP
   await tap('#bBack'); await p.waitForTimeout(300);
   await p.evaluate(() => { for (const [slot, e] of [['weapon', '🗡️'], ['helmet', '👑'], ['armor', '🥋'], ['shield', '🔮']]) equipGear({ id: 'best_' + slot, slot, quality: 'red', name: '最强·' + slot, e, affixes: [{ id: 'atk', val: 8 }] }); });
-  await tap('.node[data-l="1"]'); await p.waitForTimeout(1900);
+  await tapNode(0, 1); await p.waitForTimeout(1900);
   const best = await p.evaluate(() => { const B = __t.B; return { maxHp: B.maxHp, cap: __t.hitCap(), a: String(B.q.answer) }; });
   await p.evaluate(() => { const B = __t.B; B.hp = 999; B.combo = 0; });
   await tap(`.ans[data-v="${best.a}"]`); await p.waitForTimeout(800);
@@ -177,10 +189,21 @@ async function playAll(view) {
   await p.evaluate(() => { for (const k of ['weapon', 'helmet', 'armor', 'shield']) __t.S.equipped[k] = null; });
   await tap('#bBack'); await p.waitForTimeout(300);
   // every world's map page (all open), then 「当前关」 jumps back to the current level
-  for (let w = 0; w < 8; w++) { if (w) { await tap('#wNext'); await p.waitForTimeout(250); } await shot(`22-map-w${w + 1}`); }
-  await tap('#goCur'); await p.waitForTimeout(500); await shot('23-go-current');
-  const back = await p.evaluate(() => ({ cur: __t.curLevel(), title: document.querySelector('.wtitle').textContent, node: !!document.querySelector('.node.current[data-l="5"]') }));
-  if (!back.title.includes('加法森林') || !back.node) problems.push(`[${view.name}] 「当前关」 should show 加法森林 with level 6 glowing: ${JSON.stringify(back)}`);
+  // with a beaten Boss the sign grows a 「连闯」 button: it must not touch level 1 (or its stars)
+  await p.evaluate(() => { __t.S.lv.stars['add-15'] = 3; __t.renderMap(); });
+  await scrollToBand(0); await shot('22a-map-w1-run');
+  const sg = await p.evaluate(() => { const a = document.querySelector('.band[data-w="0"] .wsign').getBoundingClientRect(), n = document.querySelector('.node[data-w="0"][data-l="0"]').getBoundingClientRect(); return { gap: Math.round(a.top - n.bottom), run: !!document.querySelector('.band[data-w="0"] .wrun') }; });
+  if (!sg.run || sg.gap < 2) problems.push(`[${view.name}] world sign with 连闯 overlaps level 1: ${JSON.stringify(sg)}`);
+  await p.evaluate(() => { delete __t.S.lv.stars['add-15']; __t.renderMap(); });
+  for (let w = 0; w < 8; w++) { await scrollToBand(w); await shot(`22-map-w${w + 1}`); }
+  // scroll all the way up to the 8th band's Boss
+  await p.evaluate(() => { const n = document.querySelector('.node[data-w="7"][data-l="14"]'), s = document.getElementById('lscroll'); s.scrollTop = n.offsetTop - s.clientHeight / 2; }); await p.waitForTimeout(300);
+  await shot('22b-map-w8-boss');
+  const top8 = await centred('.node[data-w="7"][data-l="14"]');
+  if (!top8.inView) problems.push(`[${view.name}] could not scroll to the 8th Boss: ${JSON.stringify(top8)}`);
+  await tap('#goCur'); await p.waitForTimeout(1200); await shot('23-go-current');
+  const back = await centred('.node.current[data-w="0"][data-l="5"]');
+  if (!(back.inView && back.off < 40)) problems.push(`[${view.name}] 「当前关」 should scroll back to 加法森林 第 6 关: ${JSON.stringify(back)}`);
   // all 120 levels can be entered and have the right kind of content
   const all = await p.evaluate(() => {
     const bad = [];
@@ -202,7 +225,7 @@ async function playAll(view) {
   const playMatch = async (name) => {
     for (let i = 0; i < 20; i++) {
       if (await p.isVisible('#modal')) break;
-      if (await p.evaluate(() => __t.B.busy)) { await p.waitForTimeout(300); continue; }
+      if (await p.evaluate(() => __t.B.over)) { await p.waitForTimeout(300); continue; }
       const cs = await unc(); const pair = cs.find((c, j) => cs.some((d, k) => k !== j && d.v === c.v)); if (!pair) break;
       const mate = cs.find(d => d.id !== pair.id && d.v === pair.v);
       await tap(`.mcard[data-id="${pair.id}"]`); await tap(`.mcard[data-id="${mate.id}"]`); await p.waitForTimeout(700);
@@ -218,6 +241,38 @@ async function playAll(view) {
   const mLost = mw.h - await p.evaluate(() => __t.B.hearts);
   if (mLost !== mw.d) problems.push(`[${view.name}] a wrong pair in 算术消除 should cost ${mw.d} heart(s), cost ${mLost}`);
   await playMatch('24c-match-pair');
+  // 手感：配对成功后马上点下一对也能配上（动画不锁输入）
+  // 快速连击：0.5 秒内连着配成两对，第二下 ≥3；隔 3 秒再配，伤害回到 1；血量打到 0 就提前胜利，快速连点只结算一次
+  await p.evaluate(() => __t.startLevel(0, 3)); await p.waitForTimeout(1800);
+  await p.evaluate(() => { __t.B.hp = __t.B.maxHp = 99; });
+  const prs = await p.evaluate(() => { const by = {}; (__t.B.board.cards || __t.B.board).forEach(c => (by[c.value] = by[c.value] || []).push(c.id)); return Object.values(by); });
+  const tapPair = async pr => { await tap(`.mcard[data-id="${pr[0]}"]`); await tap(`.mcard[data-id="${pr[1]}"]`); };
+  await tapPair(prs[0]); await p.waitForTimeout(50); await tapPair(prs[1]); await p.waitForTimeout(80);
+  const left = await p.evaluate(() => (__t.B.board.cards || __t.B.board).length);
+  if (left !== 8) problems.push(`[${view.name}] a second pair tapped 50 ms after the first should match too (cards left ${left}, expected 8)`);
+  await shot('24d-match-lightning');
+  const fastHit = await p.evaluate(() => ({ d: __t.B.lastHit, txt: document.getElementById('combo').textContent }));
+  if (!(fastHit.d >= 3) || !fastHit.txt.includes('闪电连击')) problems.push(`[${view.name}] two pairs within 0.5 s should be a 闪电连击 hitting ≥3: ${JSON.stringify(fastHit)}`);
+  await p.waitForTimeout(3000); await tapPair(prs[2]); await p.waitForTimeout(100);
+  const slowHit = await p.evaluate(() => __t.B.lastHit);
+  if (slowHit !== 1) problems.push(`[${view.name}] a pair 3 s later should hit 1 again, hit ${slowHit}`);
+  const comboTxt = await p.evaluate(() => document.getElementById('combo').textContent);
+  if (comboTxt.trim()) problems.push(`[${view.name}] after the combo timed out the 连击 label must be cleared, still "${comboTxt}"`);
+  await p.waitForTimeout(500);
+  await p.evaluate(() => { __t.B.hp = 2; });
+  const before = await p.evaluate(() => __t.S.daily.n);
+  await tapPair(prs[3]); await tapPair(prs[4]); await tapPair(prs[5]); await p.waitForTimeout(3000);
+  const fin = await p.evaluate(() => ({ n: __t.S.daily.n, hp: __t.B.hp, over: __t.B.over, pages: document.querySelectorAll('#modal .page').length, cards: (__t.B.board.cards || __t.B.board).length }));
+  if (fin.n !== before + 1 || !fin.over || fin.pages !== 1 || fin.hp !== 0) problems.push(`[${view.name}] tapping the last pairs fast must win exactly once: ${JSON.stringify({ before, fin })}`);
+  await p.evaluate(() => { document.getElementById('modal').hidden = true; __t.toMap(); });
+  // monster at 0 HP wins at once, the rest of the cards don't have to be cleared
+  await p.evaluate(() => __t.startLevel(0, 5)); await p.waitForTimeout(1800);
+  await p.evaluate(() => { __t.B.hp = 1; });
+  const one = await p.evaluate(() => { const cs = (__t.B.board.cards || __t.B.board); const a = cs[0]; return [a.id, cs.find(c => c.id !== a.id && c.value === a.value).id]; });
+  await tapPair(one); await p.waitForTimeout(1500);
+  const early = await p.evaluate(() => ({ over: __t.B.over, cards: (__t.B.board.cards || __t.B.board).length }));
+  if (!early.over || !(early.cards > 0)) problems.push(`[${view.name}] knocking the monster out should win before the board is empty: ${JSON.stringify(early)}`);
+  await p.evaluate(() => { document.getElementById('modal').hidden = true; __t.toMap(); });
   // 算术消除（2 层，世界后半段）
   await p.evaluate(() => __t.startLevel(0, 10)); await p.waitForTimeout(1800); await shot('25-match-2layers');
   if (await p.evaluate(() => (__t.B.board.cards || __t.B.board).filter(c => c.coveredBy.length).length) !== 6) problems.push(`[${view.name}] 2-layer board should start with 6 covered cards`);
@@ -250,9 +305,9 @@ async function playAll(view) {
   const lLost = lw.h - await p.evaluate(() => __t.B.hearts);
   if (lLost !== lw.d) problems.push(`[${view.name}] a wrong link should cost ${lw.d} heart(s), cost ${lLost}`);
   for (let i = 0; i < 4; i++) {
-    const pr = await p.evaluate(() => { const bd = __t.B.board, l = bd.left.find(x => !x.matched); if (!l) return null; return { l: l.id, r: bd.right.find(x => x.hz === l.hz).id }; });
+    const pr = await p.evaluate(() => { const bd = __t.B.board, l = bd.left.find(x => !x.matched); if (!l || __t.B.over) return null; return { l: l.id, r: bd.right.find(x => x.hz === l.hz).id }; });
     if (!pr) break;
-    while (await p.evaluate(() => __t.B.busy)) await p.waitForTimeout(200);
+    if (await p.evaluate(() => __t.B.over)) break;   // combos can knock the monster out before every pair is linked
     await tap(`.lnk[data-id="${pr.l}"]`); await tap(`.lnk[data-id="${pr.r}"]`); await p.waitForTimeout(700);
     if (i === 1) await shot('26b-link-lines');
   }
@@ -290,6 +345,28 @@ async function playAll(view) {
   // Boss 连闯入口
   await p.evaluate(() => __t.openRunMenu(0)); await p.waitForTimeout(300); await shot('28-run-menu');
   await tap('#pgBack');
+  // 原画接口：有 art("…") 就用原画（地图背景、分层主角 + 装备层、怪兽），没有就退回 3D emoji
+  await p.evaluate(() => {
+    const pic = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d')); return c.toDataURL('image/png'); };
+    __t.setArt('map_add', pic(40, 80, g => { g.fillStyle = '#ffd6e7'; g.fillRect(0, 0, 40, 80); g.fillStyle = '#ff7ab6'; g.fillRect(0, 60, 40, 20); }));
+    __t.setArt('hero_base', pic(64, 64, g => { g.fillStyle = '#ffcc88'; g.beginPath(); g.arc(32, 26, 16, 0, 7); g.fill(); g.fillRect(20, 40, 24, 22); }));
+    __t.setArt('gear_weapon', pic(64, 64, g => { g.fillStyle = '#ddd'; g.fillRect(50, 10, 6, 44); }));
+    __t.setArt('mon_add_2', pic(64, 64, g => { g.fillStyle = '#5ad14f'; g.beginPath(); g.arc(32, 32, 28, 0, 7); g.fill(); }));
+    equipGear({ id: 'art_w', slot: 'weapon', quality: 'purple', name: '测试', e: '🗡️', affixes: [{ id: 'atk', val: 1 }] });
+    __t.renderMap(true);
+  });
+  await p.waitForTimeout(300); await shot('29-art-map');
+  const am = await p.evaluate(() => ({ bg: document.querySelector('.band[data-w="0"]').style.backgroundImage.startsWith('url("blob:') || document.querySelector('.band[data-w="0"]').style.backgroundImage.includes('data:image/png'), mon: !!document.querySelector('.node[data-w="0"][data-l="1"] img.art') }));
+  await tapNode(0, 1); await p.waitForTimeout(1900); await shot('29b-art-battle');
+  const ab = await p.evaluate(() => ({ hero: !!document.querySelector('#heroSprite .av.lay img.art'), gear: !!document.querySelector('#heroSprite .agl.q-purple'), mon: !!document.querySelector('#monSprite img.art') }));
+  if (!am.bg || !am.mon || !ab.hero || !ab.gear || !ab.mon) problems.push(`[${view.name}] art() pictures are not used: ${JSON.stringify({ ...am, ...ab })}`);
+  // a broken picture must fall back to the 3D emoji instead of leaving a blank (monster, hero layer, map band)
+  await p.evaluate(() => { for (const k of ['map_add', 'hero_base', 'gear_weapon', 'mon_add_2']) __t.setArt(k, 'data:image/png;base64,AAAA'); __t.toMap(); });
+  await tapNode(0, 1); await p.waitForTimeout(1900); await shot('29c-art-broken');
+  const brk = await p.evaluate(() => ({ art: document.querySelectorAll('#heroSprite img.art, #heroSprite .agl, #monSprite img.art').length, mon: !!document.querySelector('#monSprite img.ei'), hero: !!document.querySelector('#heroSprite img.ei'), gear: !!document.querySelector('#heroSprite .ag img'), nodeArt: document.querySelectorAll('#map img.art').length, band: document.querySelector('.band[data-w="0"]').style.backgroundImage.includes('svg') }));
+  if (brk.art || !brk.mon || !brk.hero || !brk.gear || brk.nodeArt || !brk.band) problems.push(`[${view.name}] broken art should fall back to the 3D emoji / painted map: ${JSON.stringify(brk)}`);
+  await p.evaluate(() => { for (const k of ['map_add', 'hero_base', 'gear_weapon', 'mon_add_2']) __t.setArt(k, null); __t.toMap(); });
+  if (await p.evaluate(() => document.querySelectorAll('#map img.art').length)) problems.push(`[${view.name}] without art the game must fall back to the 3D emoji`);
   if (await p.evaluate(k => localStorage.getItem(k), BETA) !== null) problems.push(`[${view.name}] 正式版 wrote the 试玩版 save "${BETA}"`);
   await ctx.close();
 }
@@ -312,7 +389,7 @@ async function betaCheck() {
   let fs = null; try { fs = JSON.parse(first); } catch (e) {}
   if (!fs || fs.stars['sub-3'] !== 3 || fs.stickers['🐶'] !== 3) fail('first run did not copy the 正式版 save into ' + BETA);
   // play one level
-  await p.click('.node[data-l="0"]', { force: true }); await p.waitForTimeout(1700);
+  await p.click('.node[data-w="0"][data-l="0"]', { force: true }); await p.waitForTimeout(1700);
   for (let i = 0; i < 30; i++) {
     if (await p.isVisible('#modal')) break;
     const a = await p.evaluate(() => { const B = __t.B; if (!B || !B.q || B.busy) return null; B.hp = Math.min(B.hp, 1); return String(B.q.answer); });
