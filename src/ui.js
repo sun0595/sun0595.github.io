@@ -26,7 +26,12 @@ const SCENES = {
   ten:  {sky:["#ff8f5a","#ffd49a"], h:["#c86a3e","#a54a2b","#77301d"], sun:"#ffe3a0", deco:[["🌋",80,26,80],["🔥",2,86,40],["🔥",88,88,34],["🌵",0,40,52]]},
   ice:  {sky:["#8fd3ff","#effaff"], h:["#ffffff","#d7efff","#b4def7"], sun:"#ffffff", deco:[["🏔️",78,28,84],["☃️",0,84,52],["❄️",6,34,34],["🌲",88,86,40]]},
   think:{sky:["#ffb3dc","#fff0f8"], h:["#f6b3d4","#e586bb","#c9629f"], sun:"#fff6c9", deco:[["🌈",78,22,82],["🌸",2,88,36],["🦋",6,36,36],["🍭",88,88,40]]},
-  tower:{sky:["#1d1545","#4b2f8c"], h:["#3b2d6e","#2b2156","#1c153d"], sun:"#fff2b3", night:1, deco:[["🏰",80,24,80],["🌙",2,30,48],["⭐",8,88,30],["🕸️",88,88,40]]}
+  tower:{sky:["#1d1545","#4b2f8c"], h:["#3b2d6e","#2b2156","#1c153d"], sun:"#fff2b3", night:1, deco:[["🏰",80,24,80],["🌙",2,30,48],["⭐",8,88,30],["🕸️",88,88,40]]},
+  // WORLDS_V2 新世界（scene 字段是中文说明，这里按 id 配色）：草原、雪山、小镇、城堡
+  tens: {sky:["#7dd3fc","#fef9c3"], h:["#d9f99d","#a3e635","#65a30d"], sun:"#fff7ae", deco:[["🌾",84,34,52],["🌻",0,40,48],["🌳",88,86,44],["🌾",2,88,34]]},
+  hundreds:{sky:["#a5c8f0","#f3f8ff"], h:["#ffffff","#dbe7f5","#b7c9e2"], sun:"#ffffff", deco:[["🏔️",76,24,84],["🌲",0,40,46],["❄️",88,86,32],["☃️",0,84,44]]},
+  digit1:{sky:["#93c5fd","#ffe4c4"], h:["#fcd9a5","#f4b26b","#d98845"], sun:"#fff1b8", deco:[["🏠",0,38,48],["🏪",84,34,50],["🏡",88,86,42],["🚗",0,88,34]]},
+  digit2:{sky:["#241a52","#5b3fa6"], h:["#463789","#33276b","#211a4a"], sun:"#fff2b3", night:1, deco:[["🏰",78,24,82],["🌙",2,32,44],["⭐",8,88,30],["🕸️",88,88,38]]}
 };
 function sceneURL(id){
   const c = SCENES[id], [s1,s2] = c.sky, [h1,h2,h3] = c.h;
@@ -52,18 +57,22 @@ const starImg = (on, tier) => '<span class="'+(on?"":"off")+'"'+(on && tier && T
 sfx.freeze = ()=>{ tone([1800,2400,3000],.05,"sine",.08); noise(.35,.25,7000); };
 sfx.shatter = ()=>{ noise(.4,.5,5000); tone([2600,1900,1300],.05,"triangle",.07); };
 
-/* ================= map: one world per screen ================= */
-const NODE_POS = [[24,82],[70,71],[30,58],[72,45],[44,31]];
-const PATH_D = "M24 82 C 46 83, 60 76, 70 71 S 40 61, 30 58 S 64 49, 72 45 S 50 35, 44 31";
-function defaultWorld(){
-  for(let i=0;i<WORLDS.length;i++) if(worldOpen(i) && WORLDS[i].levels.some((_,l)=>levelOpen(i,l) && !starOf(i,l))) return i;
-  let w = 0; for(let i=0;i<WORLDS.length;i++) if(worldOpen(i)) w = i; return w;
-}
-let curWorld = null;
+/* ================= map: one world per screen, 15 levels on a winding path ================= */
+// 15 nodes zig-zag up the card (row by row), the Boss (第 15 关) alone on top and bigger
+const NODE_POS = [[18,89],[50,89],[82,89],[82,74],[50,74],[18,74],[18,59],[50,59],[82,59],[82,44],[50,44],[18,44],[18,29],[82,29],[50,13]];
+const PATH_D = "M"+NODE_POS.map(p=>p.join(" ")).join(" L");
+const MODE_ICON = {match:"🃏", link:"🔗", blend:"🔤"};
+const MODE_NAME = {battle:"打怪", match:"算术消除", link:"连连看", blend:"拼读"};
+let curWorld = null, flashCur = false;
 function renderMap(dir){
-  if(curWorld===null) curWorld = (S.world!=null && S.world<WORLDS.length) ? S.world : defaultWorld();
-  const ts = totalStars(), h = hero(), w = WORLDS[curWorld], wi = curWorld, open = worldOpen(wi);
+  const [cw, cl] = curLevel();
+  // first time: the world looked at last (S.mapWorld), else the current level's world; 「当前关」 always jumps back
+  if(curWorld===null) curWorld = (Number.isInteger(S.mapWorld) && S.mapWorld>=0 && S.mapWorld<WORLDS_V2.length) ? S.mapWorld : cw;
+  const ts = totalStars(), h = hero(), wi = curWorld, w = WORLDS_V2[wi], open = worldOpen(wi);
   const next = HEROES.find(x=>x.need!=null && x.need>ts);
+  const dn = daily().n;   // 当天进度：前 15 次通关正常，之后进入狂暴
+  const dayTag = dn<15 ? '<span class="pill tag" id="dayTag">今天 <span class="num">'+dn+'/15</span></span>'
+                       : '<span class="pill tag hot" id="dayTag">狂暴中</span>';
   let html = '<div class="topbar">'
     + '<button class="ibtn round avatarbtn" id="heroBtn" aria-label="换勇士">'+img(h.e)+'</button>'
     + '<span class="pill">'+img("⭐")+'<span class="num">'+ts+'</span></span>'
@@ -71,43 +80,44 @@ function renderMap(dir){
     + '<button class="ibtn" id="bagBtn" aria-label="背包">'+img("🎒")+(S.chests>0?'<span class="badge pulse">'+S.chests+'</span>':'')+'</button>'
     + '<button class="ibtn" id="soundBtn" aria-label="声音">'+img(S.sound||S.voice?"🔊":"🔇")+'</button>'
     + '<button class="ibtn" id="parentBtn" aria-label="家长设置">'+img("⚙️")+'</button></div>';
-  const dn = daily().n;   // 当天进度：前 15 次通关正常，之后进入狂暴
-  const dayTag = dn<15 ? '<span class="pill tag" id="dayTag">今天 <span class="num">'+dn+'/15</span></span>'
-                       : '<span class="pill tag hot" id="dayTag">狂暴中</span>';
   html += next ? '<div class="nexthero">'+dayTag+img(next.e)+'再拿 <span class="num">'+(next.need-ts)+'</span> '+img("⭐")+' 解锁「'+next.n+'」</div>'
                : '<div class="nexthero">'+dayTag+img("🏆")+'所有勇士都解锁了！</div>';
+  const bossDone = starOf(wi, NLV-1)>0;
   html += '<div class="wview" id="wview"><div class="wcard" id="wcard" style="--wdir:'+(dir||0)*40+'px">'
-    + decoHTML(w.id)
-    + '<svg class="wpath" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="'+PATH_D+'" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="7" stroke-linecap="round" stroke-dasharray="0.1 16" vector-effect="non-scaling-stroke"/></svg>'
-    + '<div class="whead"><span class="ribbon'+(wi===WORLDS.length-1?" blue":"")+'">'+(wi+1)+' · '+w.name+'</span></div><span class="wsub">'+w.sub+'</span>'
-    + (S.medals[w.id]?'<span class="wmedal">'+img("🏅")+'</span>':'')
+    + decoHTML(w.id, .7)
+    + '<svg class="wpath" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="'+PATH_D+'" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="6" stroke-linecap="round" stroke-dasharray="0.1 13" vector-effect="non-scaling-stroke"/></svg>'
+    + '<button class="btn white wcur" id="goCur">'+img("📍")+'当前关</button>'
+    + (bossDone ? '<button class="wmedal" id="runBtn" aria-label="Boss 连闯">'+img("🏅")+'<small>连闯</small></button>' : '')
     + (IS_BETA?'<span class="pill beta" id="betaTag">试玩版</span>':'');
-  let currentMarked = false;
   w.levels.forEach((L,li)=>{
-    const lo = levelOpen(wi,li), st = starOf(wi,li), m = mastery(wi,li), fin = isFinal(wi,li), [x,y] = NODE_POS[li];
-    let cls = (L.boss?" boss":"")+(lo?"":" closed")+(m>=4?" dia":"");
-    if(lo && !st && !currentMarked && open){ cls += " current"; currentMarked = true; }
+    const lo = levelOpen(wi,li), st = starOf(wi,li), m = mastery(wi,li), [x,y] = NODE_POS[li], mode = L.boss ? "battle" : LEVEL_MODES[wi].modes[li];
+    let cls = (L.boss?" boss":"")+(lo?"":" closed")+(m>=4?" dia":"")+(st?" passed":"");
+    if(wi===cw && li===cl && !st) cls += " current"+(flashCur?" flash":"");
     let stars = "";
-    if(lo){
+    if(st){
       if(m>=4) stars = img("💎")+img("💎")+img("💎");
       else if(m>=1) stars = starImg(1,m-1)+starImg(1,m-1)+starImg(1,m-1);
       else stars = [0,1,2].map(i=>starImg(i<st,0)).join("");
     }
-    const nx = lo && !fin && m>=1 && m<4 ? ' nx" style="--nc:'+TIERS[m].c : '';
-    html += '<button class="node'+cls+'" style="left:'+x+'%;top:'+y+'%" data-l="'+li+'"'+(lo?"":" disabled")+' aria-label="第'+(li+1)+'关">'
-      + '<span class="ball'+nx+'">'+(lo?img(L.m):img("🔒"))+'<span class="lv">'+(fin?"连闯":L.boss?"BOSS":li+1)+'</span></span>'
+    const nx = st && m>=1 && m<4 ? ' nx" style="--nc:'+TIERS[m].c : '';
+    html += '<button class="node'+cls+'" style="left:'+x+'%;top:'+y+'%" data-l="'+li+'"'+(lo?"":" disabled")+' aria-label="第'+(li+1)+'关 '+MODE_NAME[mode]+'">'
+      + '<span class="ball'+nx+'">'+(lo?img(L.emoji):img("🔒"))+'<span class="lv">'+(L.boss?"BOSS":li+1)+'</span>'
+      + (MODE_ICON[mode]?'<span class="mb">'+img(MODE_ICON[mode])+'</span>':'')+'</span>'
       + '<span class="stars">'+stars+'</span></button>';
   });
-  if(!open) html += '<div class="wlock">'+img("🔒")+'<div>打败上一个世界的 BOSS<br>就能进入这里</div></div>';
+  flashCur = false;
+  if(!open) html += '<div class="wlock">'+img("🔒")+'<div>通过上一个世界的全部关卡<br>就能进入这里</div></div>';
   html += '</div></div>';
   html += '<div class="wnav"><button class="ibtn round" id="wPrev" aria-label="上一个世界"'+(wi===0?" disabled":"")+'>'+chev()+'</button>'
-    + '<div class="dots">'+WORLDS.map((_,i)=>'<i class="'+(i===wi?"on":"")+'"></i>').join("")+'</div>'
-    + '<button class="ibtn round" id="wNext" aria-label="下一个世界"'+(wi===WORLDS.length-1?" disabled":"")+'>'+chev(true)+'</button></div>';
-  const m = $("map"); m.innerHTML = html;
+    + '<div class="wtitle"><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><small>'+w.sub+'</small></div>'
+    + '<button class="ibtn round" id="wNext" aria-label="下一个世界"'+(wi===WORLDS_V2.length-1?" disabled":"")+'>'+chev(true)+'</button></div>';
+  const mp = $("map"); mp.innerHTML = html;
   $("wcard").style.backgroundImage = sceneURL(w.id);
-  m.querySelectorAll(".node").forEach(b=>b.addEventListener("click",()=>{ sfx.click(); const l = +b.dataset.l; isFinal(wi,l) ? openRunMenu() : startLevel(wi,l); }));
-  const go = d => { const n = curWorld+d; if(n<0 || n>=WORLDS.length) return; curWorld = n; S.world = n; save(); sfx.click(); renderMap(d); };
+  mp.querySelectorAll(".node").forEach(b=>b.addEventListener("click",()=>{ sfx.click(); startLevel(wi, +b.dataset.l); }));
+  const go = d => { const n = curWorld+d; if(n<0 || n>=WORLDS_V2.length) return; curWorld = n; S.mapWorld = n; save(); sfx.click(); renderMap(d); };
   $("wPrev").onclick = ()=>go(-1); $("wNext").onclick = ()=>go(1);
+  $("goCur").onclick = ()=>{ sfx.click(); const d = Math.sign(cw-curWorld); curWorld = cw; S.mapWorld = cw; save(); flashCur = true; renderMap(d); say("第"+(cl+1)+"关，出发！"); };
+  if($("runBtn")) $("runBtn").onclick = ()=>{ sfx.click(); openRunMenu(wi); };
   let tx = null;
   $("wview").addEventListener("touchstart", e=>{ tx = e.touches[0].clientX; }, {passive:true});
   $("wview").addEventListener("touchend", e=>{ if(tx===null) return; const dx = e.changedTouches[0].clientX - tx; tx = null; if(Math.abs(dx)>50) go(dx<0?1:-1); });
@@ -137,20 +147,22 @@ function closePage(){
 $("modal").addEventListener("click", e=>{ if(e.target.id==="modal" && pageClosable) closePage(); });
 function bubble(text){ const b = $("bubble"); if(!b) return; b.innerHTML = emo(text); restart(b,"on"); say(text); }
 
+// 装备解锁的勇士：获得过这个品质（或更高）的装备
+const gearNeed = k => '获得过<b style="color:'+GEAR_QUALITY_MAP[k].col+'">'+GEAR_QUALITY_MAP[k].name+'色</b>或更好的装备';
 function openHeroes(){
   let view = S.hero;
   const render = first => {
     const h = HEROES[view], un = heroUnlocked(view);
     const body = '<div class="herostage" style="--hcol:'+h.col+'">'+img(h.e)+'<div><b>'+h.n+'</b><p>'+img(h.shot)+' '+h.skill+'</p>'
-        + (un ? '' : '<p class="lockline">'+img("🔒")+' '+(h.set ? '集齐全部'+STK[h.set].name+'贴纸' : '需要 '+h.need+' 颗 '+img("⭐"))+'</p>')+'</div></div>'
+        + (un ? '' : '<p class="lockline">'+img("🔒")+' '+(h.gear ? gearNeed(h.gear) : '需要 '+h.need+' 颗 '+img("⭐"))+'</p>')+'</div></div>'
       + '<div class="heroes">'+HEROES.map((x,i)=>'<button class="hcard'+(i===S.hero?" sel":"")+(heroUnlocked(i)?"":" lock")+(i===view?" view":"")+'" data-i="'+i+'">'+img(x.e)+(heroUnlocked(i)?"":'<span class="lk">'+img("🔒")+'</span>')+'</button>').join("")+'</div>'
-      + (goldAura() ? '<p>'+img("✨")+' 金色光环：所有勇士暴击多打 1 滴血</p>' : '')
+      + '<p>'+img("✨")+' 金色光环：所有勇士暴击多打 1 滴血'+(goldAura() ? '（已获得）' : '<br><small>拿到橙色或更好的装备就能获得</small>')+'</p>'
       + '<button class="btn green" id="hGo">'+img("⚔️")+' 出发！</button>';
     if(first) openPage({title:"选择勇士", back:true, onClose:renderMap, body}); else setBody(body);
     $("pbody").querySelectorAll(".hcard").forEach(b=>b.onclick=()=>{
       view = +b.dataset.i;
       if(heroUnlocked(view)){ S.hero = view; save(); sfx.right(); say(HEROES[view].n+"，"+HEROES[view].skill); }
-      else { sfx.click(); say(HEROES[view].set ? "集齐全部"+STK[HEROES[view].set].name+"贴纸，就能解锁"+HEROES[view].n : "再拿"+(HEROES[view].need-totalStars())+"颗星，就能解锁"+HEROES[view].n); }
+      else { sfx.click(); say(HEROES[view].gear ? "拿到"+GEAR_QUALITY_MAP[HEROES[view].gear].name+"色装备，就能解锁"+HEROES[view].n : "再拿"+(HEROES[view].need-totalStars())+"颗星，就能解锁"+HEROES[view].n); }
       render(false);
     });
     $("hGo").onclick = ()=>closePage();
@@ -229,7 +241,7 @@ function bagChest(back){
   sfx.star(1); setTimeout(()=>sfx.star(2), 300);
   setTimeout(()=>{
     if(seq!==pageSeq) return;
-    const stage = Math.max(1, Object.keys(S.stars).length);
+    const stage = Math.max(1, Object.keys(S.lv.stars).length);
     const g = openGearChest(stage, false);
     if(!g) return back({slot:"weapon"});
     sfx.chest(); confetti(QIDX[g.quality]>=3 ? 160 : 80);
@@ -263,7 +275,7 @@ function openParent(tab){
       body += '<p class="muted">想要更像真人的声音：<br>• iPhone / iPad：设置 → 辅助功能 → 朗读内容 → 声音 → 中文，下载带“高级 / 优化”的声音，再回来选它。<br>• 电脑：用 Edge 打开，选带“自然 / Natural”的声音（如“晓晓”）。<br>• 安卓：系统设置里把文字转语音引擎换成 Google 或讯飞。</p>';
     } else {
       let rows = "";
-      [...WORLDS.map(w=>[w.id,w.name]),["word","应用题"],["py","拼音"]].forEach(([k,name])=>{
+      [...WORLDS_V2.map(w=>[w.id,w.name]),["word","应用题"],["py","拼音"]].forEach(([k,name])=>{
         const st = S.stats[k]; if(!st) return;
         const tot = st.r+st.w, p = tot?Math.round(st.r*100/tot):0;
         rows += '<div class="stat"><span>'+name+'</span><span class="sb"><i style="width:'+p+'%"></i></span><span class="pct">'+p+'% · '+tot+'题</span></div>';
@@ -285,7 +297,7 @@ function openParent(tab){
     on("mReset", ()=>{
       if(!confirmReset){ confirmReset = true; return render(false); }
       const keep = {voiceName:S.voiceName, rate:S.rate};
-      S = Object.assign({}, DEFAULT, {stars:{},stats:{},mistakes:[],stickers:{},medals:{},tier:{},shiny:{},items:{heal:1,time:1,ice:1},crown:false,world:0}, keep);
+      S = Object.assign({}, DEFAULT, {stars:{},stats:{},mistakes:[],stickers:{},medals:{},tier:{},shiny:{},items:{heal:1,time:1,ice:1},crown:false,world:0,lv:{stars:{},tier:{}},lvMigrated:true,mapWorld:0}, keep);
       save(); curWorld = 0; closePage();
     });
     if($("voiceSel")) $("voiceSel").onchange = e=>{ S.voiceName = e.target.value; save(); say("小勇士，准备好了吗？我们出发吧！", true); };
@@ -302,11 +314,15 @@ $("bBack").innerHTML = img("🗺️");
 $("speakBtn").innerHTML = img("🔊");
 
 function startLevel(w,l,run){
-  const Wd = WORLDS[w], L = Wd.levels[l];
+  const Wd = WORLDS_V2[w], L0 = levelDef(w,l);
+  const mode = run ? "battle" : L0.mode;          // 连闯和 Boss 一律是答题打怪
+  const L = run ? Object.assign({}, L0, {g:L0.math}) : L0;   // 连闯里一律出本关的计算题（拼读关也不例外）
   const diff = run ? 0 : diffOf(w,l), rage = rageLevel();
   const maxH = run ? 5 : (L.boss ? 5 : 3);
   const h = hero(), gs = gearStats(S.equipped);
-  B = {w,l,W:Wd,L,h,diff,run:run||null,hp:L.hp+2*diff,maxHp:L.hp+2*diff,rage,dmg:RAGE[rage].dmg,maxH,hearts:run?run.hearts:maxH,combo:0,q:null,busy:true,charge:0,over:false,recent:[],enraged:false,hintOpen:false,step:0,lastTick:0,wrongThisQ:false,
+  // 消除 / 连连看：怪兽血量 = 要配的对数（每配对一对打 1 滴），配完就赢
+  const hp = mode==="match" ? 6 : mode==="link" ? LINK_N : L.hp + 2*diff;
+  B = {w,l,W:Wd,L,h,mode,board:null,sel:null,diff,run:run||null,hp,maxHp:hp,rage,dmg:RAGE[rage].dmg,maxH,hearts:run?run.hearts:maxH,combo:0,q:null,busy:true,charge:0,over:false,recent:[],enraged:false,hintOpen:false,step:0,lastTick:0,wrongThisQ:false,
        gs, shield:(h.shield||0)+gs.shield, lucky:(h.lucky||0)+gs.lucky, frozenUntil:0};
   const cur = B, bt = $("battle");
   $("arena").style.setProperty("--wbg", sceneURL(Wd.id));
@@ -314,10 +330,11 @@ function startLevel(w,l,run){
   $("arena").insertAdjacentHTML("afterbegin", decoHTML(Wd.id, .7));
   bt.classList.toggle("boss", !!L.boss); bt.classList.remove("enraged","hinting");
   bt.classList.toggle("rage", rage>0);
+  bt.classList.toggle("boardmode", BOARD_TIME[mode]>0); $("board").innerHTML = ""; $("board").hidden = !BOARD_TIME[mode];
   $("rageTag").hidden = !rage; $("rageTag").innerHTML = '狂暴 <span class="num">×'+B.dmg+'</span>';
   $("map").hidden = true; bt.hidden = false;
-  $("bTitle").innerHTML = emo(run ? (RUNS[run.mode].name+" "+(run.i+1)+"/"+run.seq.length)
-    : Wd.name+" · "+(L.boss?"BOSS":"第"+(l+1)+"关")+(diff?" · "+TIERS[diff].n+"挑战":""));
+  $("bTitle").innerHTML = emo(run ? (runDef(run.mode).name+" "+(run.i+1)+"/"+run.seq.length)
+    : Wd.name+" · "+(L.boss?"BOSS":"第"+(l+1)+"关")+(mode!=="battle"?" · "+MODE_NAME[mode]:"")+(diff?" · "+TIERS[diff].n+"挑战":""));
   const hb = $("heroBox"); hb.style.setProperty("--hcol", h.col); hb.classList.toggle("gold", goldAura());
   $("heroSprite").className = "sprite"; $("heroSprite").innerHTML = avatarHTML(S.equipped); $("heroName").innerHTML = emo((S.crown?"👑":"")+h.n);
   $("shield").hidden = !B.shield; $("shield").className = "shield";
@@ -341,7 +358,7 @@ function startLevel(w,l,run){
     say((rage?"狂暴模式！":"")+L.n+"出现了！");
     delay = 1400;
   }
-  setTimeout(()=>{ if(B===cur && !B.over) nextQuestion(); }, delay);
+  setTimeout(()=>{ if(B===cur && !B.over) BOARD_TIME[mode] ? startBoard() : nextQuestion(); }, delay);
   cancelAnimationFrame(rafId); lastT = performance.now(); rafId = requestAnimationFrame(loop);
 }
 function banner(html, ms){
@@ -367,10 +384,13 @@ function drawHP(){
    时间：(档位秒数 + 装备 ⏳) × (1 + 减速%)，减速% = 勇士时间减速 30% + 装备 ❄️，合计封顶 60%；
    护盾次数、幸运免伤次数、暴击伤害、攻击、连对回心都直接相加；暴击率（装备 🎯）封顶 60%。 */
 const SLOW_CAP = 60, CRIT_CAP = 60;
+// 消除、连连看是整盘限时（狂暴档按比例缩短）；超时怪兽打一下，计时重来
+const BOARD_TIME = {match:60, link:45}, LINK_N = 4;
 function qTime(){
   // fixed 15 s per question (word problems 40 s), shortened by the day's rage level
   const t = RAGE[B.rage].t;
-  const base = B.q && B.q.kind==="word" ? Math.max(WORD_MIN, Math.round(WORD_TIME*t/Q_TIME)) : t;
+  const base = BOARD_TIME[B.mode] ? Math.round(BOARD_TIME[B.mode]*t/Q_TIME)
+    : B.q && B.q.kind==="word" ? Math.max(WORD_MIN, Math.round(WORD_TIME*t/Q_TIME)) : t;
   const slow = Math.min(SLOW_CAP, Math.round(((B.h.slow||1)-1)*100) + B.gs.slow);
   return (base + B.gs.time) * (1 + slow/100);
 }
@@ -558,11 +578,16 @@ function fxAt(em, big){
   $("arena").appendChild(f); setTimeout(()=>f.remove(), 650);
 }
 function tint(col){ const t = $("tint"); t.style.setProperty("--tc", col); restart(t,"on"); }
-function heroAttack(){
+/* 伤害（家长 10-21 平衡）：普通攻击 = 1 + floor(装备攻击总和 / 3)；暴击 = 勇士暴击伤害 + 金色光环 + 装备暴击伤害 + 同样的攻击加成。
+   每一下最多打掉怪兽总血量的 1/4（向下取整，至少 1），所以穿再好的装备一关也至少要答对 4 题。
+   消除 / 连连看（board）每配对一对固定打 1 滴。 */
+const atkBonus = () => Math.floor(B.gs.atk/3);
+const hitCap = () => Math.max(1, Math.floor(B.maxHp/4));
+function heroAttack(board){
   const cur = B, h = B.h;
   const gs = B.gs;
-  const crit = B.combo >= (h.critAt||3) || Math.random()*100 < Math.min(CRIT_CAP, gs.critRate);
-  const dmg = Math.min(B.hp, (crit ? (h.critDmg||2)+(goldAura()?1:0)+gs.critDmg : 1) + gs.atk);
+  const crit = !board && (B.combo >= (h.critAt||3) || Math.random()*100 < Math.min(CRIT_CAP, gs.critRate));
+  const dmg = board ? 1 : Math.min(B.hp, hitCap(), crit ? (h.critDmg||2)+(goldAura()?1:0)+gs.critDmg+atkBonus() : 1+atkBonus());
   crit ? sfx.crit() : sfx.right();
   play($("heroSprite"),"attack");
   const shot = document.createElement("span"); shot.className = "shot"; shot.innerHTML = img(h.shot);
@@ -584,6 +609,7 @@ function heroAttack(){
       setTimeout(()=>toast(h.heal?"🐲":"💖", (h.heal?"龙之恢复":"连对回心")+" +"+heal+" 颗心"), 200);
     }
     if(B.hp<=0) return win();
+    if(board){ setTimeout(()=>{ if(B===cur && !B.over){ B.busy = false; renderBoard(); } }, 250); return; }
     if(B.L.boss && !B.enraged && B.hp <= B.maxHp/2){
       B.enraged = true;
       $("battle").classList.add("enraged");
@@ -628,6 +654,87 @@ function monsterAttack(reason){
   }, 300);
 }
 
+/* ================= 算术消除 (match) 和 汉字-拼音连连看 (link) ================= */
+// 消除：棋盘来自 makeMatchBoard（logic.js），出题器用 matchGenFor 选，保证不走保底题。每个世界后半段（第 8 关起）用 2 层叠法。
+// 连连看：makeLinkBoard / linkPick / linkDone（logic.js），字对取自课本字表 PY。
+const linkPairs = () => shuffle(PY.slice()).map(e=>({hz:e[0], py:pyMark(e[1],e[2]), e:e[3]}));
+function startBoard(){
+  B.charge = 0; B.lastTick = 0; B.sel = null;
+  // speak = the board's one-line instruction, so the 🔊 button repeats it
+  if(B.mode==="match"){
+    const layers = B.l >= 7 ? 2 : 1;
+    B.board = makeMatchBoard(matchGenFor(B.w,B.l) || (()=>G.add(10)), {layers, cols: layers===2 ? 3 : 4});
+    B.q = {kind:"board", speak: layers===2 ? "找出得数一样的两张卡片！上面的卡片拿走，下面的才能用哦！" : "找出得数一样的两张卡片！"};
+  } else {
+    B.board = makeLinkBoard(linkPairs(), {n:LINK_N});
+    B.q = {kind:"board", speak:"把汉字和它的拼音连起来！"};
+  }
+  say(B.q.speak);
+  renderBoard();
+  B.busy = false; drawCharge();
+}
+function renderBoard(){
+  const bd = $("board"), b = B.board;
+  if(B.mode==="match"){
+    const cards = b.cards || b, cols = b.cols, rows = b.layers===2 ? 2 : Math.ceil(12/cols);
+    let h = '<div class="mboard'+(b.layers===2?" two":"")+'" style="--cols:'+cols+';--rows:'+rows+'">';
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+      const here = cards.filter(x=>x.row===r && x.col===c).sort((a,z)=>a.layer-z.layer);
+      h += '<div class="mslot">'+here.map(x=>{
+        const under = x.coveredBy && x.coveredBy.length;
+        return '<button class="mcard'+(under?" under":"")+(B.sel===x.id?" sel":"")+(x.value>=100||String(x.text).length>7?" sm":"")+'" data-id="'+x.id+'"'+(under?' disabled aria-label="被压住了"':'')+'>'+(under?"":'<span class="num">'+x.text+'</span>')+'</button>';
+      }).join("")+'</div>';
+    }
+    bd.innerHTML = h + '</div>';
+    bd.querySelectorAll(".mcard:not(.under)").forEach(el=>el.onclick=()=>pickCard(el.dataset.id, el));
+  } else {
+    const side = (list, cls) => '<div class="lcol">'+list.map(x=>'<button class="lnk '+cls+(x.matched?" done":"")+(B.sel===x.id?" sel":"")+'" data-id="'+x.id+'"'+(x.matched?" disabled":"")+'>'
+      + (cls==="hz" ? (x.e?img(x.e):"")+'<b>'+x.hz+'</b>' : '<span class="py">'+x.py+'</span>')+'</button>').join("")+'</div>';
+    bd.innerHTML = '<div class="lboard"><svg class="llines" id="llines"></svg>'+side(b.left,"hz")+side(b.right,"pyb")+'</div>';
+    bd.querySelectorAll(".lnk:not(.done)").forEach(el=>el.onclick=()=>pickLink(el.dataset.id, el));
+    drawLinks();
+  }
+}
+function drawLinks(){
+  const svg = $("llines"); if(!svg) return;
+  const box = svg.getBoundingClientRect();
+  svg.innerHTML = (B.board.connections||[]).map(c=>{
+    const a = $("board").querySelector('[data-id="'+c.leftId+'"]').getBoundingClientRect(), z = $("board").querySelector('[data-id="'+c.rightId+'"]').getBoundingClientRect();
+    return '<line x1="'+(a.right-box.left)+'" y1="'+(a.top+a.height/2-box.top)+'" x2="'+(z.left-box.left)+'" y2="'+(z.top+z.height/2-box.top)+'"/>';
+  }).join("");
+}
+function boardRight(){
+  B.busy = true; B.combo++;
+  const st = S.stats[B.W.id] || (S.stats[B.W.id]={r:0,w:0}); st.r++; save();
+  heroAttack(true);
+}
+function boardWrong(els){
+  const cur = B;
+  els.forEach(el=>{ if(el){ el.classList.remove("shake"); void el.offsetWidth; el.classList.add("shake","bad"); } });
+  sfx.wrong(); B.combo = 0; $("combo").textContent = "";
+  const st = S.stats[B.W.id] || (S.stats[B.W.id]={r:0,w:0}); st.w++; save();
+  setTimeout(()=>{ if(B===cur && !B.over) renderBoard(); }, 600);
+  if(B.lucky>0){ B.lucky--; B.charge = 0; B.lastTick = 0; sfx.shield(); toast("🍀","幸运光环！不扣心"); }
+  else monsterAttack("wrong");
+}
+function pickCard(id, el){
+  if(!B || B.busy || B.over) return;
+  if(!B.sel || B.sel===id){ B.sel = B.sel===id ? null : id; sfx.click(); renderBoard(); return; }
+  const a = B.sel; B.sel = null;
+  const first = $("board").querySelector('[data-id="'+a+'"]');
+  if(matchPick(B.board, a, id)){ renderBoard(); boardRight(); }
+  else boardWrong([first, el]);
+}
+function pickLink(id, el){
+  if(!B || B.busy || B.over) return;
+  const side = id[0];
+  if(!B.sel || B.sel===id || B.sel[0]===side){ B.sel = B.sel===id ? null : id; sfx.click(); renderBoard(); return; }
+  const a = B.sel; B.sel = null;
+  const first = $("board").querySelector('[data-id="'+a+'"]');
+  if(linkPick(B.board, a, id)){ renderBoard(); boardRight(); }
+  else boardWrong([first, el]);
+}
+
 /* ================= results ================= */
 function win(){
   B.over = true; B.busy = true;
@@ -637,15 +744,15 @@ function win(){
   const before = totalStars();
   const key = lvKey(B.w,B.l);
   const prevBest = starOf(B.w,B.l);
-  S.stars[key] = Math.max(prevBest, stars);
+  S.lv.stars[key] = Math.max(prevBest, stars);
   const after = totalStars();
   const info = {w:B.w, l:B.l, L:B.L, W:B.W, stars, boss:!!B.L.boss, diff:B.diff, run:B.run,
     newHero: HEROES.find(h=>h.need!=null && h.need>before && h.need<=after),
-    newWorld: B.l===4 && B.w<WORLDS.length-1 && prevBest===0 && !S.openAll ? WORLDS[B.w+1] : null};
-  if(!B.run && !isFinal(B.w,B.l) && stars===3 && (S.tier[key]||0)===B.diff && B.diff<4){ S.tier[key] = B.diff+1; info.tierUp = B.diff+1; }
-  if(info.boss){ info.firstMedal = !S.medals[B.W.id]; S.medals[B.W.id] = true; info.final = isFinal(B.w,B.l); }
+    newWorld: B.l===NLV-1 && B.w<WORLDS_V2.length-1 && prevBest===0 && !S.openAll ? WORLDS_V2[B.w+1] : null};
+  if(!B.run && stars===3 && (S.lv.tier[key]||0)===B.diff && B.diff<4){ S.lv.tier[key] = B.diff+1; info.tierUp = B.diff+1; }
+  if(info.boss){ info.firstMedal = !S.medals[B.W.id]; S.medals[B.W.id] = true; }
   if(B.run){ B.run.hearts = Math.min(5, B.hearts+1); B.run.i++; info.runDone = B.run.i>=B.run.seq.length; }
-  if(info.newWorld){ curWorld = B.w+1; S.world = curWorld; }
+  if(info.newWorld){ curWorld = B.w+1; S.mapWorld = curWorld; }
   daily().n++;   // every win counts, replays and 连闯 battles included
   save();
   $("monBox").classList.remove("angry","frozen"); $("iceBlock").hidden = true; $("iceChip").hidden = true; $("frost").classList.remove("on"); $("items").innerHTML = "";
@@ -695,10 +802,10 @@ function showWin(info){
   if(info.newWorld) notes.push(img("🗺️")+'<span>新世界「'+info.newWorld.name+'」打开了！</span>');
   body += notes.slice(0,2).map(n=>'<div class="note">'+n+'</div>').join("");
   body += '<div id="chestBox"><button class="chest'+(info.boss?" gold":"")+'" id="chest">'+img("🎁")+'<small>'+(info.boss?"黄金宝箱！连点 3 下":"点开宝箱！")+'</small></button></div>';
-  const isLast = info.l===4, hasNext = info.w<WORLDS.length-1;
+  const isLast = info.l===NLV-1, hasNext = info.w<WORLDS_V2.length-1;
   body += '<div class="btnrow" id="winBtns" hidden><button class="ibtn" id="rMap" aria-label="回地图">'+img("🗺️")+'</button><button class="ibtn" id="rAgain" aria-label="再玩一次">'+img("🔁")+'</button>'
     + (!isLast ? '<button class="btn green" id="rNext">下一关</button>'
-       : hasNext ? '<button class="btn green" id="rNext">去'+WORLDS[info.w+1].name+'</button>' : '<button class="btn green" id="rMap2">回地图</button>')+'</div>';
+       : hasNext ? '<button class="btn green" id="rNext">去'+WORLDS_V2[info.w+1].name+'</button>' : '<button class="btn green" id="rMap2">回地图</button>')+'</div>';
   openPage({title, ribbon:"gold", cls:info.boss?"gold":"", body});
   for(let i=0;i<info.stars;i++) setTimeout(()=>sfx.star(i), 300+i*350);
   if(!info.boss) say(info.tierUp>=4 ? "钻石关卡！你是大师！" : info.tierUp ? "完美通关！关卡升级啦！" : info.stars===3 ? "完美通关！太厉害了！" : "胜利！");
@@ -717,7 +824,7 @@ function showWin(info){
 }
 function giveItems(n){ const ks = Object.keys(ITEMS), got = []; for(let i=0;i<n;i++){ const k = pick(ks); S.items[k] = (S.items[k]||0)+1; got.push(k); } return got; }
 // 关卡序号 (1, 2, 3 … across all worlds) drives the drop quality
-const stageNo = (w,l) => w*5 + l + 1;
+const stageNo = (w,l) => gIndex(w,l) + 1;
 function openChest(info){
   sfx.chest(); confetti(info.boss?220:90);
   const g = addGear(rollGear(stageNo(info.w, info.l), !!info.boss));   // 本关掉落: one piece of gear instead of stickers
@@ -765,32 +872,36 @@ function toMap(){
   renderMap();
 }
 
-/* ================= final boss: only reachable through a run ================= */
-const RUNS = {
-  tower:{name:"魔王塔连闯", seq:[[5,0],[5,1],[5,2],[5,3],[5,4]], lvl:1},
-  epic: {name:"勇者远征",  seq:[[0,4],[1,4],[2,4],[3,4],[4,4],[5,4]], lvl:2}
-};
-const RUN_RW = {1:{cards:1, shine:1, items:3}, 2:{cards:2, shine:2, items:6, crown:true}};
-const runIcons = mode => RUNS[mode].seq.map(([w,l])=>WORLDS[w].levels[l].m);
+/* ================= Boss 连闯（地图上的特别挑战） =================
+   规则：打败某个世界的 Boss（第 15 关）后，地图右上角出现「🏅 连闯」：
+   - 世界连闯：一口气打这个世界第 5 关、第 10 关的怪兽和 Boss，3 场全是答题打怪；5 颗心带到下一场，每赢一场 +1。
+   - 勇者远征：8 个世界的 Boss 全部打败后开放，一口气打 8 个 Boss，奖励更多并得到勇者王冠。
+   中途输了就要从头再来；打完翻宝藏牌拿装备。 */
+const runDef = mode => mode==="epic"
+  ? {name:"勇者远征", seq:WORLDS_V2.map((_,w)=>[w,NLV-1]), lvl:2}
+  : (w => ({name:WORLDS_V2[w].name+"连闯", seq:[[w,4],[w,9],[w,NLV-1]], lvl:1}))(Math.max(0, WORLDS_V2.findIndex(x=>x.id===mode)));
+const RUN_RW = {1:{cards:1, items:3}, 2:{cards:2, items:6, crown:true}};
+const runIcons = mode => runDef(mode).seq.map(([w,l])=>WORLDS_V2[w].levels[l].emoji);
 const runProgress = run => runIcons(run.mode).map((e,i)=>'<span class="'+(i<run.i?"":i===run.i?"c":"d")+'">'+img(i<run.i?"✅":e)+'</span>').join("");
-function openRunMenu(){
-  const towerOK = levelOpen(5,4);
-  const medals = ["add","sub","ten","ice","think"].filter(id=>S.medals[id]).length;
-  const epicOK = S.openAll || medals>=5;
-  const card = (mode, ok, lock, cls) => { const rw = RUN_RW[RUNS[mode].lvl];
-    return '<button class="runcard '+cls+'" id="run_'+mode+'"'+(ok?"":" disabled")+'><b>'+RUNS[mode].name+'</b>'
+function openRunMenu(w){
+  w = w==null ? curWorld : w;
+  const id = WORLDS_V2[w].id, worldOK = S.openAll || starOf(w, NLV-1)>0;
+  const bosses = WORLDS_V2.filter((_,i)=>starOf(i, NLV-1)>0).length;
+  const epicOK = S.openAll || bosses>=WORLDS_V2.length;
+  const card = (mode, ok, lock, cls) => { const d = runDef(mode), rw = RUN_RW[d.lvl];
+    return '<button class="runcard '+cls+'" id="run_'+(mode==="epic"?"epic":"world")+'"'+(ok?"":" disabled")+'><b>'+d.name+'</b>'
       + '<div class="rpath">'+runIcons(mode).map(e=>img(e)).join("")+'</div>'
       + '<div class="rrw">'+img("🎴")+'×'+rw.cards+' '+img("🎒")+'×'+rw.items+(rw.crown?' '+img("👑"):'')+'</div>'
       + (ok?'':'<span class="lk">'+img("🔒")+' '+lock+'</span>')+'</button>'; };
-  openPage({title:"👹 挑战大魔王", ribbon:"blue", back:true, onClose:renderMap,
+  openPage({title:"👹 Boss 连闯", ribbon:"blue", back:true, onClose:renderMap,
     body:'<p>一口气打到底，中途不能停！<br>'+img("❤️")+' 会带到下一战，每赢一场 +1</p>'
-      + card("tower", towerOK, "先打通魔王塔第 4 关", "")
-      + card("epic", epicOK, "集齐 5 枚 "+img("🏅")+"（现在 "+medals+" 枚）", "epic")});
-  $("run_tower").onclick = ()=>{ if(towerOK){ pageOnClose = null; closePage(); startRun("tower"); } };
+      + card(id, worldOK, "先打败"+WORLDS_V2[w].name+"的 Boss", "")
+      + card("epic", epicOK, "打败全部 8 个 Boss（现在 "+bosses+" 个）", "epic")});
+  $("run_world").onclick = ()=>{ if(worldOK){ pageOnClose = null; closePage(); startRun(id); } };
   $("run_epic").onclick = ()=>{ if(epicOK){ pageOnClose = null; closePage(); startRun("epic"); } };
 }
 function startRun(mode){
-  const run = {mode, seq:RUNS[mode].seq, i:0, hearts:5};
+  const run = {mode, seq:runDef(mode).seq, i:0, hearts:5};
   const [w,l] = run.seq[0];
   startLevel(w,l,run);
 }
@@ -799,14 +910,14 @@ function showRunNext(info){
   sfx.win(); confetti(100);
   let hearts = ""; for(let i=0;i<5;i++) hearts += '<span style="'+(i<run.hearts?"":"filter:grayscale(1);opacity:.3")+'">'+img("❤️")+'</span>';
   openPage({title:"第 "+run.i+" 战胜利！", ribbon:"gold", body:'<div class="rprog">'+runProgress(run)+'</div>'
-    + '<div style="font-size:30px">'+hearts+'</div><p>下一战：'+img(WORLDS[w].levels[l].m)+' '+WORLDS[w].levels[l].n+'</p>'
+    + '<div style="font-size:30px">'+hearts+'</div><p>下一战：'+img(WORLDS_V2[w].levels[l].emoji)+' '+WORLDS_V2[w].levels[l].name+'</p>'
     + '<div class="btnrow"><button class="ibtn" id="rQuit" aria-label="放弃">'+img("🏳️")+'</button><button class="btn green" id="rGo">'+img("⚔️")+' 下一战</button></div>'});
   say("胜利！准备下一战！");
   $("rGo").onclick = ()=>{ closePage(); startLevel(w,l,run); };
   $("rQuit").onclick = ()=>{ closePage(); toMap(); };
 }
 function showRunReward(info){
-  const rw = RUN_RW[RUNS[info.run.mode].lvl];
+  const rw = RUN_RW[runDef(info.run.mode).lvl];
   let picks = rw.cards;
   if(rw.crown) S.crown = true;
   save();
@@ -818,7 +929,7 @@ function showRunReward(info){
   cards.forEach(c=>c.onclick=()=>{
     if(picks<=0 || c.classList.contains("flip")) return;
     picks--;
-    const g = addGear(rollGear(stageNo(5,4) + 10*RUNS[info.run.mode].lvl, true));
+    const g = addGear(rollGear(stageNo(WORLDS_V2.length-1, NLV-1) + 10*runDef(info.run.mode).lvl, true));
     c.classList.add("flip","q-"+g.quality); c.style.setProperty("--qc", qCol(g)); c.innerHTML = img(g.e);
     sfx.chest(); confetti(120);
     say(GEAR_QUALITY_MAP[g.quality].name+"色装备！"+g.name+"！");
@@ -826,7 +937,7 @@ function showRunReward(info){
   });
 }
 function showRunItems(info){
-  const rw = RUN_RW[RUNS[info.run.mode].lvl];
+  const rw = RUN_RW[runDef(info.run.mode).lvl];
   const items = giveItems(rw.items); save();
   const cnt = {}; items.forEach(k=>cnt[k]=(cnt[k]||0)+1);
   setBody('<p style="font-size:20px;color:var(--ink)">'+img("🎒")+' 还有一大包道具！</p><div class="loot">'+Object.keys(cnt).map((k,i)=>itemTile(k,i*.2,cnt[k])).join("")+'</div>'
