@@ -1187,8 +1187,6 @@ function openGearChest(stage, isBoss, state){
 
 // 挂载到 window，方便测试和 UI 调用
 if(typeof window !== "undefined"){
-  window.S = S;
-  window.save = save;
   window.GEAR_QUALITIES = GEAR_QUALITIES;
   window.GEAR_QUALITY_MAP = GEAR_QUALITY_MAP;
   window.GEAR_SLOTS = GEAR_SLOTS;
