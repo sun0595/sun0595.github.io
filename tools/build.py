@@ -62,7 +62,7 @@ const ri = (a,b) => a + Math.floor(Math.random()*(b-a+1));
 const pick = arr => arr[Math.floor(Math.random()*arr.length)];
 const shuffle = a => { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]} return a; };
 '''
-TEST_HOOK = ("window.__t={showRunReward,startRun,openRunMenu,useItem,qTime,get B(){return B},"
+TEST_HOOK = ("window.__t={showRunReward,startRun,openRunMenu,useItem,qTime,get B(){return B},G,WP,LEVEL_PLAN,"
              "setDaily(n){ daily().n = n; save(); renderMap(); }};\n")
 
 def emoji_table(src, emoji_dir):
