@@ -1,0 +1,42 @@
+
+<div id="app">
+  <section id="map" class="screen"></section>
+  <section id="battle" class="screen" hidden>
+    <header class="btop">
+      <button class="ibtn" id="bBack" aria-label="回地图"></button>
+      <div id="bTitle"></div>
+      <button class="ibtn" id="speakBtn" aria-label="再读一遍"></button>
+    </header>
+    <div class="arena" id="arena">
+      <div class="fighter hero" id="heroBox">
+        <div class="hearts" id="hearts"></div>
+        <div class="hwrap"><div class="sprite" id="heroSprite"></div><div class="shield" id="shield" hidden></div></div>
+        <div class="tag" id="heroName"></div>
+      </div>
+      <div class="fighter mon" id="monBox">
+        <div class="bar"><i id="hpFill"></i><span id="hpText"></span></div>
+        <div class="grow" id="monGrow"><div class="sprite" id="monSprite"></div><div class="iceblock" id="iceBlock" hidden></div><div class="icechip" id="iceChip" hidden></div></div>
+        <div class="tag" id="monName"></div>
+        <div class="charge" id="chargeWrap"><i id="chargeFill"></i></div>
+      </div>
+      <div class="items" id="items"></div>
+      <div class="combo" id="combo"></div>
+      <div class="frost" id="frost"></div>
+      <div class="tint" id="tint"></div>
+      <div class="toast" id="toast"></div>
+      <div class="banner" id="banner"></div>
+    </div>
+    <div class="qcard panel" id="qcard">
+      <span class="qtag" id="qTag" hidden></span>
+      <div class="q" id="qText"></div>
+    </div>
+    <div class="hint panel" id="hint" hidden></div>
+    <div class="answers" id="answers"></div>
+    <div class="flash" id="flash"></div>
+    <div class="vig" id="vig"></div>
+    <div class="cd" id="cd"></div>
+  </section>
+</div>
+<canvas id="confetti" aria-hidden="true"></canvas>
+<canvas id="fw" aria-hidden="true"></canvas>
+<div class="modal" id="modal" hidden></div>
