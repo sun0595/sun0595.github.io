@@ -531,11 +531,23 @@ async function playAll(view) {
   await p.evaluate(() => __t.toMap());
   // 地图：雪山段沿原画小路排 15 关、Boss 在顶端；加法森林 15 只怪兽全是原画（全部关卡开放时）
   await p.evaluate(() => { __t.S.openAll = true; __t.renderMap(); });
+  // gap = the smallest space between any two levels' balls (measured: centre distance minus both radii), must be ≥ 8px;
+  // covered = "a<b": level a's number badge is overlapped by a later level b (drawn on top of it)
   const roadCheck = w => p.evaluate(w => {
-    const ns = [...Array(15)].map((_, l) => document.querySelector(`.node[data-w="${w}"][data-l="${l}"]`).getBoundingClientRect());
-    let gap = 1e9; for (let l = 1; l < 15; l++) gap = Math.min(gap, Math.hypot(ns[l].x - ns[l - 1].x, ns[l].y - ns[l - 1].y));
+    const el = l => document.querySelector(`.node[data-w="${w}"][data-l="${l}"]`);
+    const ns = [...Array(15)].map((_, l) => el(l).getBoundingClientRect());
+    const balls = [...Array(15)].map((_, l) => el(l).querySelector('.ball').getBoundingClientRect());
+    const hit = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+    const inCircle = (r, c) => Math.hypot(Math.max(r.left - (c.x + c.width / 2), 0, c.x + c.width / 2 - r.right), Math.max(r.top - (c.y + c.height / 2), 0, c.y + c.height / 2 - r.bottom)) < c.width / 2;
+    let gap = 1e9; const covered = [];
+    for (let i = 0; i < 14; i++) for (let l = i + 1; l < 15; l++) {
+      const a = balls[i], b = balls[l];
+      gap = Math.min(gap, Math.hypot(a.x + a.width / 2 - b.x - b.width / 2, a.y + a.height / 2 - b.y - b.height / 2) - (a.width + b.width) / 2);
+      const lv = el(i).querySelector('.lv').getBoundingClientRect();
+      if (inCircle(lv, b) || [...el(l).querySelectorAll('.lv, .mb')].some(x => hit(lv, x.getBoundingClientRect()))) covered.push((i + 1) + '<' + (l + 1));
+    }
     const box = document.getElementById('lscroll').getBoundingClientRect();
-    return { band: document.querySelector(`.band[data-w="${w}"]`).classList.contains('art'), gap: Math.round(gap), bossTop: ns[14].top <= Math.min(...ns.map(r => r.top)) + 1,
+    return { band: document.querySelector(`.band[data-w="${w}"]`).classList.contains('art'), gap: Math.round(gap), covered, bossTop: ns[14].top <= Math.min(...ns.map(r => r.top)) + 1,
       inside: ns.every(r => r.left >= box.left - 1 && r.right <= box.right + 1), art: [...Array(15)].map((_, l) => !!document.querySelector(`.node[data-w="${w}"][data-l="${l}"] img.art`)).filter(Boolean).length };
   }, w);
   const showBand = async (w, part) => { await p.evaluate(([w, part]) => { const b = document.querySelector(`.band[data-w="${w}"]`), s = document.getElementById('lscroll'); s.scrollTop = b.offsetTop + b.offsetHeight * part - s.clientHeight / 2; }, [w, part]); await p.waitForTimeout(300); };
@@ -545,18 +557,19 @@ async function playAll(view) {
   const mapBoss = await p.evaluate(() => ['sub', 'ten', 'ice', 'tens', 'hundreds', 'digit1', 'digit2'].map((id, i) => [id, document.querySelector(`.node[data-w="${i + 1}"][data-l="14"] img.art`)?.getAttribute('src') === __t.art('mon_' + id + '_15')]).filter(x => !x[1]).map(x => x[0]));
   if (mapBoss.length) problems.push(`[${view.name}] Boss nodes on the map should show their painted pictures: ${mapBoss}`);
   const snow = await roadCheck(5);
-  if (!snow.band || snow.gap < 52 || !snow.bossTop || !snow.inside) problems.push(`[${view.name}] 雪山 levels should follow the painted road, Boss on top, all on screen: ${JSON.stringify(snow)}`);
+  if (!snow.band || snow.gap < 8 || snow.covered.length || !snow.bossTop || !snow.inside) problems.push(`[${view.name}] 雪山 levels should follow the painted road, Boss on top, all on screen: ${JSON.stringify(snow)}`);
   // 洞穴、火山、冰雪城堡、草原、数字小镇、城堡六段也沿原画小路排，和雪山同样检查
   for (const [w, id, name, top] of [[1, 'sub', '洞穴', 0.3], [2, 'ten', '火山', 0.15], [3, 'ice', '冰雪城堡', 0.3], [4, 'tens', '草原', 0.3], [6, 'digit1', '数字小镇', 0.25], [7, 'digit2', '城堡', 0.35]]) {
     await showBand(w, 0.62); await shot('41-art-map-' + id);
     await showBand(w, top); await shot('41b-art-map-' + id + '-top');
     const r = await roadCheck(w);
-    if (!r.band || r.gap < 52 || !r.bossTop || !r.inside) problems.push(`[${view.name}] ${name} levels should follow the painted road, Boss on top, all on screen: ${JSON.stringify(r)}`);
+    if (!r.band || r.gap < 8 || r.covered.length || !r.bossTop || !r.inside) problems.push(`[${view.name}] ${name} levels should follow the painted road, Boss on top, all on screen: ${JSON.stringify(r)}`);
   }
   await showBand(0, 0.62); await shot('40-art-map-forest-all');
   await showBand(0, 0.3); await shot('40b-art-map-forest-all-top');
   const forest = await roadCheck(0);
   if (forest.art !== 15) problems.push(`[${view.name}] 加法森林 should show all 15 monster pictures: ${JSON.stringify(forest)}`);
+  if (forest.gap < 8 || forest.covered.length || !forest.bossTop || !forest.inside) problems.push(`[${view.name}] 加法森林 levels should not overlap, Boss on top, all on screen: ${JSON.stringify(forest)}`);
   // 8 个世界的地图段都是原画；每段整段截一张全景（视口临时拉高到一整段，宽度不变，节点位置也不变）
   const noArt = await p.evaluate(() => [...document.querySelectorAll('.band')].filter(b => !b.classList.contains('art')).map(b => b.dataset.w));
   if (noArt.length) problems.push(`[${view.name}] every world should use its map art, these do not: ${noArt}`);

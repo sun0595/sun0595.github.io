@@ -101,7 +101,7 @@ function nodePos(l){
 /* A world with map art (map_<世界id>) gets a taller band (ART_BAND_H) filled with the picture (cover, centred); its
    levels follow the road painted in the picture: ART_ROADS[id] is that road from the bottom up, in picture fractions
    (x, y from the top). The bottom of the road (behind the world sign) is skipped, levels 1–14 are spread evenly along
-   the rest and the Boss stands at the road's end. No road listed → the usual rows of three. */
+   the rest (none covering its neighbour, see nodeClear) and the Boss stands at the road's end. No road listed → the usual rows of three. */
 const ART_BAND_H = 1250, ART_SIGN = 150;
 const ART_ROADS = {
   add: [[0.38,1.0],[0.52,0.86],[0.62,0.77],[0.52,0.70],[0.36,0.655],[0.30,0.61],[0.39,0.567],[0.56,0.53],[0.70,0.47],[0.67,0.42],[0.55,0.378],[0.45,0.342],[0.43,0.305],[0.52,0.265]],
@@ -114,12 +114,23 @@ const ART_ROADS = {
   tens: [[0.40,1.0],[0.44,0.95],[0.52,0.90],[0.595,0.875],[0.63,0.84],[0.63,0.80],[0.59,0.775],[0.505,0.75],[0.405,0.725],[0.335,0.70],[0.31,0.675],[0.32,0.65],[0.36,0.625],[0.425,0.60],[0.505,0.575],[0.59,0.55],[0.65,0.525],[0.67,0.50],[0.665,0.475],[0.65,0.45],[0.56,0.425],[0.45,0.40],[0.41,0.37],[0.42,0.33],[0.48,0.30],[0.535,0.275],[0.565,0.25],[0.565,0.235]],
   // 数字小镇：下半段和草原同一条 S 形小路，绕过喷泉往上，再拐两个弯，Boss 在镇子尽头
   digit1: [[0.40,1.0],[0.44,0.95],[0.52,0.90],[0.595,0.875],[0.63,0.84],[0.63,0.80],[0.59,0.775],[0.505,0.75],[0.405,0.725],[0.335,0.70],[0.31,0.675],[0.32,0.65],[0.36,0.625],[0.425,0.60],[0.505,0.575],[0.59,0.55],[0.65,0.525],[0.67,0.50],[0.665,0.475],[0.62,0.45],[0.535,0.425],[0.44,0.40],[0.41,0.375],[0.41,0.35],[0.425,0.33],[0.48,0.30],[0.525,0.28],[0.56,0.26],[0.565,0.24],[0.525,0.22],[0.47,0.20],[0.45,0.18],[0.475,0.16]],
-  // 城堡：紫色地毯 S 形绕过水晶喷泉，再笔直上台阶，Boss 守在城门口
-  digit2: [[0.40,1.0],[0.44,0.95],[0.52,0.90],[0.595,0.875],[0.63,0.84],[0.63,0.80],[0.59,0.775],[0.505,0.75],[0.405,0.725],[0.335,0.70],[0.31,0.675],[0.32,0.65],[0.36,0.625],[0.425,0.60],[0.47,0.575],[0.50,0.55],[0.50,0.45],[0.50,0.40],[0.50,0.36]],
+  // 城堡：紫色地毯 S 形绕过水晶喷泉，再笔直上台阶，Boss 站在城门拱顶前（地毯较短，终点再往上关卡才排得开）
+  digit2: [[0.40,1.0],[0.44,0.95],[0.52,0.90],[0.595,0.875],[0.63,0.84],[0.63,0.80],[0.59,0.775],[0.505,0.75],[0.405,0.725],[0.335,0.70],[0.31,0.675],[0.32,0.65],[0.36,0.625],[0.425,0.60],[0.47,0.575],[0.50,0.55],[0.50,0.45],[0.50,0.40],[0.50,0.31]],
   hundreds: [[0.30,0.88],[0.45,0.876],[0.58,0.852],[0.68,0.81],[0.70,0.76],[0.66,0.71],[0.55,0.677],[0.42,0.648],[0.34,0.615],[0.31,0.56],[0.32,0.51],[0.37,0.475],[0.48,0.445],[0.60,0.422],[0.68,0.38],[0.70,0.345],[0.66,0.318],[0.52,0.315],[0.38,0.305],[0.32,0.275],[0.33,0.24],[0.42,0.224],[0.55,0.222],[0.64,0.235]]
 };
 // 冰雪城堡：和雪山同一条 S 形小路，Boss 在城堡前
 ART_ROADS.ice = ART_ROADS.hundreds;
+/* Does level b (placed after level a, so drawn on top of it) leave a alone? Their balls (NODE_D, the Boss BOSS_D) are at
+   least `gap` px further apart than touching, and b covers neither a's level badge (top-left) nor a's mode badge
+   (bottom-right). Boxes are [left, top, right, bottom] around the ball's centre, from .node .ball / .lv / .mb in head.html. */
+const NODE_D = 50, BOSS_D = 68, NODE_LV = [-31,-29,-5,-7], NODE_MB = [7,3,31,27];
+function nodeClear(a, b, gap, boss){
+  const rb = (boss ? BOSS_D : NODE_D)/2, dx = b[0]-a[0], dy = b[1]-a[1];
+  if(Math.hypot(dx, dy) < NODE_D/2 + rb + gap) return false;
+  const hitsBall = ([l,t,r,bt]) => Math.hypot(Math.max(l-dx, 0, dx-r), Math.max(t-dy, 0, dy-bt)) < rb + 2;
+  const box = ([l,t,r,bt], [L,T,R,B]) => l < R+dx && r > L+dx && t < B+dy && bt > T+dy;
+  return !hitsBall(NODE_LV) && !hitsBall(NODE_MB) && !box(NODE_LV, boss ? [-40,-38,6,-16] : NODE_LV) && !box(NODE_LV, NODE_MB);
+}
 let MAPL = null;
 function layoutMap(W){
   const n = WORLDS_V2.length, hs = [], tops = [], pos = {}, artBand = [];
@@ -134,7 +145,16 @@ function layoutMap(W){
       if(i0>0){ const [a,b] = [P[i0-1], P[i0]], t = (a[1]-(H-ART_SIGN))/(a[1]-b[1]); P = [[a[0]+(b[0]-a[0])*t, H-ART_SIGN]].concat(P.slice(i0)); }
       const cum = [0]; for(let i=1;i<P.length;i++) cum.push(cum[i-1] + Math.hypot(P[i][0]-P[i-1][0], P[i][1]-P[i-1][1]));
       const L = cum[cum.length-1], at = d => { let i = 1; while(i<P.length-1 && cum[i]<d) i++; const t = (d-cum[i-1])/((cum[i]-cum[i-1])||1); return [P[i-1][0]+(P[i][0]-P[i-1][0])*t, P[i-1][1]+(P[i][1]-P[i-1][1])*t]; };
-      for(let l=0;l<NLV;l++){ const [x,yy] = at(l===NLV-1 ? L : L*0.9*l/(NLV-2)); pos[w+"-"+l] = [Math.round(x/W*1000)/10, Math.round(tops[w]+yy)]; }
+      // walk up the road: each level goes at the first spot that clears every level before it by `gap`; the largest gap
+      // that still leaves room for the Boss at the road's end wins, so the levels come out as evenly spaced as the road allows
+      const end = at(L), top = end[1] - (BOSS_D-NODE_D)/2;   // no level may stick out above the Boss
+      const ok = (out, p, gap, boss) => (boss || p[1] >= top) && out.every(a => nodeClear(a, p, gap, boss));
+      const place = gap => { const out = [at(0)]; let d = 0;
+        for(let l=1; l<NLV-1; l++){ while(d<=L && !ok(out, at(d), gap, false)) d += 1; if(d>L) return null; out.push(at(d)); }
+        return ok(out, end, gap, true) ? out.concat([end]) : null; };
+      let lo = 0, hi = 200, best = place(0) || Array.from({length:NLV}, (_,l)=>at(L*l/(NLV-1)));
+      while(hi-lo > 0.5){ const m = (lo+hi)/2, r = place(m); if(r){ lo = m; best = r; } else hi = m; }
+      best.forEach(([x,yy],l) => { pos[w+"-"+l] = [Math.round(x/W*1000)/10, Math.round(tops[w]+yy)]; });
     } else for(let l=0;l<NLV;l++){ const [x,yb] = nodePos(l); pos[w+"-"+l] = [x, tops[w] + H - yb]; }
   }
   return {W, tops, hs, artBand, total: y + (artBand[0] ? 0 : MAP_OVER + 20), pos};
