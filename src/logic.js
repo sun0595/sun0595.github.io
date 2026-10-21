@@ -1,5 +1,9 @@
 /* ================= save ================= */
-const KEY = "math-hero-v1";  // kept so existing progress carries over
+const MAIN_KEY = "math-hero-v1";  // 正式版存档，kept so existing progress carries over
+// 试玩版 (built with `tools/build.py --beta`, IS_BETA = true) keeps its own save so it can never touch the real one:
+// on its first run it copies the 正式版 save once, after that it only reads/writes "math-hero-beta".
+const KEY = IS_BETA ? "math-hero-beta" : MAIN_KEY;
+if(IS_BETA) try { if(localStorage.getItem(KEY)===null){ const v1 = localStorage.getItem(MAIN_KEY); if(v1!==null) localStorage.setItem(KEY, v1); } } catch(e){}
 const DEFAULT = {stars:{}, hero:0, voice:true, sound:true, timer:true, py:0.25, openAll:false, voiceName:"", rate:0.9, stats:{}, mistakes:[], stickers:{}, medals:{}, tier:{}, shiny:{}, items:{heal:1,time:1,ice:1}, bag:[], equipped:{weapon:null,helmet:null,armor:null,shield:null}, chests:0};
 let S;
 try { S = Object.assign({}, DEFAULT, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch(e){ S = Object.assign({}, DEFAULT); }
