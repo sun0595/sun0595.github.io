@@ -63,8 +63,19 @@ const pick = arr => arr[Math.floor(Math.random()*arr.length)];
 const shuffle = a => { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]} return a; };
 '''
 TEST_HOOK = ("window.__t={showRunReward,startRun,openRunMenu,useItem,qTime,openBag,get B(){return B},get S(){return S},G,WP,LEVEL_PLAN,"
-             "WORLDS_V2,LEVEL_MODES,img,"
+             "WORLDS_V2,LEVEL_MODES,img,startLevel,nextQuestion,toMap,levelDef,matchGenFor,matchPoolOK,curLevel,renderMap,hitCap,"
              "setDaily(n){ daily().n = n; save(); renderMap(); }};\n")
+
+EMOJI_RANGES = [(0x1F000, 0x1FAFF), (0x2600, 0x27BF), (0x2300, 0x23FF), (0x2B00, 0x2BFF), (0x2190, 0x21FF),
+                (0x25A0, 0x25FF), (0x2934, 0x2935), (0x3030, 0x3030), (0x303D, 0x303D), (0x3297, 0x3299),
+                (0x00A9, 0x00A9), (0x00AE, 0x00AE), (0x203C, 0x203C), (0x2049, 0x2049), (0x2122, 0x2122), (0x2139, 0x2139)]
+JOINERS = {0x200D, 0xFE0F, 0xFE0E, 0x20E3}
+
+def is_emoji(s):
+    """True only for a real emoji string (e.g. "🐉", "🐻‍❄️", "☃️"); Chinese names or plain text are never emoji"""
+    def in_ranges(c): return any(a <= c <= b for a, b in EMOJI_RANGES)
+    cps = [ord(ch) for ch in s]
+    return bool(cps) and any(in_ranges(c) for c in cps) and all(in_ranges(c) or c in JOINERS or chr(c) in "#*0123456789" for c in cps)
 
 def emoji_table(src, emoji_dir):
     """map every emoji string that appears in the source to an embedded webp"""
@@ -88,9 +99,11 @@ def emoji_table(src, emoji_dir):
         with open(os.path.join(emoji_dir, f), "rb") as fh:
             data.append(base64.b64encode(fh.read()).decode())
     keys = {k: idx[v] for k, v in used.items()}
-    missing = sorted(set(m for m in re.findall(r'img\("([^"]+)"', src) if m not in keys))
+    # img("…") literals plus emoji written into data tables (WORLDS_V2 monsters: emoji:"…", items/heroes/gear: e:"…")
+    wanted = re.findall(r'img\("([^"]+)"', src) + re.findall(r'\b(?:emoji|e|m):\s*"([^"]+)"', src)
+    missing = sorted(set(m for m in wanted if m not in keys and is_emoji(m)))
     if missing:
-        sys.exit("ERROR: img() asks for emoji with no 3D image: %s" % missing)
+        sys.exit("ERROR: emoji with no 3D image (img() or emoji:/e:/m: data): %s" % missing)
     return "const IMG_D = %s;\nconst IMG_K = %s;\n" % (json.dumps(data), json.dumps(keys, ensure_ascii=False)), len(files)
 
 def font_faces(text):
