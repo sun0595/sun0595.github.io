@@ -836,7 +836,7 @@ const canBlend = e => { const [ini,fin] = pySplit(e[1]); return !!ini && !ZHENGT
 const blendPool = () => PY.filter(canBlend);
 // 拼一拼：b + ā → bā。干扰项 = 易混声母 + 易混韵母 + 错声调（都是孩子真会犯的错）
 function pyBlend(e){
-  e = e || pick(blendPool());
+  if(!e || !canBlend(e)) e = pick(blendPool());
   const [hz, b, t, pic] = e, [ini, fin] = pySplit(b);
   const fv = finV(ini, fin), shown = pyMark(fv, t), ans = vsyl(ini, fv, t), real = realFin(ini, fin);
   const mixF = shuffle((FIN_MIX[real]||[]).map(x=>x.replace(/ü/g,"v")));
@@ -857,7 +857,7 @@ function pyBlend(e){
 }
 // 进阶：给音节选汉字（不给图，给了就不用拼了）。同音字（木/目、鱼/雨）不拿来当干扰项
 function pyBlendHz(e){
-  e = e || pick(blendPool());
+  if(!e || !canBlend(e)) e = pick(blendPool());
   const [hz, b, t, pic] = e, [ini, fin] = pySplit(b);
   const ans = pyMark(b, t), shown = pyMark(finV(ini,fin), t);
   const others = shuffle(PY.filter(x=>x[0]!==hz && x[1]!==b));
@@ -882,7 +882,8 @@ function pyQ(){
    按人教版一年级上册的顺序分组：识字 → 拼音 → 课文 → 识字（二）。
    每条 = [汉字, 带调拼音, [易混拼音…]]，易混拼音是给这个字做干扰项用的
    （不在这个组里出现的音，免得孩子连对了却被判错）。
-   同一组里没有同音字：拼音两两不同，连调也错开（木/目、鱼/雨 不同组）。*/
+   同一组里没有同音字：拼音两两不同，连调也错开（木/目、鱼/雨 不同组）。
+   接现成的 makeLinkBoard 时这样转：makeLinkBoard(LLK_SETS[i].p.map(([hz,py]) => ({hz, py}))) */
 const LLK_SETS = [
   {n:"识字1 天地人", p:[
     ["天","tiān",["tián","tān"]], ["地","dì",["dí","tì"]], ["人","rén",["rèn","réng"]],
