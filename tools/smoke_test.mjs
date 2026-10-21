@@ -523,8 +523,8 @@ async function playAll(view) {
     if (!ar.look || !ar.rh || !ar.lh) problems.push(`[${view.name}] ${q} armour in battle: whole look + sword + shield pictures expected: ${JSON.stringify(ar)}`);
   }
   await p.evaluate(() => { for (const k of ['weapon', 'helmet', 'armor', 'shield']) __t.S.equipped[k] = null; for (const g of [...__t.S.bag]) if (/^a[wsa]_/.test(g.id)) removeGear(g.id); equipGear('art_a'); equipGear('art_w'); __t.toMap(); });   // back in purple for the broken-art check
-  // 4 个世界 Boss 的原画（减法洞穴、凑十火山、冰雪城堡、整十草原）
-  for (const [w, id] of [[1, 'sub'], [2, 'ten'], [3, 'ice'], [4, 'tens']]) {
+  // 7 个世界 Boss 的原画（减法洞穴、凑十火山、冰雪城堡、整十草原、雪山、小镇、城堡）
+  for (const [w, id] of [[1, 'sub'], [2, 'ten'], [3, 'ice'], [4, 'tens'], [5, 'hundreds'], [6, 'digit1'], [7, 'digit2']]) {
     await p.evaluate(() => __t.toMap()); await tapNode(w, 14); await p.waitForTimeout(2700); await shot('38-art-boss-' + id);
     if (!(await p.evaluate(id => document.querySelector('#monSprite img.art')?.getAttribute('src') === __t.art('mon_' + id + '_15'), id))) problems.push(`[${view.name}] ${id} Boss should show its painted picture`);
   }
@@ -541,8 +541,18 @@ async function playAll(view) {
   const showBand = async (w, part) => { await p.evaluate(([w, part]) => { const b = document.querySelector(`.band[data-w="${w}"]`), s = document.getElementById('lscroll'); s.scrollTop = b.offsetTop + b.offsetHeight * part - s.clientHeight / 2; }, [w, part]); await p.waitForTimeout(300); };
   await showBand(5, 0.62); await shot('39-art-map-snow');
   await showBand(5, 0.3); await shot('39b-art-map-snow-top');
+  // 7 个世界的 Boss 在地图节点上也是原画
+  const mapBoss = await p.evaluate(() => ['sub', 'ten', 'ice', 'tens', 'hundreds', 'digit1', 'digit2'].map((id, i) => [id, document.querySelector(`.node[data-w="${i + 1}"][data-l="14"] img.art`)?.getAttribute('src') === __t.art('mon_' + id + '_15')]).filter(x => !x[1]).map(x => x[0]));
+  if (mapBoss.length) problems.push(`[${view.name}] Boss nodes on the map should show their painted pictures: ${mapBoss}`);
   const snow = await roadCheck(5);
   if (!snow.band || snow.gap < 52 || !snow.bossTop || !snow.inside) problems.push(`[${view.name}] 雪山 levels should follow the painted road, Boss on top, all on screen: ${JSON.stringify(snow)}`);
+  // 洞穴、火山、冰雪城堡三段也沿原画小路排，和雪山同样检查
+  for (const [w, id, name, top] of [[1, 'sub', '洞穴', 0.3], [2, 'ten', '火山', 0.15], [3, 'ice', '冰雪城堡', 0.3]]) {
+    await showBand(w, 0.62); await shot('41-art-map-' + id);
+    await showBand(w, top); await shot('41b-art-map-' + id + '-top');
+    const r = await roadCheck(w);
+    if (!r.band || r.gap < 52 || !r.bossTop || !r.inside) problems.push(`[${view.name}] ${name} levels should follow the painted road, Boss on top, all on screen: ${JSON.stringify(r)}`);
+  }
   await showBand(0, 0.62); await shot('40-art-map-forest-all');
   await showBand(0, 0.3); await shot('40b-art-map-forest-all-top');
   const forest = await roadCheck(0);
@@ -555,8 +565,8 @@ async function playAll(view) {
   const brk = await p.evaluate(() => ({ art: document.querySelectorAll('#heroSprite img.art, #heroSprite .hand, #monSprite img.art').length, mon: !!document.querySelector('#monSprite img.ei'), hero: !!document.querySelector('#heroSprite img.ei'), nodeArt: !!document.querySelector('.node[data-w="0"][data-l="0"] img.art'), band: document.querySelector('.band[data-w="0"]').style.backgroundImage.includes('svg') }));
   if (brk.art || !brk.mon || !brk.hero || brk.nodeArt || !brk.band) problems.push(`[${view.name}] broken art should fall back to the 3D emoji / painted map: ${JSON.stringify(brk)}`);
   await p.evaluate(keep => { for (const k in keep) __t.setArt(k, keep[k]); for (const k of ['weapon', 'helmet', 'armor', 'shield']) __t.S.equipped[k] = null; __t.toMap(); }, keep);
-  // a world without any art keeps the drawn island
-  if (await p.evaluate(() => document.querySelector('.band[data-w="1"]').classList.contains('art') || !document.querySelector('.band[data-w="1"] .cliff'))) problems.push(`[${view.name}] worlds without map art should keep the drawn island`);
+  // a world without map art (整十草原) keeps the drawn island
+  if (await p.evaluate(() => document.querySelector('.band[data-w="4"]').classList.contains('art') || !document.querySelector('.band[data-w="4"] .cliff'))) problems.push(`[${view.name}] worlds without map art should keep the drawn island`);
   if (await p.evaluate(k => localStorage.getItem(k), BETA) !== null) problems.push(`[${view.name}] 正式版 wrote the 试玩版 save "${BETA}"`);
   await ctx.close();
 }
