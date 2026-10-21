@@ -63,7 +63,7 @@ const pick = arr => arr[Math.floor(Math.random()*arr.length)];
 const shuffle = a => { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]} return a; };
 '''
 TEST_HOOK = ("window.__t={showRunReward,startRun,openRunMenu,useItem,qTime,openBag,get B(){return B},get S(){return S},G,WP,LEVEL_PLAN,"
-             "WORLDS_V2,LEVEL_MODES,img,"
+             "WORLDS_V2,LEVEL_MODES,img,startLevel,nextQuestion,toMap,levelDef,matchGenFor,matchPoolOK,curLevel,renderMap,hitCap,"
              "setDaily(n){ daily().n = n; save(); renderMap(); }};\n")
 
 def emoji_table(src, emoji_dir):
@@ -88,9 +88,11 @@ def emoji_table(src, emoji_dir):
         with open(os.path.join(emoji_dir, f), "rb") as fh:
             data.append(base64.b64encode(fh.read()).decode())
     keys = {k: idx[v] for k, v in used.items()}
-    missing = sorted(set(m for m in re.findall(r'img\("([^"]+)"', src) if m not in keys))
+    # img("…") literals plus emoji written into data tables (WORLDS_V2 monsters: emoji:"…", items/heroes/gear: e:"…")
+    wanted = re.findall(r'img\("([^"]+)"', src) + re.findall(r'\b(?:emoji|e|m):\s*"([^"]+)"', src)
+    missing = sorted(set(m for m in wanted if m not in keys and any(ord(ch) > 0x2000 for ch in m)))
     if missing:
-        sys.exit("ERROR: img() asks for emoji with no 3D image: %s" % missing)
+        sys.exit("ERROR: emoji with no 3D image (img() or emoji:/e:/m: data): %s" % missing)
     return "const IMG_D = %s;\nconst IMG_K = %s;\n" % (json.dumps(data), json.dumps(keys, ensure_ascii=False)), len(files)
 
 def font_faces(text):
