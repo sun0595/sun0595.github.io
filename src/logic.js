@@ -737,14 +737,6 @@ function pyBasic(type){
       speak:"读一读拼音，选出对应的字。", rec:ans+" 是哪个字",
       hint:'<p class="htitle">先拼一拼</p><p>把 <span class="py">'+ans+'</span> 读出来，再想想哪个字是这个音。</p>'+TONE_RHYME};
   }
-  const [ini, fin] = pySplit(b);
-  if(type==="spell" && ini && !["y","w"].includes(ini) && b!=="ri"){
-    const near = pyNear(e);
-    return {kind:"py", key:"s"+hz, answer:ans, options:shuffle([ans,...near.map(x=>x.s)]), optHtml:pyBtn,
-      html:'<div class="pyq"><span class="py">'+ini+'</span><span class="plus">+</span><span class="py">'+pyMark(fin,t)+'</span><span class="plus">=</span><span class="blank">?</span><span class="ask">拼一拼</span></div>',
-      speak:"拼一拼，声母和韵母合起来是什么？", rec:ini+" + "+pyMark(fin,t),
-      hint:pyHint(near,'<p class="htitle">拼读口诀</p><p>前音轻短后音重，两音相连猛一碰。</p>')};
-  }
   return {kind:"py", key:"t"+hz, answer:String(t), options:["1","2","3","4"],
     optHtml:o=>'<span class="tn">'+TONE_SIGN[o]+'</span><small>'+TONE_NAME[o]+'</small>', disp:o=>TONE_NAME[o],
     html:'<div class="pyq"><span class="pic">'+pic+'</span><span class="py">'+ans+'</span><span class="ask">是第几声？</span></div>',
@@ -762,7 +754,8 @@ const INIT_MIX = {b:["d","p","q"],p:["q","b","d"],d:["b","t","p"],t:["d","f","l"
   zh:["z","ch","j"],ch:["c","sh","q"],sh:["s","x","ch"],z:["zh","c","j"],c:["ch","s","q"],s:["sh","x","c"],r:["l","y"],y:["w","j"],w:["y","m"]};
 const FIN_MIX = {a:["o","ai","ia"],o:["uo","ou","e"],e:["ei","o","ie"],i:["ü","ie","ei"],u:["ü","ou","o"],"ü":["u","i","üe"],
   ai:["ei","ia","an"],ei:["ie","ai","ui"],ui:["iu","ei","un"],ao:["ou","iao","a"],ou:["uo","ao","iu"],iu:["ui","ou","iao"],
-  ie:["ei","üe","ia"],"üe":["ue","ie","ei"],an:["ang","en","ian"],en:["eng","in","an"],in:["ing","en","ün"],un:["ün","ui","en"],
+  // 「üe」不能拿「ue」当干扰项：ue 不是韵母，只是 üe 跟 j q x y 相拼时的写法
+  ie:["ei","üe","ia"],"üe":["ie","ei"],an:["ang","en","ian"],en:["eng","in","an"],in:["ing","en","ün"],un:["ün","ui","en"],
   ang:["an","eng","ong"],eng:["en","ing","ong"],ing:["in","eng","ong"],ong:["eng","ang","ou"]};
 const INIT_TIP = {
   "b-d":TIPS["b-d"],"b-p":TIPS["b-p"],"d-t":TIPS["d-t"],"n-l":TIPS["n-l"],"zh-z":TIPS["zh-z"],"ch-c":TIPS["ch-c"],"sh-s":TIPS["sh-s"],"f-h":TIPS["f-h"],"g-k":TIPS["g-k"],
@@ -820,12 +813,153 @@ function pyCat(){
     html:'<div class="pyq"><span class="pic">📖</span><span class="ask" style="font-size:22px">哪个是<b>整体认读音节</b>？</span></div>', speak:"下面哪个是整体认读音节？",
     hint:'<p class="htitle">整体认读音节有 16 个</p><p class="py" style="font-size:16px">zhi chi shi ri zi ci si yi wu yu ye yue yuan yin yun ying</p><p>它们不用拼，直接整个读出来。</p>'};
 }
+/* ---- 拼读：声母 + 韵母（带调）→ 音节 ----
+   只拿二拼音节来拼：人教版一上只教二拼，guā 这种三拼（g-u-ā）和整体认读音节都不拿来拼。 */
+// 声韵配合表：每个韵母能和哪些声母相拼（v 就是 ü）。用它挡住 shüe、xai 这类不存在的音节。
+const FIN_INIT = {
+  a:"b p m f d t n l g k h zh ch sh r z c s", o:"b p m f", e:"d t n l g k h zh ch sh r z c s",
+  i:"b p m d t n l j q x zh ch sh r z c s", u:"b p m f d t n l g k h zh ch sh r z c s", v:"n l j q x",
+  ai:"b p m d t n l g k h zh ch sh z c s", ei:"b p m f d n l g h z s", ui:"d t g k h zh ch sh r z c s",
+  ao:"b p m d t n l g k h zh ch sh r z c s", ou:"p m f d t n l g k h zh ch sh r z c s",
+  an:"b p m f d t n l g k h zh ch sh r z c s", en:"b p m f n g k h zh ch sh r z c s",
+  ang:"b p m f d t n l g k h zh ch sh r z c s", eng:"b p m f d t n l g k h zh ch sh r z c s",
+  in:"b p m n l j q x", un:"d t n l g k h zh ch sh r z c s", vn:"j q x", er:"",
+  iu:"m d n l j q x", ie:"b p m d t n l j q x", ve:"n l j q x", ing:"b p m d t n l j q x",
+  ong:"d t n l g k h zh ch r z c s"
+};
+// j q x y 后面写的 u 其实是 ü（反过来写音节时两点要去掉）
+const finV = (ini, fin) => (["j","q","x","y"].includes(ini) && fin[0]==="u") ? "v"+fin.slice(1) : fin;
+const vsyl = (ini, fv, t) => pyMark(ini + (["j","q","x","y"].includes(ini) && fv[0]==="v" ? "u"+fv.slice(1) : fv), t);
+function pyLegal(ini, fin){ const ok = FIN_INIT[finV(ini,fin)]; return !!ok && ok.split(" ").includes(ini); }
+// 能拿来拼的字：有声母、不是整体认读音节、韵母是课本的 24 个韵母、声母韵母真能相拼
+const canBlend = e => { const [ini,fin] = pySplit(e[1]); return !!ini && !ZHENGTI.includes(e[1]) && pyLegal(ini,fin) && YUNMU.includes(realFin(ini,fin)); };
+const blendPool = () => PY.filter(canBlend);
+// 拼一拼：b + ā → bā。干扰项 = 易混声母 + 易混韵母 + 错声调（都是孩子真会犯的错）
+function pyBlend(e){
+  if(!e || !canBlend(e)) e = pick(blendPool());
+  const [hz, b, t, pic] = e, [ini, fin] = pySplit(b);
+  const fv = finV(ini, fin), shown = pyMark(fv, t), ans = vsyl(ini, fv, t), real = realFin(ini, fin);
+  const mixF = shuffle((FIN_MIX[real]||[]).map(x=>x.replace(/ü/g,"v")));
+  const opts = [ans], seen = new Set([ans]);
+  const add = s => { if(opts.length<4 && !seen.has(s)){ seen.add(s); opts.push(s); } };
+  for(const i2 of shuffle(INIT_MIX[ini]||[])) if(pyLegal(i2,fv)){ add(vsyl(i2,fv,t)); break; }   // ① 易混声母 b/d/p、zh/z、n/l
+  for(const f2 of mixF) if(pyLegal(ini,f2)){ add(vsyl(ini,f2,t)); break; }                        // ② 易混韵母 an/ang、ei/ie
+  for(const tt of shuffle([1,2,3,4].filter(x=>x!==t))){ add(vsyl(ini,fv,tt)); break; }             // ③ 错声调
+  for(const i2 of shuffle(INIT_MIX[ini]||[])){ if(opts.length>=4) break; if(pyLegal(i2,fv)) add(vsyl(i2,fv,t)); }
+  for(const f2 of mixF){ if(opts.length>=4) break; if(pyLegal(ini,f2)) add(vsyl(ini,f2,t)); }
+  for(const tt of shuffle([1,2,3,4].filter(x=>x!==t))){ if(opts.length>=4) break; add(vsyl(ini,fv,tt)); }
+  const dot = fv[0]==="v" && ["j","q","x","y"].includes(ini)
+    ? '<p>小 <span class="py">ü</span> 见了 <span class="py">j q x y</span>，去掉两点还读 <span class="py">ü</span>。</p>' : '';
+  return {kind:"py", key:"bl"+hz, answer:ans, options:shuffle(opts), optHtml:pyBtn2, rec:ini+" + "+shown,
+    html:'<div class="pyq"><span class="py">'+ini+'</span><span class="plus">+</span><span class="py">'+shown+'</span><span class="plus">=</span><span class="blank">?</span><span class="ask">拼一拼，合起来读什么？</span></div>',
+    speak:"拼一拼，声母和韵母合起来读什么？",
+    hint:'<p class="htitle">拼读口诀</p><p>前音轻短后音重，两音相连猛一碰。</p><p><span class="py">'+ini+'</span> — <span class="py">'+shown+'</span> → ?</p>'+dot+TONE_RHYME};
+}
+// 进阶：给音节选汉字（不给图，给了就不用拼了）。同音字（木/目、鱼/雨）不拿来当干扰项
+function pyBlendHz(e){
+  if(!e || !canBlend(e)) e = pick(blendPool());
+  const [hz, b, t, pic] = e, [ini, fin] = pySplit(b);
+  const ans = pyMark(b, t), shown = pyMark(finV(ini,fin), t);
+  const others = shuffle(PY.filter(x=>x[0]!==hz && x[1]!==b));
+  const near = others.filter(x=>{ const [i2,f2] = pySplit(x[1]); return i2===ini || finV(i2,f2)===finV(ini,fin); });
+  const opts = [hz], seen = new Set([hz]);
+  for(const x of near.concat(others)){ if(opts.length>=4) break; if(!seen.has(x[0])){ seen.add(x[0]); opts.push(x[0]); } }
+  return {kind:"py", key:"bh"+hz, answer:hz, options:shuffle(opts), optHtml:o=>'<span class="hz">'+o+'</span>',
+    html:'<div class="pyq"><span class="py">'+ans+'</span><span class="ask">这个音节是哪个字？</span></div>',
+    speak:"读一读这个音节，选出对应的字。", rec:ans+" 是哪个字",
+    hint:'<p class="htitle">分开读一读</p><p><span class="py">'+ini+'</span> — <span class="py">'+shown+'</span>，合起来是 <span class="py">'+ans+'</span>。</p><p>想一想，学过的字里哪个读这个音？</p>'};
+}
+// 拼读关专用的出题器：整关都是拼读（约 35% 是进阶的"看音节选汉字"）
+const blendQ = () => Math.random()<.35 ? pyBlendHz() : pyBlend();
 function pyQ(){
-  const type = pick(["read","read","pick","spell","tone","init","init","fin","fin","cat"]);
+  const type = pick(["read","read","pick","blend","blend","tone","init","init","fin","fin","cat"]);
+  if(type==="blend") return blendQ();
   if(type==="init") return pyInit(pick(PY.filter(canInit)));
   if(type==="fin") return pyFin(pick(PY.filter(canFin)));
   if(type==="cat") return pyCat();
   return pyBasic(type);
+}
+
+/* ================= 连连看题库（纯数据，界面由 UI 同学做） =================
+   按人教版一年级上册的顺序分组：识字 → 拼音 → 课文 → 识字（二）。
+   每条 = [汉字, 带调拼音, [易混拼音…]]，易混拼音是给这个字做干扰项用的
+   （不在这个组里出现的音，免得孩子连对了却被判错）。
+   同一组里没有同音字：拼音两两不同，连调也错开（木/目、鱼/雨 不同组）。
+   接现成的 makeLinkBoard 时这样转：makeLinkBoard(LLK_SETS[i].p.map(([hz,py]) => ({hz, py}))) */
+
+const LLK_SETS = [
+  {n:"识字1 天地人", p:[
+    ["天","tiān",["tián","tān"]], ["地","dì",["dí","tì"]], ["人","rén",["rèn","réng"]],
+    ["你","nǐ",["nì","lǐ"]], ["我","wǒ",["wò","wō"]], ["他","tā",["tà","dā"]]
+  ]},
+  {n:"识字2 金木水火土", p:[
+    ["一","yī",["yí","yǐ"]], ["二","èr",["ér","ěr"]], ["三","sān",["sǎn","shān"]],
+    ["四","sì",["sī","shì"]], ["五","wǔ",["wù","wū"]], ["上","shàng",["shǎng","sàng"]], ["下","xià",["xiá","shà"]]
+  ]},
+  {n:"识字3 口耳目", p:[
+    ["口","kǒu",["kòu","hǒu"]], ["耳","ěr",["ér","èr"]], ["目","mù",["mǔ","nù"]],
+    ["手","shǒu",["shòu","sǒu"]], ["足","zú",["zǔ","zhú"]], ["站","zhàn",["zhǎn","zàn"]], ["坐","zuò",["zuǒ","cuò"]]
+  ]},
+  {n:"识字4 日月水火", p:[
+    ["日","rì",["rǐ","lì"]], ["月","yuè",["yuě","yè"]], ["水","shuǐ",["shuì","suǐ"]],
+    ["火","huǒ",["huò","fǒu"]], ["山","shān",["shǎn","sān"]], ["石","shí",["shǐ","sì"]],
+    ["田","tián",["tiān","diàn"]], ["禾","hé",["hè","hú"]]
+  ]},
+  {n:"识字5 对韵歌", p:[
+    ["云","yún",["yùn","yǔn"]], ["雨","yǔ",["yù","yú"]], ["雪","xuě",["xué","xiě"]],
+    ["风","fēng",["féng","fēn"]], ["花","huā",["huà","hā"]], ["树","shù",["shǔ","sù"]],
+    ["鸟","niǎo",["niào","liǎo"]], ["虫","chóng",["chòng","cóng"]]
+  ]},
+  {n:"拼音单元 声母", p:[
+    ["爸","bà",["bā","pà"]], ["妈","mā",["mǎ","nā"]], ["打","dǎ",["dà","tǎ"]], ["土","tǔ",["tù","dǔ"]],
+    ["画","huà",["huá","guà"]], ["鸡","jī",["jì","xī"]], ["棋","qí",["qǐ","xí"]], ["字","zì",["zǐ","zhì"]]
+  ]},
+  {n:"课文 秋天 · 小小的船", p:[
+    ["秋","qiū",["qiú","jiū"]], ["气","qì",["qī","xì"]], ["叶","yè",["yé","yuè"]], ["片","piàn",["piān","biàn"]],
+    ["飞","fēi",["féi","huī"]], ["船","chuán",["chuǎn","cuán"]], ["星","xīng",["xíng","xīn"]],
+    ["头","tóu",["tòu","dòu"]], ["尖","jiān",["jiǎn","qiān"]], ["看","kàn",["kǎn","gàn"]]
+  ]},
+  {n:"识字6 画", p:[
+    ["远","yuǎn",["yuán","yuàn"]], ["近","jìn",["jīn","qìn"]], ["有","yǒu",["yòu","yōu"]],
+    ["无","wú",["wǔ","wù"]], ["去","qù",["qū","kù"]], ["来","lái",["lài","nái"]]
+  ]},
+  {n:"识字7 大小多少", p:[
+    ["大","dà",["dǎ","tà"]], ["小","xiǎo",["xiào","qiǎo"]], ["少","shǎo",["shào","sǎo"]],
+    ["牛","niú",["niǔ","liú"]], ["羊","yáng",["yǎng","yán"]], ["猫","māo",["máo","nāo"]],
+    ["苹","píng",["pín","bīng"]], ["果","guǒ",["guò","huǒ"]], ["桃","táo",["tāo","dào"]]
+  ]},
+  {n:"识字8 小书包 · 日月明", p:[
+    ["书","shū",["shù","sū"]], ["包","bāo",["bào","pāo"]], ["笔","bǐ",["bí","pǐ"]], ["刀","dāo",["dào","tāo"]],
+    ["尺","chǐ",["chī","cǐ"]], ["明","míng",["mín","mìng"]], ["林","lín",["lǐn","nín"]], ["森","sēn",["sèn","shēn"]],
+    ["从","cóng",["còng","chóng"]], ["众","zhòng",["zhōng","zòng"]]
+  ]},
+  {n:"课文 比尾巴 · 四季", p:[
+    ["尾","wěi",["wèi","wéi"]], ["巴","bā",["bǎ","pā"]], ["长","cháng",["chǎng","cáng"]], ["短","duǎn",["duàn","tuǎn"]],
+    ["伞","sǎn",["sàn","shǎn"]], ["猴","hóu",["hòu","gǒu"]], ["松","sōng",["sòng","cōng"]], ["鼠","shǔ",["shù","zhǔ"]],
+    ["扁","biǎn",["biān","piān"]], ["最","zuì",["zuǐ","zhuì"]], ["春","chūn",["chún","cūn"]],
+    ["夏","xià",["xiā","shà"]], ["冬","dōng",["dǒng","tōng"]]
+  ]},
+  {n:"课文 雪地里的小画家 · 乌鸦喝水", p:[
+    ["竹","zhú",["zhù","zú"]], ["梅","méi",["měi","mái"]], ["用","yòng",["yōng","yǒng"]], ["几","jǐ",["jī","qǐ"]],
+    ["步","bù",["bǔ","pù"]], ["加","jiā",["jiá","qiā"]], ["洞","dòng",["dōng","tòng"]],
+    ["乌","wū",["wú","wù"]], ["鸦","yā",["yà","yǎ"]]
+  ]}
+];
+// 连连看取字：世界越靠后，越用课本靠后的分组（识字 → 拼音 → 课文），一个组不够就接着用下一组（组用完绕回来）。
+// 同一个字在 PY 里有图就把 emoji 带上，没有就不带。
+const PY_EMOJI = {}; PY.forEach(e => { PY_EMOJI[e[0]] = e[3]; });
+function llkPairs(w, n){
+  const need = Math.max(2, n||4), out = [], seen = new Set();
+  const start = Math.floor((w||0) * LLK_SETS.length / Math.max(1, WORLDS_V2.length));
+  for(let i=0; i<LLK_SETS.length && out.length<need; i++){
+    for(const [hz, py] of shuffle(LLK_SETS[(start+i) % LLK_SETS.length].p.slice())){
+      if(seen.has(hz)) continue;
+      seen.add(hz);
+      out.push({hz, py, e: PY_EMOJI[hz] || null});
+      if(out.length>=need) break;
+    }
+  }
+  return out;
 }
 
 /* ================= word problems (应用题 · 思维题) =================
@@ -1234,13 +1368,13 @@ const WP_MORE = WP_EASY.concat(["queue","queuePos","between","compareTrap","gaps
 const WP_RATE = 0.12;
 const planFn = it => () => G[it.g](...(it.args||[]));
 /* 一关的全部信息。怪兽血量 = 10 + floor(全局关卡序号 / 10)，Boss 再 +5（星级档位另加，见 ui.js startLevel）。
-   blend（拼读）关暂时用 pyQ 出拼音题。TODO: 有了专门的拼读生成器（b + ā → bā）后换掉 */
+   blend（拼读）关整关都出拼读题 blendQ（连闯里仍用 L.math 出计算题，见 ui.js startLevel）。 */
 function levelDef(w,l){
   const W2 = WORLDS_V2[w], lv = W2.levels[l], plan = LEVEL_PLAN[w].levels[l];
   const mode = lv.boss ? "battle" : (LEVEL_MODES[w].modes[l] || "battle");
   const math = mix(...plan.mix.map(planFn));
   let g = math;
-  if(mode==="blend") g = pyQ;
+  if(mode==="blend") g = blendQ;
   else if(mode==="battle" && w>=2){ const pool = (w>=4 ? WP_MORE : WP_EASY).filter(k=>WP[k]); g = () => Math.random()<WP_RATE ? WP[pick(pool)]() : math(); }
   const i = gIndex(w,l);
   return {w, l, m:lv.emoji, n:lv.name, boss:!!lv.boss, mode, g, math, hp:10 + Math.floor(i/10) + (lv.boss?5:0)};

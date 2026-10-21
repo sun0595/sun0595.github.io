@@ -224,6 +224,26 @@ async function playAll(view) {
   await playMatch('25b-match-2layers-open');
   // 连连看：点字再点拼音，错一次挨打，连完就赢
   await p.evaluate(() => __t.startLevel(0, 7)); await p.waitForTimeout(1800); await shot('26-link');
+  // 字必须来自连连看题库 LLK_SETS，而且世界越靠后越用课本靠后的分组
+  const lk = await p.evaluate(() => {
+    const gi = {}; __t.LLK_SETS.forEach((g, i) => g.p.forEach(([c]) => gi[c] = i));
+    const onBoard = [...__t.B.board.left, ...__t.B.board.right].map(x => x.hz);
+    const per = [0, 3, 7].map(w => __t.llkPairs(w, 4).map(x => x.hz));
+    const six = __t.llkPairs(0, 6);                 // 第 1 组整组（识字1 天地人，「人」在 PY 里有图）
+    const inPy = new Set(__t.PY.map(e => e[0]));
+    return {
+      outside: onBoard.filter(c => !(c in gi)),
+      badPool: per.flat().filter(c => !(c in gi)),
+      firstGroup: per.map(hz => Math.min(...hz.map(c => gi[c]))),
+      missingEmoji: six.filter(x => inPy.has(x.hz) && !x.e).map(x => x.hz),
+      emojiN: six.filter(x => x.e).length
+    };
+  });
+  if (lk.outside.length) problems.push(`[${view.name}] 连连看 used characters outside LLK_SETS: ${lk.outside}`);
+  if (lk.badPool.length) problems.push(`[${view.name}] llkPairs gave characters outside LLK_SETS: ${lk.badPool}`);
+  if (!(lk.firstGroup[0] < lk.firstGroup[2])) problems.push(`[${view.name}] 连连看 should move to later 课本 groups in later worlds: ${lk.firstGroup}`);
+  if (lk.missingEmoji.length) problems.push(`[${view.name}] 连连看 dropped the emoji of characters that have one in PY: ${lk.missingEmoji}`);
+  if (!lk.emojiN) problems.push(`[${view.name}] 连连看 should carry the emoji of characters that are in PY`);
   await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 0; });
   const lw = await p.evaluate(() => { const bd = __t.B.board, l = bd.left[0], r = bd.right.find(x => x.hz !== l.hz); return { l: l.id, r: r.id, h: __t.B.hearts, d: __t.B.dmg }; });
   await tap(`.lnk[data-id="${lw.l}"]`); await tap(`.lnk[data-id="${lw.r}"]`); await p.waitForTimeout(950);
@@ -238,9 +258,15 @@ async function playAll(view) {
   }
   await p.waitForSelector('#chest', { timeout: 4000 }).catch(() => problems.push(`[${view.name}] finishing 连连看 should win the level`));
   await p.evaluate(() => { document.getElementById('modal').hidden = true; __t.toMap(); });
-  // 拼读（暂用拼音题）
+  // 拼读关：整关都出拼读题（b + ā → bā 或看音节选汉字），不再是普通拼音题
   await p.evaluate(() => __t.startLevel(1, 7)); await p.waitForTimeout(1800); await shot('27-blend');
-  if (await p.evaluate(() => __t.B.mode !== 'blend' || __t.B.q.kind !== 'py')) problems.push(`[${view.name}] 拼读 level should ask a pinyin question`);
+  const bl = await p.evaluate(() => {
+    const B = __t.B, keys = []; for (let i = 0; i < 40; i++) keys.push(String(B.L.g().key).slice(0, 2));
+    return { mode: B.mode, kind: B.q.kind, kinds: [...new Set(keys)] };
+  });
+  if (bl.mode !== 'blend' || bl.kind !== 'py') problems.push(`[${view.name}] 拼读 level should ask a pinyin question`);
+  if (bl.kinds.some(k => k !== 'bl' && k !== 'bh')) problems.push(`[${view.name}] 拼读 level asked something else than 拼读: ${JSON.stringify(bl.kinds)}`);
+  if (!(bl.kinds.includes('bl') && bl.kinds.includes('bh'))) problems.push(`[${view.name}] 拼读 level should mix 拼一拼 and 看音节选汉字: ${JSON.stringify(bl.kinds)}`);
   await p.evaluate(() => __t.toMap());
   // 回归：消除点错后 600ms 内就离开、进别的关，不能报错（错误会被 pageerror 记下）；🔊 能读出消除 / 连连看的提示语
   for (const [w, l] of [[0, 3], [0, 7]]) {
