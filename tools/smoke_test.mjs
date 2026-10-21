@@ -242,6 +242,25 @@ async function playAll(view) {
   await p.evaluate(() => __t.startLevel(1, 7)); await p.waitForTimeout(1800); await shot('27-blend');
   if (await p.evaluate(() => __t.B.mode !== 'blend' || __t.B.q.kind !== 'py')) problems.push(`[${view.name}] 拼读 level should ask a pinyin question`);
   await p.evaluate(() => __t.toMap());
+  // 回归：消除点错后 600ms 内就离开、进别的关，不能报错（错误会被 pageerror 记下）；🔊 能读出消除 / 连连看的提示语
+  for (const [w, l] of [[0, 3], [0, 7]]) {
+    await p.evaluate(([w, l]) => __t.startLevel(w, l), [w, l]); await p.waitForTimeout(1800);
+    const sp = await p.evaluate(() => __t.B.q && __t.B.q.speak);
+    if (typeof sp !== 'string' || !sp || sp.includes('undefined')) problems.push(`[${view.name}] board level ${w}-${l} has no instruction for 🔊: ${sp}`);
+  }
+  await p.evaluate(() => __t.startLevel(0, 3)); await p.waitForTimeout(1800);
+  await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 9; });
+  const qw = await p.evaluate(() => { const cs = (__t.B.board.cards || __t.B.board).filter(c => !c.coveredBy.length); const a = cs[0], b = cs.find(c => c.value !== a.value); return [a.id, b.id]; });
+  await tap(`.mcard[data-id="${qw[0]}"]`); await tap(`.mcard[data-id="${qw[1]}"]`);
+  await p.evaluate(() => { __t.toMap(); __t.startLevel(0, 1); }); await p.waitForTimeout(1000);
+  await p.evaluate(() => __t.toMap());
+  // 回归：世界连闯第 10 关落在拼读关时，也出本关的计算题，不出拼音题
+  const rq = await p.evaluate(() => {
+    __t.startLevel(2, 9, { mode: 'ten', seq: [[2, 4], [2, 9], [2, 14]], i: 1, hearts: 5 });
+    const B = __t.B, kinds = []; for (let i = 0; i < 30; i++) kinds.push(B.L.g().kind);
+    const r = { plan: __t.LEVEL_MODES[2].modes[9], mode: B.mode, kinds: [...new Set(kinds)] }; __t.toMap(); return r;
+  });
+  if (rq.plan !== 'blend' || rq.mode !== 'battle' || rq.kinds.includes('py')) problems.push(`[${view.name}] a run battle on a 拼读 level should ask math: ${JSON.stringify(rq)}`);
   // Boss 连闯入口
   await p.evaluate(() => __t.openRunMenu(0)); await p.waitForTimeout(300); await shot('28-run-menu');
   await tap('#pgBack');
