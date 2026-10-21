@@ -72,8 +72,11 @@ function renderMap(dir){
     + '<button class="ibtn" id="albumBtn" aria-label="贴纸册">'+img("📒")+(craftable?'<span class="badge pulse">!</span>':'')+'</button>'
     + '<button class="ibtn" id="soundBtn" aria-label="声音">'+img(S.sound||S.voice?"🔊":"🔇")+'</button>'
     + '<button class="ibtn" id="parentBtn" aria-label="家长设置">'+img("⚙️")+'</button></div>';
-  html += next ? '<div class="nexthero">'+img(next.e)+'再拿 <span class="num">'+(next.need-ts)+'</span> '+img("⭐")+' 解锁「'+next.n+'」</div>'
-               : '<div class="nexthero">'+img("🏆")+'所有勇士都解锁了！</div>';
+  const dn = daily().n;   // 当天进度：前 15 次通关正常，之后进入狂暴
+  const dayTag = dn<15 ? '<span class="pill tag" id="dayTag">今天 <span class="num">'+dn+'/15</span></span>'
+                       : '<span class="pill tag hot" id="dayTag">狂暴中</span>';
+  html += next ? '<div class="nexthero">'+dayTag+img(next.e)+'再拿 <span class="num">'+(next.need-ts)+'</span> '+img("⭐")+' 解锁「'+next.n+'」</div>'
+               : '<div class="nexthero">'+dayTag+img("🏆")+'所有勇士都解锁了！</div>';
   html += '<div class="wview" id="wview"><div class="wcard" id="wcard" style="--wdir:'+(dir||0)*40+'px">'
     + decoHTML(w.id)
     + '<svg class="wpath" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="'+PATH_D+'" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="7" stroke-linecap="round" stroke-dasharray="0.1 16" vector-effect="non-scaling-stroke"/></svg>'
@@ -292,16 +295,18 @@ $("speakBtn").innerHTML = img("🔊");
 
 function startLevel(w,l,run){
   const Wd = WORLDS[w], L = Wd.levels[l];
-  const diff = run ? 0 : diffOf(w,l);
+  const diff = run ? 0 : diffOf(w,l), rage = rageLevel();
   const maxH = run ? 5 : (L.boss ? 5 : 3);
   const h = hero();
-  B = {w,l,W:Wd,L,h,diff,run:run||null,hp:L.hp+diff,maxHp:L.hp+diff,maxH,hearts:run?run.hearts:maxH,combo:0,q:null,busy:true,charge:0,over:false,recent:[],enraged:false,hintOpen:false,step:0,lastTick:0,wrongThisQ:false,
+  B = {w,l,W:Wd,L,h,diff,run:run||null,hp:L.hp+2*diff,maxHp:L.hp+2*diff,rage,dmg:RAGE[rage].dmg,maxH,hearts:run?run.hearts:maxH,combo:0,q:null,busy:true,charge:0,over:false,recent:[],enraged:false,hintOpen:false,step:0,lastTick:0,wrongThisQ:false,
        shield:h.shield?1:0, lucky:h.lucky?1:0, frozenUntil:0};
   const cur = B, bt = $("battle");
   $("arena").style.setProperty("--wbg", sceneURL(Wd.id));
   $("arena").querySelectorAll(".deco").forEach(d=>d.remove());
   $("arena").insertAdjacentHTML("afterbegin", decoHTML(Wd.id, .7));
   bt.classList.toggle("boss", !!L.boss); bt.classList.remove("enraged","hinting");
+  bt.classList.toggle("rage", rage>0);
+  $("rageTag").hidden = !rage; $("rageTag").innerHTML = '狂暴 <span class="num">×'+B.dmg+'</span>';
   $("map").hidden = true; bt.hidden = false;
   $("bTitle").innerHTML = emo(run ? (RUNS[run.mode].name+" "+(run.i+1)+"/"+run.seq.length)
     : Wd.name+" · "+(L.boss?"BOSS":"第"+(l+1)+"关")+(diff?" · "+TIERS[diff].n+"挑战":""));
@@ -324,8 +329,8 @@ function startLevel(w,l,run){
     say("警告！"+L.n+"来了！");
     delay = 2400;
   } else {
-    banner('<div class="ribbon'+(diff?" blue":"")+'">'+(diff?TIERS[diff].n+"挑战！":"")+L.n+' 出现了！</div>', 1400);
-    say(L.n+"出现了！");
+    banner('<div class="ribbon'+(diff?" blue":"")+'">'+(rage?"🔥狂暴":"")+(diff?TIERS[diff].n+"挑战！":"")+L.n+' 出现了！</div>', 1400);
+    say((rage?"狂暴模式！":"")+L.n+"出现了！");
     delay = 1400;
   }
   setTimeout(()=>{ if(B===cur && !B.over) nextQuestion(); }, delay);
@@ -343,7 +348,7 @@ function toast(e, text){
 }
 function drawHearts(broke, gained){
   let h = "";
-  for(let i=0;i<B.maxH;i++) h += '<span class="'+(i<B.hearts ? (gained && i===B.hearts-1 ? "gain" : "") : (broke && i===B.hearts ? "break" : "lost"))+'">'+img("❤️")+'</span>';
+  for(let i=0;i<B.maxH;i++) h += '<span class="'+(i<B.hearts ? (gained && i===B.hearts-1 ? "gain" : "") : (broke && i<B.hearts+(+broke) ? "break" : "lost"))+'">'+img("❤️")+'</span>';
   $("hearts").innerHTML = h;
 }
 function drawHP(){
@@ -351,11 +356,10 @@ function drawHP(){
   $("hpText").textContent = B.hp+" / "+B.maxHp;
 }
 function qTime(){
-  // word problems keep their long reading time; everything else is 25% shorter than the level's base (20s -> 15s)
-  let t = B.L.t >= 50 ? B.L.t : B.L.t*0.75;
-  if(B.q && B.q.kind==="word") t = Math.max(t,55);
-  if(B.enraged) t *= 0.75;
-  return t * (1 - 0.1*B.diff) * (B.h.slow||1);
+  // fixed 15 s per question (word problems 40 s), shortened by the day's rage level; 时间减速 heroes still slow it down
+  const t = RAGE[B.rage].t;
+  const base = B.q && B.q.kind==="word" ? Math.max(WORD_MIN, Math.round(WORD_TIME*t/Q_TIME)) : t;
+  return base * (B.h.slow||1);
 }
 const thinking = () => B && B.hintOpen && B.q && B.q.kind==="word";
 const frozen = () => B && B.frozenUntil > performance.now();
@@ -568,7 +572,7 @@ function heroAttack(){
       B.enraged = true;
       $("battle").classList.add("enraged");
       sfx.roar(); restart($("battle"),"quake");
-      banner('<div class="ribbon">'+B.L.n+' 暴怒了！攻击更快了！</div>', 1500);
+      banner('<div class="ribbon">'+B.L.n+' 暴怒了！小心！</div>', 1500);
       say(B.L.n+"暴怒了！");
       setTimeout(()=>{ if(B===cur && !B.over) nextQuestion(); }, 1500);
       return;
@@ -599,8 +603,9 @@ function monsterAttack(reason){
     restart($("battle"),"quake");
     play($("heroSprite"),"hurt");
     try{ navigator.vibrate && navigator.vibrate([120,60,120]); }catch(e){}
-    popAt("me", "-1");
-    B.hearts--; drawHearts(true); renderItems();
+    const dmg = Math.min(B.hearts, B.dmg);
+    popAt("me", "-"+B.dmg);
+    B.hearts -= dmg; drawHearts(dmg); renderItems();
     drawCharge();
     if(B.hearts<=0) return lose();
     setTimeout(()=>{ if(B===cur && !B.over) B.busy = false; }, 450);
@@ -625,6 +630,7 @@ function win(){
   if(info.boss){ info.firstMedal = !S.medals[B.W.id]; S.medals[B.W.id] = true; info.final = isFinal(B.w,B.l); }
   if(B.run){ B.run.hearts = Math.min(5, B.hearts+1); B.run.i++; info.runDone = B.run.i>=B.run.seq.length; }
   if(info.newWorld){ curWorld = B.w+1; S.world = curWorld; }
+  daily().n++;   // every win counts, replays and 连闯 battles included
   save();
   $("monBox").classList.remove("angry","frozen"); $("iceBlock").hidden = true; $("iceChip").hidden = true; $("frost").classList.remove("on"); $("items").innerHTML = "";
   if(info.boss) return bossFinale(cur, info);

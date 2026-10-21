@@ -73,6 +73,9 @@ img{-webkit-user-drag:none;pointer-events:none}
 .ribbon.blue::before,.ribbon.blue::after{background:#1f5fc0}
 .pill{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 14px 0 6px;border-radius:20px;border:3px solid var(--ink);background:rgba(42,33,80,.72);color:#fff;font:800 20px/1 var(--f-num)}
 .pill .ei{font-size:30px}
+.pill.tag{flex:none;height:28px;padding:0 10px;gap:2px;font:400 15px/1 var(--f-ui);white-space:nowrap}
+.pill.tag .num{font:800 15px/1 var(--f-num)}
+.pill.hot{background:linear-gradient(#ff6b6b,#d7263d);color:#fff}
 .pill.beta{position:absolute;right:8px;bottom:42px;z-index:3;height:30px;padding:0 10px;font:400 15px/1 var(--f-ui);color:var(--gold);pointer-events:none}
 .bar{position:relative;height:20px;border:3px solid var(--ink);border-radius:999px;background:#3b2f6b;overflow:hidden}
 .bar>i{position:absolute;left:0;top:0;bottom:0;width:100%;border-radius:999px;background:linear-gradient(#ff9a9a,#ff4d5e);box-shadow:inset 0 3px 0 rgba(255,255,255,.45);transition:width .35s}
@@ -249,6 +252,8 @@ img{-webkit-user-drag:none;pointer-events:none}
 @keyframes aura{from{opacity:.45;transform:translateX(-50%) scale(.88)}to{opacity:1;transform:translateX(-50%) scale(1.1)}}
 #battle.boss .mon .bar{max-width:210px;height:24px}
 #battle.boss .mon .tag{background:#5a0d14}
+/* 狂暴 (day's rage level >= 1): red glow around the monster */
+#battle.rage .mon .sprite{filter:drop-shadow(0 0 8px rgba(255,40,40,.95)) drop-shadow(0 0 20px rgba(255,0,0,.6))}
 #battle.enraged .mon .sprite:not(.hit):not(.lunge):not(.dead){animation:rage .22s infinite}
 #battle.enraged .mon .sprite .ei{filter:sepia(1) saturate(6) hue-rotate(-35deg) drop-shadow(0 0 18px rgba(255,0,0,1))}
 .sprite.dying{animation:dying .1s infinite!important}
