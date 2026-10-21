@@ -275,6 +275,7 @@ function openPage(o){
 }
 const setBody = html => { $("pbody").innerHTML = emo(html); $("pbody").scrollTop = 0; };
 function closePage(){
+  pageSeq++;   // timers of the closed page (animateReward …) see the change and stop
   $("modal").hidden = true; $("modal").innerHTML = "";
   if(pageOnClose){ const f = pageOnClose; pageOnClose = null; f(); }
 }
@@ -348,6 +349,11 @@ function gearLvHTML(g){
   const lv = g.lv||1, max = lv>=GEAR_LV_MAX, need = gearExpNeed(lv);
   return '<div class="glv"><b class="num">Lv'+lv+'</b><span class="gxbar"><i style="width:'+(max?100:Math.round(100*(g.exp||0)/need))+'%"></i></span><small class="num">'+(max?"满级":(g.exp||0)+"/"+need)+'</small></div>';
 }
+// 分解 / 合成 / 穿上 / 卸下 redraw in place: a quick second tap would land on whatever button replaced the first one.
+// tapOnce() ignores any guarded tap within 400ms of the last one.
+let lastTap = 0;
+const tapOnce = f => function(...a){ const t = Date.now(); if(t - lastTap < 400) return; lastTap = t; return f.apply(this, a); };
+const pagerHTML = (pg, pages) => pages>1 ? '<div class="gpager"><button class="ibtn round" id="gPrev"'+(pg?'':' disabled')+' aria-label="上一页">'+chev()+'</button><b class="num">'+(pg+1)+' / '+pages+'</b><button class="ibtn round" id="gNext"'+(pg<pages-1?'':' disabled')+' aria-label="下一页">'+chev(true)+'</button></div>' : '';
 const wearBtn = (g, id) => isWorn(g) ? '<button class="btn white gwear" id="'+id+'" disabled>已穿戴</button>' : '<button class="btn green gwear" id="'+id+'">'+img("👕")+' 穿上</button>';
 function statsHTML(){
   const gs = gearStats(S.equipped), on = Object.keys(AFX_NUM).filter(k=>gs[k]>0);
@@ -358,20 +364,21 @@ function statsHTML(){
    （💎×1，品质升一档）；「合成」= 3 件同品质未穿的 → 1 件高一档；旧宝箱一次「一键全开」。 */
 function openBag(slot){
   slot = slot || SLOT_KEYS.find(k=>S.equipped[k] || S.bag.some(g=>g && g.slot===k)) || "weapon";   // open on a slot that has something
-  let sel = null, pg = 0, note = "";
+  let sel = null, pg = 0, note = "", gone = null;   // gone: exp from the piece just salvaged → a card with no buttons in its place
   const PER = 8;
   const render = first => {
     const list = S.bag.filter(g=>g && g.slot===slot), worn = S.equipped[slot];
     const all = (worn ? [worn] : []).concat(list);
     const pages = Math.max(1, Math.ceil(all.length/PER)); pg = Math.min(pg, pages-1);
-    const cur = all.find(g=>g.id===sel) || all[0] || null;
+    const cur = gone!==null ? null : all.find(g=>g.id===sel) || all[0] || null;
     const synthOK = Q_ORDER.some(q=>canSynth(q));
     let body = '<div class="bagtop"><span class="bagav">'+avatarHTML(S.equipped)+'</span><div class="bagside">'+statsHTML()
       + '<div class="bagbtns"><span class="pill tag stones" id="stoneN">'+img("💎")+'<span class="num">×'+(S.stones||0)+'</span></span>'
       + '<button class="btn white bagsm" id="synthBtn">'+img("✨")+'合成'+(synthOK?'<span class="badge pulse">!</span>':'')+'</button>'
       + (S.chests>0 ? '<button class="btn bagsm" id="chestAll">'+img("🎁")+'一键全开<b class="num" id="chestN">×'+S.chests+'</b></button>' : '')+'</div></div></div>'
       + '<div class="tabs">'+SLOT_KEYS.map(k=>'<button class="tab'+(k===slot?" on":"")+'" data-s="'+k+'">'+img(GEAR_SLOTS[k].e)+GEAR_SLOTS[k].name+'</button>').join("")+'</div>';
-    if(cur){
+    if(gone!==null) body += '<div class="gnone ggone" id="gGone">'+img("♻️")+'<span>已分解成 <b class="num">'+gone+'</b> 点经验</span></div>';
+    else if(cur){
       const nq = nextQuality(cur.quality), maxed = (cur.lv||1) >= GEAR_LV_MAX;
       let btns = isWorn(cur) ? '<button class="btn white gwear" id="gOff">卸下</button>'
         : '<button class="btn green gwear" id="gOn">'+img("👕")+'穿上</button><button class="btn white gwear" id="gSalvage">'+img("♻️")+'分解</button>';
@@ -380,18 +387,18 @@ function openBag(slot){
         + (maxed && nq && !canAscend(cur) ? '<small class="ghint">满级啦！有进阶石 '+img("💎")+' 就能进阶成'+GEAR_QUALITY_MAP[nq].name+'色</small>' : '')
         + (note ? '<small class="ghint" id="bagNote">'+note+'</small>' : '')});
     } else body += '<div class="gnone">'+img(GEAR_SLOTS[slot].e)+'<span>还没有'+GEAR_SLOTS[slot].name+'<br>打怪兽、升级都会得到！</span></div>';
-    note = "";
+    note = ""; gone = null;
     body += '<div class="ggrid">'+all.slice(pg*PER, pg*PER+PER).map(g=>gearTile(g, (cur && g.id===cur.id?"sel":"")+(isWorn(g)?" worn":""), 'data-id="'+g.id+'" data-lv="Lv'+(g.lv||1)+'"')).join("")+'</div>';
-    if(pages>1) body += '<div class="gpager"><button class="ibtn round" id="gPrev"'+(pg?'':' disabled')+' aria-label="上一页">'+chev()+'</button><b class="num">'+(pg+1)+' / '+pages+'</b><button class="ibtn round" id="gNext"'+(pg<pages-1?'':' disabled')+' aria-label="下一页">'+chev(true)+'</button></div>';
+    body += pagerHTML(pg, pages);
     if(first) openPage({title:"🎒 背包", back:true, onClose:renderMap, body}); else setBody(body);
     const P = $("pbody");
     P.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ sfx.click(); slot = b.dataset.s; sel = null; pg = 0; render(false); });
     P.querySelectorAll(".gt").forEach(b=>b.onclick=()=>{ sfx.click(); sel = b.dataset.id; render(false); });
     const on = (id,f) => { if($(id)) $(id).onclick = f; };
-    on("gOn", ()=>{ equipGear(cur.id); applySpareExp(); save(); sel = cur.id; sfx.right(); say("穿上了"+cur.name+"！"); render(false); });
-    on("gOff", ()=>{ unequipGear(slot); sel = cur.id; sfx.click(); render(false); });
-    on("gSalvage", ()=>{ const r = salvageGear(cur.id); if(!r.ok) return; sfx.click(); sel = null; note = img("♻️")+' 分解成 <b class="num">'+r.exp+'</b> 点装备经验'; say("分解成"+r.exp+"点装备经验"); render(false); });
-    on("gAscend", ()=>{ const r = ascendGear(cur.id); if(!r.ok) return; sfx.chest(); confetti(120); sel = cur.id; note = '进阶成功！变成 <b style="color:'+qCol(r.gear)+'">'+GEAR_QUALITY_MAP[r.gear.quality].name+'色</b> 啦'; say("进阶成功！"); render(false); });
+    on("gOn", tapOnce(()=>{ equipGear(cur.id); applySpareExp(); save(); sel = cur.id; sfx.right(); say("穿上了"+cur.name+"！"); render(false); }));
+    on("gOff", tapOnce(()=>{ unequipGear(slot); sel = cur.id; sfx.click(); render(false); }));
+    on("gSalvage", tapOnce(()=>{ const r = salvageGear(cur.id); if(!r.ok) return; sfx.click(); sel = null; gone = r.exp; say("分解成"+r.exp+"点装备经验"); render(false); }));
+    on("gAscend", tapOnce(()=>{ const r = ascendGear(cur.id); if(!r.ok) return; sfx.chest(); confetti(120); sel = cur.id; note = '进阶成功！变成 <b style="color:'+qCol(r.gear)+'">'+GEAR_QUALITY_MAP[r.gear.quality].name+'色</b> 啦'; say("进阶成功！"); render(false); }));
     on("gPrev", ()=>{ pg--; render(false); });
     on("gNext", ()=>{ pg++; render(false); });
     on("synthBtn", ()=>{ sfx.click(); openSynth(()=>render(false)); });
@@ -401,27 +408,31 @@ function openBag(slot){
 }
 // 合成：选一个品质，再点 3 件同品质、没穿的装备 → 1 件高一档、部位随机
 function openSynth(back){
-  let q = Q_ORDER.find(x=>canSynth(x)) || "white", picked = [];
+  let q = Q_ORDER.find(x=>canSynth(x)) || "white", picked = [], pg = 0;
+  const PER = 12;
   const render = () => {
     const pool = bagOf(q), ok = picked.length===3;
+    const pages = Math.max(1, Math.ceil(pool.length/PER)); pg = Math.min(pg, pages-1);
     let body = '<p class="gsay">'+img("✨")+' 选 3 件一样颜色的 → 换 1 件更好的</p>'
       + '<div class="qtabs">'+Q_ORDER.slice(0,5).map(k=>'<button class="qtab q-'+k+(k===q?" on":"")+'" data-q="'+k+'" style="--qc:'+GEAR_QUALITY_MAP[k].col+'">'+GEAR_QUALITY_MAP[k].name+'<b class="num">'+bagOf(k).length+'</b></button>').join("")+'</div>'
-      + (pool.length ? '<div class="ggrid">'+pool.slice(0,12).map(g=>gearTile(g, picked.includes(g.id)?"sel picked":"", 'data-id="'+g.id+'" data-lv="Lv'+(g.lv||1)+'"')).join("")+'</div>'
+      + (pool.length ? '<div class="ggrid">'+pool.slice(pg*PER, pg*PER+PER).map(g=>gearTile(g, picked.includes(g.id)?"sel picked":"", 'data-id="'+g.id+'" data-lv="Lv'+(g.lv||1)+'"')).join("")+'</div>'+pagerHTML(pg, pages)
                      : '<div class="gnone">'+img("🎒")+'<span>没有'+GEAR_QUALITY_MAP[q].name+'色的空闲装备</span></div>')
-      + '<div class="btnrow"><button class="btn white" id="sBack">回背包</button><button class="btn green" id="sGo"'+(ok?'':' disabled')+'>合成 <b class="num">'+picked.length+'/3</b> → '+GEAR_QUALITY_MAP[nextQuality(q)].name+'</button></div>';
+      + '<div class="btnrow synrow"><button class="btn white" id="sBack">回背包</button><button class="btn green" id="sGo"'+(ok?'':' disabled')+'>合成 <b class="num">'+picked.length+'/3</b> → '+GEAR_QUALITY_MAP[nextQuality(q)].name+'</button></div>';
     setBody(body);
     const P = $("pbody");
-    P.querySelectorAll(".qtab").forEach(b=>b.onclick=()=>{ sfx.click(); q = b.dataset.q; picked = []; render(); });
+    P.querySelectorAll(".qtab").forEach(b=>b.onclick=()=>{ sfx.click(); q = b.dataset.q; picked = []; pg = 0; render(); });
     P.querySelectorAll(".gt").forEach(b=>b.onclick=()=>{ const id = b.dataset.id; sfx.click(); picked = picked.includes(id) ? picked.filter(x=>x!==id) : picked.length<3 ? picked.concat(id) : picked; render(); });
+    if($("gPrev")) $("gPrev").onclick = ()=>{ pg--; render(); };
+    if($("gNext")) $("gNext").onclick = ()=>{ pg++; render(); };
     $("sBack").onclick = ()=>{ sfx.click(); back(); };
-    $("sGo").onclick = ()=>{
+    $("sGo").onclick = tapOnce(()=>{
       const r = synthGear(picked); if(!r.ok) return;
       sfx.chest(); confetti(140); say("合成成功！"+r.gear.name+"！");
       setBody('<p class="gsay">'+img("✨")+' 合成成功！</p>'+gearCard(r.gear, {preview:true, up:true, cls:"pop", lv:true})
         + '<div class="btnrow"><button class="btn white" id="sBack">回背包</button>'+wearBtn(r.gear, "sWear")+'</div>');
       $("sBack").onclick = ()=>{ sfx.click(); back(); };
-      if(!isWorn(r.gear)) $("sWear").onclick = ()=>{ equipGear(r.gear.id); applySpareExp(); save(); sfx.right(); back(); };
-    };
+      if(!isWorn(r.gear)) $("sWear").onclick = tapOnce(()=>{ equipGear(r.gear.id); applySpareExp(); save(); sfx.right(); back(); });
+    });
   };
   render();
 }
@@ -1031,14 +1042,15 @@ function animateReward(r){
   if(!fill) return;
   const end = () => { fill.style.transition = "none"; fill.style.width = "0%"; void fill.offsetWidth; fill.style.transition = ""; fill.style.width = pctOf(S.exp, expNeed(S.heroLv))+"%"; };
   setTimeout(()=>{
-    if(seq!==pageSeq) return;
+    if(seq!==pageSeq || !fill.isConnected) return;
     if(!res.levels.length){ fill.style.width = pctOf(S.exp, expNeed(S.heroLv))+"%"; return; }
     fill.style.width = "100%";
     setTimeout(()=>{
-      if(seq!==pageSeq) return;
-      $("rLv").textContent = S.heroLv;
+      const lv = $("rLv"), lu = $("lvUp");
+      if(seq!==pageSeq || !lv || !lu || !fill.isConnected) return;
+      lv.textContent = S.heroLv;
       const gear = res.rewards.flatMap(x=>x.items).map(x=>x.gear).filter(Boolean);
-      const lu = $("lvUp"); lu.innerHTML = emo('<b>⭐ 升级！Lv.'+S.heroLv+'</b>'+(gear.length?'<span>升级奖励：'+gear.map(g=>img(g.e)+g.name).join("、")+'</span>':'')); lu.hidden = false; restart(lu,"on");
+      lu.innerHTML = emo('<b>⭐ 升级！Lv.'+S.heroLv+'</b>'+(gear.length?'<span>升级奖励：'+gear.map(g=>img(g.e)+g.name).join("、")+'</span>':'')); lu.hidden = false; restart(lu,"on");
       sfx.win(); confetti(140); say("升级啦！"+(gear.length?"奖励"+gear[0].name+"！":""));
       end();
       setTimeout(()=>{ if(seq===pageSeq) lu.hidden = true; }, 2600);
@@ -1047,14 +1059,14 @@ function animateReward(r){
 }
 function wireDrops(){
   const P = $("pbody");
-  P.querySelectorAll(".dwear").forEach(b=>b.onclick=()=>{
+  P.querySelectorAll(".dwear").forEach(b=>b.onclick=tapOnce(()=>{
     const g = gearById(b.dataset.id); if(!g) return;
     equipGear(g.id); sfx.right(); say("穿上啦！");
     P.querySelectorAll(".dwear").forEach(x=>{ const gx = gearById(x.dataset.id); if(gx && isWorn(gx)){ x.className = "btn white dwear"; x.disabled = true; x.textContent = "已穿戴"; } else if(gx){ x.disabled = false; x.className = "btn green dwear"; x.innerHTML = emo("👕穿上"); } });
     P.querySelectorAll(".ddrop").forEach(x=>{ x.disabled = isWorn(gearById(x.dataset.id)); });
     P.querySelectorAll(".gup").forEach(u=>u.remove());
-  });
-  P.querySelectorAll(".ddrop").forEach(b=>b.onclick=()=>{
+  }));
+  P.querySelectorAll(".ddrop").forEach(b=>b.onclick=tapOnce(()=>{
     const g = gearById(b.dataset.id); if(!g || isWorn(g)) return;
     removeGear(g.id);
     const r = discardDrop(g);
@@ -1062,7 +1074,7 @@ function wireDrops(){
     const row = b.closest(".drow");
     row.classList.add("gone"); row.innerHTML = '<span class="dgone">'+emo("♻️ 已分解成 <b class=\"num\">"+r.exp+"</b> 点装备经验")+'</span>';
     say("分解成"+r.exp+"点装备经验");
-  });
+  }));
 }
 function showWin(info){
   const title = info.boss ? "👑 BOSS 击败！" : info.stars===3 ? "完美通关！" : "胜利！";
@@ -1267,7 +1279,7 @@ $("bBack").onclick = ()=>{
   sfx.click();
   if(!B || B.over) return toMap();
   openPage({title:"要逃跑吗？", ribbon:"blue", back:true, body:'<div class="fleeart">'+img("🏃")+'</div><p>真的要逃跑吗？<br>逃跑会扣除装备经验</p>'
-    + '<div class="btnrow"><button class="btn green" id="fStay">'+img("⚔️")+' 继续战斗</button><button class="btn red" id="fGo">逃跑</button></div>'});
+    + '<div class="btnrow"><button class="btn green" id="fStay">'+img("⚔️")+' 继续</button><button class="btn red" id="fGo">逃跑</button></div>'});
   $("fStay").onclick = ()=>{ sfx.click(); closePage(); };
   $("fGo").onclick = ()=>{
     if(!B || B.over) return toMap();
