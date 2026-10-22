@@ -11,6 +11,7 @@
 //   python3 tools/build.py --test && node tools/smoke_test.mjs
 // Needs: npm i playwright  (and `npx playwright install chromium`, or set CHROMIUM_PATH)
 import { chromium } from 'playwright';
+import { wpCheck } from './wp_check.mjs';
 import { mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -335,6 +336,43 @@ async function playAll(view) {
   // 第 3 个世界起 battle 关会混入应用题：这里直接换成一道应用题看讲解
   await p.evaluate(() => { __t.B.L = Object.assign({}, __t.B.L, { g: () => __t.WP.compareTrap() }); __t.nextQuestion(); }); await p.waitForTimeout(300);
   await tap('#hintBtn'); await p.waitForTimeout(300); await tap('#stNext').catch(() => {}); await tap('#stNext').catch(() => {}); await p.waitForTimeout(300); await shot('14-word-hint');
+  // 第二批应用题：每种题型拍题面和最后一步讲解（用进阶档，图最大）；再每种随机出 20 道，检查题面、选项和每一步讲解都放得下
+  if (view.name === '375') {
+    const wr = await wpCheck(p);
+    for (const x of wr.problems) problems.push(`[wp_check] ${x}`);
+    console.log('wp_check', Object.keys(wr.stats).length, 'types x 2000 samples', wr.problems.length ? 'BAD' : 'ok');
+  }
+  const WP2 = [['picCover', 'part'], ['picCover', 'total'], ['lineUp', 'back'], ['compareRows', 'less'], ['money', 'jiao'], ['money', 'mix'],
+    ['clock', 'read', true], ['clock', 'pick', true], ['sortCount', 'count'], ['sortCount', 'diff']];
+  for (const [k, v, half] of WP2) {
+    // 钟表固定拍半点：看得出时针在两个数中间
+    await p.evaluate(([k, v, half]) => { __t.closeHint(); __t.B.L = Object.assign({}, __t.B.L, { g: () => __t.WP[k](1, v, half) }); __t.nextQuestion(); }, [k, v, half]);
+    await p.waitForTimeout(300); await shot(`14w-${k}-${v}-q`);
+    await tap('#hintBtn'); await p.waitForTimeout(300);
+    while (await p.$('#stNext')) await tap('#stNext');
+    await p.waitForTimeout(250); await shot(`14w-${k}-${v}-hint`);
+  }
+  const fit = await p.evaluate(async () => {
+    const out = [], H = innerHeight, bt = document.getElementById('battle'), hint = document.getElementById('hint');
+    for (const [k, h] of __t.WP_NEW) for (let i = 0; i < 20; i++) {
+      __t.closeHint(); __t.B.L = Object.assign({}, __t.B.L, { g: () => __t.WP[k](h) }); __t.nextQuestion();
+      await new Promise(r => requestAnimationFrame(r));
+      const q = __t.B.q, tag = `${k}(${h}) ${q.key}`;
+      if (bt.scrollHeight > bt.clientHeight + 2) out.push(`${tag}: battle needs scrolling`);
+      const qt = document.getElementById('qText'); if (qt.scrollHeight > qt.clientHeight + 2) out.push(`${tag}: question text cut off (${qt.scrollHeight}>${qt.clientHeight})`);
+      if (document.getElementById('answers').getBoundingClientRect().bottom > H + 1) out.push(`${tag}: answers off screen`);
+      document.getElementById('hintBtn').click();
+      for (let s = 0; s < q.steps.length; s++) {
+        await new Promise(r => requestAnimationFrame(r));
+        if (hint.scrollHeight > hint.clientHeight + 2) out.push(`${tag}: step ${s + 1} needs scrolling (${hint.scrollHeight}>${hint.clientHeight})`);
+        for (const f of hint.querySelectorAll('.stept b')) if (/= \?$/.test(f.textContent.trim()) && f.getClientRects().length > 1) out.push(`${tag}: step ${s + 1} formula 「${f.textContent.trim()}」 breaks over two lines`);
+        const nx = document.getElementById('stNext'); if (nx) nx.click();
+      }
+    }
+    __t.closeHint();
+    return [...new Set(out)].slice(0, 12);
+  });
+  for (const x of fit) problems.push(`[${view.name}] word problem layout: ${x}`);
   await leaveBattle(); await p.evaluate(() => __t.showRunReward({ run: { mode: 'epic' }, firstMedal: true })); await p.waitForTimeout(400); await shot('15-run-reward');
   const runBag = await p.evaluate(() => __t.S.bag.length);
   await tap('.card[data-i="0"]'); await p.waitForTimeout(700); await shot('15b-run-card');
