@@ -31,7 +31,7 @@
 - 只操作 `sun0595/sun0595.github.io` 这一个仓库。这台电脑的 GitHub 授权也能访问家长的其他仓库，**一律不准读取、克隆或修改其他仓库**。
 - 不准推送到 `main` 或 `dev`，不准强制推送（`--force`），不准删除别人的分支，不准改仓库设置、Pages 设置、分支保护和权限。
 - 不准把令牌、密码、个人信息写进代码、提交信息或 PR。
-- 在家长的 Mac 上工作时：只能在 `~/Documents/Paseo Daily/小勇士开发/` 里自己的目录下读写；不准安装全局软件，不准改系统、网络、代理设置；删除只能用 `trash`，不准用 `rm`。
+- 在家长的 Mac 上工作时：只能在 `~/Documents/Paseo Daily/小勇士大冒险/小勇士开发/` 里自己的目录下读写；不准安装全局软件，不准改系统、网络、代理设置；删除只能用 `trash`，不准用 `rm`。
 
 ## 二、多个 AI 同时工作的规则
 
@@ -56,7 +56,7 @@ node tools/smoke_test.mjs             # 在 375×667 上走一遍所有画面，
 第一次构建会下载 Fluent Emoji 3D 图片包（npm）和三种字体（google/fonts 仓库）到 `.cache/`，之后可以离线构建。
 发布（只由主持人做）：试玩版构建到 `xiaoyongshi/beta/index.html`，正式版构建到 `xiaoyongshi/index.html`，通过 PR 合并进 `main` 后自动上线。
 
-在家长的 Mac（Paseo）上：构建工具装在 `~/Documents/Paseo Daily/小勇士开发/.venv`（先 `source ../.venv/bin/activate`），Playwright 装在 `小勇士开发/node_modules`；测试用本机 Chrome：
+在家长的 Mac（Paseo）上：构建工具装在 `~/Documents/Paseo Daily/小勇士大冒险/小勇士开发/.venv`（先 `source ../.venv/bin/activate`），Playwright 装在 `小勇士开发/node_modules`；测试用本机 Chrome：
 `CHROMIUM_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node tools/smoke_test.mjs`
 
 ## 四、代码地图
