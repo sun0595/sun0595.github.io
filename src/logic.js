@@ -2788,6 +2788,22 @@ if(typeof window !== "undefined"){
   if(changed) save();
 })();
 
+/* 第五轮新增存档字段（都有默认值；旧存档打开时补上，不改名、不删旧字段）：
+   wchest  每个大关的「大关宝箱」开过没有 {世界id: true}
+   qOn     家长设置里各类插入题的开关 {类别: true/false}，默认全开（见 Q_SWITCHES）
+   mystic  神秘勇士「结伴探险」：found 找到了没有、frags 寻宝地图碎片、day 今天探险过的日期
+   reports 家长点「这题有问题」记下的题（最多 100 条）；colorLog 颜色题答错记录（颜色题下一轮加入） */
+function ensureR5(st){
+  let changed = false;
+  const obj = (k, v) => { if(!st[k] || typeof st[k]!=="object" || Array.isArray(st[k])!==Array.isArray(v)){ st[k] = v; changed = true; } };
+  obj("wchest", {}); obj("qOn", {}); obj("mystic", {found:false, frags:0, day:""}); obj("reports", []); obj("colorLog", []);
+  if(typeof st.mystic.frags!=="number"){ st.mystic.frags = 0; changed = true; }
+  if(typeof st.mystic.found!=="boolean"){ st.mystic.found = false; changed = true; }
+  if(typeof st.mystic.day!=="string"){ st.mystic.day = ""; changed = true; }
+  return changed;
+}
+if(ensureR5(S)) save();
+
 /* ================= 奖励：经验、稀缺掉落、装备成长（界面稍后接入） =================
    家长要调的数字都在这一段最上面。
    结算画面目前还是旧的「点宝箱」，接上 applyDrops 之后才改用这里。
@@ -2882,6 +2898,16 @@ function levelReward(lv){
   const gear = rollGear(progressStage(), false, lv % 5 === 0 ? "purple" : null);
   addGear(gear);
   return [{type:"gear", gear, guarantee: lv % 5 === 0}];
+}
+/* 大关宝箱（第五轮）：一个大关 15 关都拿满 3 星（45 颗）就能开一次，必出紫色或更好的装备 */
+const WCHEST_STARS = NLV*3, WCHEST_MIN = "purple";
+const worldStars = w => WORLDS_V2[w].levels.reduce((n,_,l)=>n+starOf(w,l), 0);
+const wchestReady = w => worldStars(w)>=WCHEST_STARS && !S.wchest[WORLDS_V2[w].id];
+function openWorldChest(w){
+  if(!wchestReady(w)) return null;
+  const gear = rollGear(Math.max(progressStage(), (w+1)*NLV), true, {minQuality: WCHEST_MIN});
+  addGear(gear); S.wchest[WORLDS_V2[w].id] = true; save();
+  return gear;
 }
 // 加上经验，可能连升多级。返回 {levels, rewards}。
 function addExp(n){
