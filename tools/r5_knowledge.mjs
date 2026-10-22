@@ -16,7 +16,7 @@ export async function kCheck(p, n = 2000) {
         if (!q.hint || !q.key || !q.rec) bad('缺讲解 / key / rec');
         const html = q.html + q.options.map(o => q.optHtml ? q.optHtml(o) : o).join('');
         for (const m of html.matchAll(/obj_[a-z_]+/g)) if (!T.art(m[0])) bad('图片不存在: ' + m[0]);
-        if (/undefined|NaN/.test(html + q.speak)) bad('有 undefined / NaN');
+        if (/undefined|NaN/.test(html + q.speak + q.hint)) bad('题面 / 讲解有 undefined / NaN');
         if (q.kind === 'spot' || q.kind === 'color' || /^obj_/.test(q.answer)) if (q.options.some(o => /<img|cblock/.test(q.optHtml(o)) === false)) bad('图片 / 色块选项没画出来');
         check(q, bad);
         if (errs.size > 5) break;
@@ -49,6 +49,9 @@ export async function kCheck(p, n = 2000) {
       if (/[红黄蓝绿黑白橙紫粉棕灰]色/.test(q.options.map(o => q.optHtml(o)).join(''))) bad('色块选项上不该写颜色名');
       if (!q.speak.includes('色')) bad('读题要读出颜色名');
     });
+    // 所有可能被问到的颜色（每种题型的每个答案），讲解里都不能有 undefined
+    const colorAsk = new Set();
+    for (const m of ['basic', 'hue', 'shade', 'mix']) for (let i = 0; i < 3000; i++) { const q = T.G.color(99, m); if (!colorAsk.has(m + q.answer)) { colorAsk.add(m + q.answer); if (/undefined|NaN/.test(q.hint)) out.push(`color:${m} 问「${q.answer}」时讲解有 undefined: ${q.hint}`); } }
     // 各大关：三类题大约各 1～2 题 / 关（9% 左右），不连着出；第 1 大关小知识只有叫声和颜色、颜色题只有认基本色
     const per = [];
     T.LEVEL_PLAN.forEach((W, w) => {
