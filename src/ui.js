@@ -732,7 +732,7 @@ function openParent(tab){
     on("mReset", ()=>{
       if(!confirmReset){ confirmReset = true; return render(false); }
       const keep = {voiceName:S.voiceName, rate:S.rate};
-      S = Object.assign({}, DEFAULT, {stars:{},stats:{},mistakes:[],stickers:{},medals:{},tier:{},shiny:{},items:{heal:1,time:1,ice:1},crown:false,world:0,lv:{stars:{},tier:{}},lvMigrated:true,mapWorld:0}, keep);
+      S = Object.assign({}, DEFAULT, {stars:{},stats:{},mistakes:[],stickers:{},medals:{},tier:{},shiny:{},items:{heal:1,cut:1,swap:1},itemsV3:true,crown:false,world:0,lv:{stars:{},tier:{}},lvMigrated:true,mapWorld:0}, keep);
       save(); mapScroll = null; closePage();
     });
     if($("voiceSel")) $("voiceSel").onchange = e=>{ S.voiceName = e.target.value; save(); say("小勇士，准备好了吗？我们出发吧！", true); };

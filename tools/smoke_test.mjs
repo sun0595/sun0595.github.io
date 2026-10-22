@@ -914,6 +914,28 @@ async function playAll(view) {
 }
 
 // 试玩版: first run copies the 正式版 save; afterwards only "math-hero-beta" is read/written
+// 家长页「清空进度」：点两下清空，道具要是新的三种（加心 / 去错 / 换题 各 1 个），不能留下旧的 时间 / 冰冻
+async function resetCheck() {
+  const view = { name: '375', viewport: { width: 375, height: 667 }, dpr: 2, safe: { top: 0, bottom: 0 } };
+  const { ctx, p } = await newPage(view);
+  await p.goto('file://' + path.join(ROOT, 'build', 'test.html'));
+  await p.evaluate(([k, s]) => localStorage.setItem(k, JSON.stringify(s)), [V1, { ...SAVE, items: { heal: 3, cut: 4, swap: 5 } }]);
+  await p.reload(); await p.waitForTimeout(600);
+  await p.click('#parentBtn', { force: true }); await p.waitForTimeout(300);
+  await p.click('#mReset', { force: true }); await p.waitForTimeout(150);
+  await p.click('#mReset', { force: true }); await p.waitForTimeout(300);
+  const r = await p.evaluate(k => ({ mem: __t.S.items, v3: __t.S.itemsV3, saved: JSON.parse(localStorage.getItem(k)).items }), V1);
+  for (const [where, it] of [['S', r.mem], ['save', r.saved]])
+    if (!it || it.heal !== 1 || it.cut !== 1 || it.swap !== 1 || it.time || it.ice) problems.push(`[reset] 清空进度后 ${where}.items 应为加心 / 去错 / 换题各 1: ${JSON.stringify(it)}`);
+  if (r.v3 !== true) problems.push('[reset] 清空进度后 itemsV3 应为 true');
+  // 重新载入后迁移不能再改道具
+  await p.reload(); await p.waitForTimeout(600);
+  const again = await p.evaluate(() => __t.S.items);
+  if (again.cut !== 1 || again.swap !== 1) problems.push('[reset] 清空后重新打开，去错 / 换题应各 1: ' + JSON.stringify(again));
+  console.log('ok  reset', JSON.stringify(r.mem));
+  await ctx.close();
+}
+
 async function betaCheck() {
   const view = { name: 'beta', viewport: { width: 393, height: 852 }, dpr: 3, safe: { top: 59, bottom: 34 } };
   const SHOTS = path.join(ROOT, 'build', 'shots', '393'); mkdirSync(SHOTS, { recursive: true });
@@ -975,6 +997,7 @@ await itemMigration();
 await playAll({ name: '375', viewport: { width: 375, height: 667 }, dpr: 2, safe: { top: 0, bottom: 0 } });
 await playAll({ name: '393', viewport: { width: 393, height: 852 }, dpr: 3, safe: { top: 59, bottom: 34 } });
 await betaCheck();
+await resetCheck();
 await b.close();
 if (problems.length) { console.error('\nFAILED:\n- ' + problems.join('\n- ')); process.exit(1); }
 console.log('\nALL GOOD — screenshots in build/shots/375/ and build/shots/393/');
