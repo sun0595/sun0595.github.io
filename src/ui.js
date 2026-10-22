@@ -27,14 +27,94 @@ const SND_SVG = {
     + ['M6 16 L34 44','M34 16 L6 44'].map(d=>'<path d="'+d+'" stroke="#3A2A1E" stroke-width="13"/>').join("")
     + ['M6 16 L34 44','M34 16 L6 44'].map(d=>'<path d="'+d+'" stroke="#f2465e" stroke-width="7"/>').join("")+'</g></svg>'
 };
-const img = (e, cls) => {
+// imgQ / emoQ：题目内容（题干、选项、小老师讲解、连连看里的字图）用，物品图保持 3D（只有上面的原画图标照常换）
+const imgQ = (e, cls) => {
   const u = ICON_ART[e] && ART[ICON_ART[e]];
   if(!u) return img3d(e, cls);
   if(e==="🔊" || e==="🔇") return '<span class="ei snd'+(cls?" "+cls:"")+'">'+artTag(u, "art icon", img3d(e))+SND_SVG[e==="🔊"?"on":"off"]+'</span>';
   return artTag(u, "ei art icon"+(cls?" "+cls:""), img3d(e, cls));
 };
-// swap emoji in text (never inside tags/attributes) for the 3D icons
+/* 没有原画的界面图标：同风格的内联 SVG（3 头身硬边糖果风）——深棕粗描边、高饱和纯色大色块、底下一层柔和阴影。
+   每个图标画在 48×48 里；cs() 把同一组形状画两遍：先整体下移 3 当阴影（.cs .sh 统一涂成深棕、半透明），再画本体。
+   描边色和粗细写在 <svg> 上，形状自己写 stroke 的（彩色连线、对勾里的白线）照它的来；class="ln" 是只有线、阴影也不填充的。 */
+const cs = s => '<svg class="ei cs" viewBox="0 0 48 48" aria-hidden="true" stroke="#3A2A1E" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">'
+  + '<g class="sh" transform="translate(0 3)">'+s+'</g>'+s+'</svg>';
+// 粗线：先深棕粗线当描边，再一条彩色细线
+const csLine = (d, col, w) => '<path class="ln" d="'+d+'" fill="none" stroke-width="'+(w+5)+'"/><path class="ln" d="'+d+'" fill="none" stroke="'+col+'" stroke-width="'+w+'"/>';
+const CC = {y:"#FFCF3A", o:"#FF9A3C", r:"#F2465E", b:"#3FA9F5", lb:"#8FD3FF", g:"#5CD65C", p:"#A970FF", pk:"#FF7EB6", w:"#FFF6E6", br:"#B8743E", st:"#CFE3F2"};
+const sword = (rot, col) => '<g transform="rotate('+rot+' 24 24)"><path d="M24 0 L30.5 7 L30.5 28 L17.5 28 L17.5 7 Z" fill="'+CC.st+'"/><rect x="11" y="27" width="26" height="7" rx="3.5" fill="'+col+'"/>'
+  + '<rect x="20.5" y="34" width="7" height="9" rx="2" fill="'+CC.br+'"/><circle cx="24" cy="45" r="3.5" fill="'+col+'"/></g>';
+const ICON_SVG = {
+  // 地图关卡角标：消除 = 两张叠放的卡片，连连看 = 两个圆点被彩色连线连起，拼读 = 一蓝一红拼在一起的积木
+  "🃏": cs('<rect x="5" y="9" width="21" height="29" rx="5" fill="'+CC.b+'" transform="rotate(-14 15.5 23.5)"/><rect x="21" y="10" width="21" height="29" rx="5" fill="'+CC.w+'" transform="rotate(10 31.5 24.5)"/>'
+    + '<path d="M31.5 18 L36.5 24.5 L31.5 31 L26.5 24.5 Z" fill="'+CC.r+'" transform="rotate(10 31.5 24.5)" stroke-width="3"/>'),
+  "🔗": cs(csLine("M12 35 Q16 16 36 13", CC.pk, 6)+'<circle cx="11" cy="36" r="7.5" fill="'+CC.g+'"/><circle cx="37" cy="12" r="7.5" fill="'+CC.p+'"/>'),
+  "🔤": cs('<rect x="23" y="12" width="20" height="26" rx="4" fill="'+CC.r+'"/><rect x="27" y="7" width="12" height="7" rx="2.5" fill="'+CC.r+'"/>'
+    + '<rect x="5" y="12" width="20" height="26" rx="4" fill="'+CC.b+'"/><rect x="9" y="7" width="12" height="7" rx="2.5" fill="'+CC.b+'"/><circle cx="25" cy="25" r="5" fill="'+CC.b+'"/>'),
+  // 装备部位（背包页签、掉落标签）
+  "⚔️": cs(sword(-42, CC.y)+sword(42, CC.r)),
+  "🪖": cs('<path d="M8 33 Q7 9 24 9 Q41 9 40 33 Z" fill="'+CC.lb+'"/><rect x="21" y="6" width="6" height="27" rx="3" fill="'+CC.r+'"/><rect x="4" y="31" width="40" height="8" rx="4" fill="'+CC.b+'"/>'),
+  "🥋": cs('<path d="M13 8 L19 6 Q24 12 29 6 L35 8 L42 19 L36 23 L35 21 L35 41 Q24 45 13 41 L13 21 L12 23 L6 19 Z" fill="'+CC.o+'"/>'
+    + '<rect x="12" y="30" width="24" height="6" rx="2" fill="'+CC.br+'"/><rect x="21" y="29" width="6" height="8" rx="2" fill="'+CC.y+'"/>'),
+  "🛡️": cs('<path d="M24 4 L41 10 Q42 32 24 44 Q6 32 7 10 Z" fill="'+CC.b+'"/><path d="M24 4 L41 10 Q42 32 24 44 Z" fill="'+CC.lb+'"/><circle cx="24" cy="22" r="6" fill="'+CC.y+'"/>'),
+  "👕": cs('<path d="M17 7 L10 9 L3 18 L10 24 L13 21 L13 42 L35 42 L35 21 L38 24 L45 18 L38 9 L31 7 Q24 14 17 7 Z" fill="'+CC.b+'"/>'),
+  // 宝箱（掉落、一键全开）、皇冠、奖杯、勋章
+  "🎁": cs('<path d="M6 22 Q6 9 24 9 Q42 9 42 22 Z" fill="'+CC.o+'"/><rect x="6" y="22" width="36" height="20" rx="3" fill="'+CC.br+'"/>'
+    + '<rect x="11" y="10" width="5" height="32" fill="'+CC.y+'"/><rect x="32" y="10" width="5" height="32" fill="'+CC.y+'"/><rect x="19" y="18" width="10" height="12" rx="2" fill="'+CC.y+'"/><circle cx="24" cy="24" r="1.6" fill="#3A2A1E" stroke="none"/>'),
+  "👑": cs('<path d="M6 36 L8 13 L17 23 L24 8 L31 23 L40 13 L42 36 Z" fill="'+CC.y+'"/><rect x="6" y="33" width="36" height="8" rx="3" fill="'+CC.o+'"/>'
+    + '<circle cx="24" cy="8" r="3.5" fill="'+CC.r+'"/><circle cx="8" cy="13" r="3" fill="'+CC.b+'"/><circle cx="40" cy="13" r="3" fill="'+CC.b+'"/><circle cx="24" cy="37" r="2.5" fill="'+CC.r+'" stroke-width="2.5"/>'),
+  "🏆": cs(csLine("M15 13 H8 Q7 24 16 25", CC.y, 4)+csLine("M33 13 H40 Q41 24 32 25", CC.y, 4)
+    + '<path d="M13 6 H35 V18 Q35 31 24 31 Q13 31 13 18 Z" fill="'+CC.y+'"/><rect x="20.5" y="30" width="7" height="7" fill="'+CC.o+'"/><rect x="13" y="36" width="22" height="7" rx="2.5" fill="'+CC.br+'"/>'),
+  "🏅": cs('<path d="M12 3 L21 3 L28 20 L19 22 Z" fill="'+CC.b+'"/><path d="M36 3 L27 3 L20 20 L29 22 Z" fill="'+CC.r+'"/><circle cx="24" cy="31" r="12" fill="'+CC.y+'"/>'
+    + '<path d="M24 24 L26 29 L31 29 L27 32 L28.5 37 L24 34 L19.5 37 L21 32 L17 29 L22 29 Z" fill="'+CC.o+'" stroke-width="2.5"/>'),
+  // 动作和状态
+  "⚡": cs('<path d="M29 2 L9 27 L22 27 L18 46 L39 19 L26 19 Z" fill="'+CC.y+'"/>'),
+  "✅": cs('<rect x="5" y="5" width="38" height="38" rx="11" fill="'+CC.g+'"/><path class="ln" d="M14 25 L21 32 L34 16" fill="none" stroke="#fff" stroke-width="6"/>'),
+  "❌": cs('<rect x="5" y="5" width="38" height="38" rx="11" fill="'+CC.r+'"/><path class="ln" d="M16 16 L32 32 M32 16 L16 32" fill="none" stroke="#fff" stroke-width="6"/>'),
+  "✨": cs('<path d="M20 6 Q22 20 34 23 Q22 26 20 42 Q18 26 6 23 Q18 20 20 6 Z" fill="'+CC.y+'"/><path d="M37 4 Q38 10 43 11 Q38 12 37 18 Q36 12 31 11 Q36 10 37 4 Z" fill="'+CC.pk+'" stroke-width="3"/>'
+    + '<path d="M37 30 Q38 35 42 36 Q38 37 37 42 Q36 37 32 36 Q36 35 37 30 Z" fill="'+CC.lb+'" stroke-width="3"/>'),
+  "⬆️": cs('<path d="M24 4 L42 23 L31 23 L31 43 L17 43 L17 23 L6 23 Z" fill="'+CC.g+'"/>'),
+  "♻️": cs(csLine("M10 22 A14 14 0 0 1 33 12", CC.g, 6)+csLine("M38 27 A14 14 0 0 1 15 37", CC.g, 6)
+    + '<path d="M29 5 L41 13 L29 20 Z" fill="'+CC.g+'"/><path d="M19 44 L7 36 L19 29 Z" fill="'+CC.g+'"/>'),
+  "🔁": cs(csLine("M36.1 19 A14 14 0 1 1 21.6 12.2", CC.b, 6)+'<path d="M31 10.5 L20.6 19.4 L18.6 4.6 Z" fill="'+CC.b+'"/>'),
+  "▶️": cs('<circle cx="24" cy="24" r="19" fill="'+CC.b+'"/><path d="M19 14 L35 24 L19 34 Z" fill="#fff" stroke-width="3"/>'),
+  "🏃": cs(csLine("M3 18 H12", CC.lb, 4)+csLine("M2 26 H11", CC.lb, 4)+csLine("M5 34 H12", CC.lb, 4)
+    + '<path d="M16 9 L28 9 L30 22 L42 27 Q46 30 45 37 L14 37 Z" fill="'+CC.r+'"/><rect x="12" y="36" width="34" height="6" rx="3" fill="#fff"/><path class="ln" d="M20 16 H28 M21 22 H30" fill="none" stroke-width="3"/>'),
+  "🏳️": cs('<path d="M14 8 Q21 4 27 8 Q33 12 41 8 L41 27 Q33 31 27 27 Q21 23 14 27 Z" fill="#fff"/><rect x="8" y="5" width="6" height="39" rx="3" fill="'+CC.br+'"/><circle cx="11" cy="5" r="3.5" fill="'+CC.y+'"/>'),
+  "💪": cs('<path d="M6 42 L6 31 Q7 23 16 22 L23 22 Q19 15 21 10 Q24 5 31 7 L33 13 L28 14 Q30 18 34 19 Q42 21 42 30 Q41 40 30 42 Z" fill="#FFC48A"/>'
+    + '<path class="ln" d="M24 30 Q30 26 35 30" fill="none" stroke-width="3"/>'),
+  "💡": cs('<rect x="17" y="31" width="14" height="11" rx="3" fill="'+CC.st+'"/><path d="M17 33 Q8 27 9 18 Q11 5 24 5 Q37 5 39 18 Q40 27 31 33 Z" fill="'+CC.y+'"/>'
+    + '<path class="ln" d="M17 36.5 H31" fill="none" stroke-width="2.5"/><path class="ln" d="M20 22 Q24 27 28 22" fill="none" stroke="'+CC.o+'" stroke-width="3"/>'),
+  "📊": cs('<rect x="4" y="6" width="40" height="36" rx="6" fill="#fff"/><rect x="10" y="25" width="7" height="11" rx="1.5" fill="'+CC.r+'" stroke-width="3"/>'
+    + '<rect x="20.5" y="18" width="7" height="18" rx="1.5" fill="'+CC.b+'" stroke-width="3"/><rect x="31" y="12" width="7" height="24" rx="1.5" fill="'+CC.g+'" stroke-width="3"/>'),
+  "🎴": cs('<rect x="11" y="5" width="26" height="38" rx="6" fill="'+CC.p+'" transform="rotate(8 24 24)"/>'
+    + '<path d="M24 14 L26.8 20.5 L33.5 21 L28.4 25.4 L30 32 L24 28.5 L18 32 L19.6 25.4 L14.5 21 L21.2 20.5 Z" fill="'+CC.y+'" stroke-width="3" transform="rotate(8 24 24)"/>'),
+  // 装备词缀
+  "🎯": cs('<circle cx="24" cy="24" r="19" fill="'+CC.r+'"/><circle cx="24" cy="24" r="12" fill="#fff"/><circle cx="24" cy="24" r="5" fill="'+CC.r+'"/>'),
+  "💥": cs('<path d="M24 2 L29 15 L42 9 L35 21 L46 27 L33 30 L36 44 L24 35 L12 44 L15 30 L2 27 L13 21 L6 9 L19 15 Z" fill="'+CC.o+'"/><path d="M24 15 L27 21 L33 22 L28 27 L29 33 L24 30 L19 33 L20 27 L15 22 L21 21 Z" fill="'+CC.y+'" stroke-width="3"/>'),
+  "🍀": cs(csLine("M24 26 Q26 36 33 43", "#3DA63D", 4)+'<circle cx="17" cy="17" r="8" fill="'+CC.g+'"/><circle cx="31" cy="17" r="8" fill="'+CC.g+'"/><circle cx="17" cy="31" r="8" fill="'+CC.g+'"/><circle cx="31" cy="31" r="8" fill="'+CC.g+'"/>'
+    + '<circle cx="24" cy="24" r="3.5" fill="#3DA63D" stroke="none"/>'),
+  "❄️": cs(csLine("M24 4 V44 M7 14 L41 34 M7 34 L41 14", CC.lb, 5)+csLine("M18 7 L24 12 L30 7 M18 41 L24 36 L30 41", CC.lb, 4)+'<circle cx="24" cy="24" r="5" fill="#fff"/>'),
+  // 勇士技能图标（勇士页）、狂暴、连击提示
+  "🔥": cs('<path d="M24 3 Q35 14 37 22 Q42 18 40 12 Q46 22 44 30 Q42 44 24 45 Q6 44 5 30 Q5 20 12 14 Q12 21 16 23 Q14 11 24 3 Z" fill="'+CC.o+'"/>'
+    + '<path d="M24 22 Q33 30 32 36 Q31 42 24 42 Q17 42 16 36 Q16 29 24 22 Z" fill="'+CC.y+'" stroke-width="3"/>'),
+  "🌈": cs(csLine("M6 38 A18 18 0 0 1 42 38", CC.r, 5)+csLine("M12 38 A12 12 0 0 1 36 38", CC.y, 5)+csLine("M18 38 A6 6 0 0 1 30 38", CC.b, 5)
+    + '<circle cx="8" cy="39" r="5" fill="#fff"/><circle cx="40" cy="39" r="5" fill="#fff"/>'),
+  "🚀": cs('<path d="M17 30 L9 36 L11 26 Z" fill="'+CC.r+'"/><path d="M31 30 L39 36 L37 26 Z" fill="'+CC.r+'"/><path d="M19 36 L24 46 L29 36 Z" fill="'+CC.y+'"/>'
+    + '<path d="M24 2 Q34 12 33 26 L31 37 L17 37 L15 26 Q14 12 24 2 Z" fill="'+CC.w+'"/><circle cx="24" cy="19" r="5" fill="'+CC.b+'" stroke-width="3"/>'),
+  "✴️": cs('<path d="M24 2 L29 15 L42 10 L35 21 L46 24 L35 27 L42 38 L29 33 L24 46 L19 33 L6 38 L13 27 L2 24 L13 21 L6 10 L19 15 Z" fill="'+CC.p+'"/><circle cx="24" cy="24" r="5" fill="'+CC.w+'" stroke-width="3"/>'),
+  "⏰": cs('<circle cx="10" cy="10" r="6" fill="'+CC.r+'"/><circle cx="38" cy="10" r="6" fill="'+CC.r+'"/><circle cx="24" cy="26" r="18" fill="#fff"/>'
+    + '<path class="ln" d="M24 15 V26 L31 31" fill="none" stroke-width="4"/>'),
+  "💢": cs('<path d="M18 4 Q20 15 9 17 Q4 18 4 14 L4 6 Q4 4 6 4 Z M30 4 Q28 15 39 17 Q44 18 44 14 L44 6 Q44 4 42 4 Z M18 44 Q20 33 9 31 Q4 30 4 34 L4 42 Q4 44 6 44 Z M30 44 Q28 33 39 31 Q44 30 44 34 L44 42 Q44 44 42 44 Z" fill="'+CC.r+'"/>'),
+  "👹": cs('<path d="M9 16 L5 2 L18 10 Z" fill="'+CC.y+'"/><path d="M39 16 L43 2 L30 10 Z" fill="'+CC.y+'"/><circle cx="24" cy="26" r="18" fill="'+CC.r+'"/>'
+    + '<circle cx="17" cy="23" r="4.5" fill="#fff" stroke-width="3"/><circle cx="31" cy="23" r="4.5" fill="#fff" stroke-width="3"/><circle cx="18" cy="24" r="1.8" fill="#3A2A1E" stroke="none"/><circle cx="30" cy="24" r="1.8" fill="#3A2A1E" stroke="none"/>'
+    + '<path d="M15 33 Q24 39 33 33" fill="#fff" stroke-width="3"/>')
+};
+// 界面用：原画 → 糖果 SVG → 3D 图
+const img = (e, cls) => ICON_SVG[e] && !(ICON_ART[e] && ART[ICON_ART[e]]) ? (cls ? ICON_SVG[e].replace('class="ei cs"', 'class="ei cs '+cls+'"') : ICON_SVG[e]) : imgQ(e, cls);
+// swap emoji in text (never inside tags/attributes) for the icons
 const emo = html => String(html).split(/(<[^>]*>)/).map(p => p[0]==="<" ? p : p.replace(EMO_RE, m=>img(m))).join("");
+const emoQ = html => String(html).split(/(<[^>]*>)/).map(p => p[0]==="<" ? p : p.replace(EMO_RE, m=>imgQ(m))).join("");
 const cleanSpeech = t => String(t).replace(EMO_RE, "");
 /* ================= art: hand-drawn pictures (原画) =================
    ART_D is injected by the build from src/art/*.webp|png: {name: [mime, base64]}. art(name) gives a URL or null;
@@ -137,6 +217,8 @@ const ART_H_MIN = 860, ART_H_MAX = 1900, ART_SIGN = 150, MAP_GAP = 10;
      平移不能让小路上的关卡出画（留 MAP_EDGE px），对不齐时尽量靠近。
    - 有过渡图 trans_<下面世界>_<上面世界>（铺满宽度，小路从下穿到上）就插在两段之间，两头也各叠化 MAP_SEAM px。 */
 const MAP_SEAM = 160, MAP_EDGE = 34, TRANS_H = 180;
+// 过渡图里小路的 x（图宽的比例）：[底部进来的地方, 顶部出去的地方]，按原画量的
+const TRANS_ROADS = {add_sub:[0.45,0.48], sub_ten:[0.45,0.6], ten_ice:[0.5,0.5], ice_tens:[0.55,0.55], tens_hundreds:[0.48,0.5], hundreds_digit1:[0.57,0.48], digit1_digit2:[0.55,0.5]};
 const ART_ROADS = {
   // 森林：按原画里沙土小路的像素中线量出来（每只怪兽都站在路上），S 形绕两个弯，Boss 在山洞口
   add: [[0.373,0.99],[0.398,0.94],[0.463,0.915],[0.542,0.89],[0.602,0.865],[0.631,0.84],[0.636,0.815],[0.617,0.79],[0.565,0.765],[0.476,0.74],[0.379,0.715],[0.321,0.69],[0.31,0.665],[0.33,0.64],[0.379,0.615],[0.454,0.59],[0.546,0.565],[0.62,0.54],[0.662,0.515],[0.672,0.49],[0.653,0.465],[0.592,0.44],[0.5,0.415],[0.426,0.39],[0.402,0.365],[0.413,0.34],[0.449,0.315],[0.494,0.29],[0.52,0.275]],
@@ -210,15 +292,21 @@ function roadXAt(id, g, y){
   for(let i=1;i<P.length;i++) if(P[i][1] <= y){ const [a,b] = [P[i-1], P[i]], t = a[1]===b[1] ? 0 : (a[1]-y)/(a[1]-b[1]); return a[0]+(b[0]-a[0])*Math.max(0,Math.min(1,t)); }
   return P[P.length-1][0];
 }
-/* sideways shift of a band's picture so its road comes out of the seam (the top of the cross-fade, MAP_SEAM above its bottom)
-   at the x where the road below ends (its Boss). Only the part of the road the levels stand on (above the sign) has to stay
-   MAP_EDGE inside the screen; the stretch under the sign / in the seam may run off the side. */
-function bandShift(id, W, H, exitX, sign){
-  const g = artGeo(id, W, H), xs = ART_ROADS[id].filter(([,fy])=>fy*g.dh-g.oy <= H-sign).map(([fx])=>fx*g.dw);
+/* sideways shift of a band's picture: its road comes out of the seam below (the top of the cross-fade, MAP_SEAM above its
+   bottom) at inX — where the road below ends (the Boss of the world below, or the top of a transition picture) — and its
+   road's end (the Boss) sits at outX, where the transition picture above starts its road. With both, the shift splits the
+   difference. Only the part of the road the levels stand on (above the sign) has to stay MAP_EDGE inside the screen. */
+function bandShift(id, W, H, inX, outX, sign){
+  const g = artGeo(id, W, H), rd = ART_ROADS[id], xs = rd.filter(([,fy])=>fy*g.dh-g.oy <= H-sign).map(([fx])=>fx*g.dw);
   const lo = Math.max(0, Math.max(...xs) - W + MAP_EDGE), hi = Math.min(g.dw - W, Math.min(...xs) - MAP_EDGE);
-  const want = exitX==null ? g.ox0 : roadXAt(id, g, H - MAP_SEAM) - exitX;
+  const wants = [];
+  if(inX!=null) wants.push(roadXAt(id, g, H - MAP_SEAM) - inX);
+  if(outX!=null) wants.push(rd[rd.length-1][0]*g.dw - outX);
+  const want = wants.length ? wants.reduce((a,b)=>a+b)/wants.length : g.ox0;
   return lo > hi ? Math.max(0, Math.min(g.dw - W, g.ox0)) : Math.max(lo, Math.min(hi, want));
 }
+// where the road leaves the top (out) / enters the bottom (in) of the transition picture between world w and w+1, px
+const transX = (w, W, end) => { const t = TRANS_ROADS[WORLDS_V2[w].id+"_"+WORLDS_V2[w+1].id]; return (t ? t[end==="top"?1:0] : 0.5) * W; };
 const LAYOUT_CACHE = {};
 const transName = w => "trans_"+WORLDS_V2[w].id+"_"+WORLDS_V2[w+1].id;   // between world w and the one above it
 function layoutMap(W){
@@ -234,8 +322,9 @@ function layoutMap(W){
   for(let w=0; w<n; w++){
     if(!roadOK(w)) continue;
     const id = WORLDS_V2[w].id, below = w>0 && roadOK(w-1) ? WORLDS_V2[w-1].id : null;
-    const exitX = below ? ART_ROADS[below][ART_ROADS[below].length-1][0]*artGeo(below, W, hs[w-1]).dw - ox[w-1] : null;
-    ox[w] = bandShift(id, W, hs[w], exitX, sign[w]);
+    const inX = w>0 && trans[w-1] ? transX(w-1, W, "top") : below ? ART_ROADS[below][ART_ROADS[below].length-1][0]*artGeo(below, W, hs[w-1]).dw - ox[w-1] : null;
+    const outX = w<n-1 && trans[w] ? transX(w, W, "bottom") : null;
+    ox[w] = bandShift(id, W, hs[w], inX, outX, sign[w]);
   }
   // stack from the top world down; painted neighbours overlap by MAP_SEAM
   let y = 0;
@@ -816,18 +905,15 @@ function fleeTick(){
   const txt = lock ? String(left) : "";
   if(bb.dataset.left!==txt) bb.dataset.left = txt;
 }
-/* 道具图标：加心用原画药水（icon_potion），去错 / 换题是同风格的内联 SVG（深棕粗描边 + 糖果色块 + 底部单层阴影） */
+/* 道具图标：加心用原画药水（icon_potion），去错 / 换题用同风格的糖果 SVG（cs()，见文件开头的 ICON_SVG） */
 const ITEM_SVG = {
   // 去错：一张答案卡，被红色粗 × 划掉
-  cut: '<svg class="ei isvg" viewBox="0 0 48 48" aria-hidden="true" stroke="#3A2A1E" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">'
-    + '<rect x="7" y="9" width="30" height="34" rx="7" fill="#3A2A1E" opacity=".3" stroke="none"/><rect x="7" y="6" width="30" height="34" rx="7" fill="#FFF6E6"/>'
-    + '<path d="M15 16 H29 M15 23 H25" stroke-width="3.5"/><path d="M24 26 L42 44 M42 26 L24 44" stroke-width="11"/><path d="M24 26 L42 44 M42 26 L24 44" stroke="#F2465E" stroke-width="5"/></svg>',
-  // 换题：一张题卡 + 绕着它的两条绿色箭头
-  swap: '<svg class="ei isvg" viewBox="0 0 48 48" aria-hidden="true" stroke="#3A2A1E" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">'
-    + '<rect x="14" y="15" width="20" height="24" rx="5" fill="#3A2A1E" opacity=".3" stroke="none"/><rect x="14" y="12" width="20" height="24" rx="5" fill="#8FD3FF"/>'
-    + '<path d="M20 20 H28 M20 26 H26" stroke-width="3"/>'
-    + ['M8 26 Q6 8 26 6','M40 22 Q42 40 22 42'].map(d=>'<path d="'+d+'" fill="none" stroke-width="10"/><path d="'+d+'" fill="none" stroke="#5CD65C" stroke-width="4.5"/>').join("")
-    + '<path d="M24 1 L33 6 L24 12 Z" fill="#5CD65C" stroke-width="3"/><path d="M24 47 L15 42 L24 36 Z" fill="#5CD65C" stroke-width="3"/></svg>'
+  cut: cs('<rect x="5" y="5" width="30" height="35" rx="7" fill="'+CC.w+'"/><path class="ln" d="M13 15 H27 M13 22 H23" fill="none" stroke-width="3.5"/>'
+    + csLine("M24 26 L42 44 M42 26 L24 44", CC.r, 6)),
+  // 换题：一张蓝色题卡，两条绿色箭头绕着它转
+  swap: cs('<rect x="14" y="12" width="20" height="24" rx="5" fill="'+CC.lb+'"/><path class="ln" d="M20 20 H28 M20 26 H26" fill="none" stroke-width="3"/>'
+    + csLine("M8 27 Q6 8 25 6", CC.g, 5)+csLine("M40 21 Q42 40 23 42", CC.g, 5)
+    + '<path d="M23 0 L33 6 L23 12 Z" fill="'+CC.g+'" stroke-width="3"/><path d="M25 48 L15 42 L25 36 Z" fill="'+CC.g+'" stroke-width="3"/>')
 };
 const itemImg = k => ITEM_SVG[k] || img(ITEMS[k].e);
 // 这一刻用得上吗：加心要没满；去错要有能去掉的错误选项（或棋盘上还有没配的）；换题只在答题时
@@ -906,7 +992,7 @@ function nextQuestion(given){
   $("qTag").textContent = isWord ? "思维挑战" : "语文 · 拼音";
   const qt = $("qText");
   qt.className = "q"+(q.small?" small":"")+(isWord?" wordq":"");
-  qt.innerHTML = emo(isWord ? '<span class="wpic">'+q.pic+'</span>'+q.html+'<button class="btn hintbtn" id="hintBtn">💡 请小老师讲一讲</button>' : q.html ? q.html : q.parts.map((p,i)=>{
+  qt.innerHTML = isWord ? emoQ('<span class="wpic">'+q.pic+'</span>'+q.html)+'<button class="btn hintbtn" id="hintBtn">'+img("💡")+' 请小老师讲一讲</button>' : emoQ(q.html ? q.html : q.parts.map((p,i)=>{
     if(p==="?") return '<span class="blank">?</span>';
     if(p==="+"||p==="−"||p==="=") return '<span class="op">'+p+'</span>';
     if(q.seq) return '<span class="term">'+p+'</span>'+(i<q.parts.length-1?'<span class="comma">,</span>':'');
@@ -918,7 +1004,7 @@ function nextQuestion(given){
   const ans = $("answers");
   ans.className = "answers"+(q.options.length===3?" three":"");
   const label = {">":"大于","<":"小于","=":"等于"};
-  ans.innerHTML = q.options.map(o=>'<button class="ans" data-v="'+o+'">'+emo(q.optHtml?q.optHtml(o):o+(q.kind==="cmp"?'<small>'+label[o]+'</small>':''))+'</button>').join("");
+  ans.innerHTML = q.options.map(o=>'<button class="ans" data-v="'+o+'">'+emoQ(q.optHtml?q.optHtml(o):o+(q.kind==="cmp"?'<small>'+label[o]+'</small>':''))+'</button>').join("");
   ans.querySelectorAll(".ans").forEach(b=>b.addEventListener("click",()=>answer(b)));
   B.busy = false;
   drawCharge();
@@ -930,7 +1016,7 @@ function showHint(){
   const q = B.q;
   B.hintOpen = true; B.step = 0;
   if(q.steps) renderStep(true);
-  else { $("hint").innerHTML = emo(q.hint)+'<div class="stepnav"><button class="btn" id="stDone">我懂了！</button></div>'; $("stDone").onclick = closeHint; say(strip(q.hint)); }
+  else { $("hint").innerHTML = emoQ(q.hint)+'<div class="stepnav"><button class="btn" id="stDone">我懂了！</button></div>'; $("stDone").onclick = closeHint; say(strip(q.hint)); }
   $("tutor").hidden = false; restart($("hint"),"on");
   drawCharge();
 }
@@ -946,7 +1032,7 @@ function renderStep(speak){
   const q = B.q, n = q.steps.length, s = q.steps[B.step];
   const nav = '<button class="ibtn round" id="stPrev"'+(B.step?'':' disabled')+' aria-label="上一步">'+chev()+'</button><button class="ibtn round" id="stSay" aria-label="再说一遍">'+img("🔊")+'</button>'
     + (B.step<n-1 ? '<button class="btn green" id="stNext">下一步</button>' : '<button class="btn" id="stDone">我懂了！</button>');
-  $("hint").innerHTML = emo('<div class="stept">'+s.t+'</div>'+(s.v||"")+'<div class="stepnav"><span class="stepno">💡 '+(B.step+1)+' / '+n+'</span>'+nav+'</div>');
+  $("hint").innerHTML = emoQ('<div class="stept">'+s.t+'</div>'+(s.v||""))+'<div class="stepnav"><span class="stepno">'+img("💡")+' '+(B.step+1)+' / '+n+'</span>'+nav+'</div>';
   const go = d => { B.step = Math.max(0,Math.min(n-1,B.step+d)); renderStep(true); };
   if($("stPrev")) $("stPrev").onclick = ()=>go(-1);
   if($("stNext")) $("stNext").onclick = ()=>go(1);
@@ -1170,7 +1256,7 @@ function renderBoard(){
     bd.innerHTML = h + '</div>';
   } else {
     const side = (list, cls) => '<div class="lcol">'+list.map(x=>'<button class="lnk '+cls+(x.matched?" done":"")+'" data-id="'+x.id+'"'+(x.matched?" disabled":"")+'>'
-      + (cls==="hz" ? (x.e?img(x.e):"")+'<b>'+x.hz+'</b>' : '<span class="py">'+x.py+'</span>')+'</button>').join("")+'</div>';
+      + (cls==="hz" ? (x.e?imgQ(x.e):"")+'<b>'+x.hz+'</b>' : '<span class="py">'+x.py+'</span>')+'</button>').join("")+'</div>';
     bd.innerHTML = '<div class="lboard"><svg class="llines" id="llines"></svg>'+side(b.left,"hz")+side(b.right,"pyb")+'</div>';
     drawLinks();
   }

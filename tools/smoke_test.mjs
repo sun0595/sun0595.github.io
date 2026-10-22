@@ -88,6 +88,23 @@ async function shotCheck(p, view, dir, name) {
       if (r.right > W + 0.5) why.push(`right ${Math.round(r.right)} > ${W}`);
       if (why.length) out.push(desc(el) + ': ' + why.join(', '));
     }
+    // GUI icons are candy art (icon_*) or the drawn candy SVGs, never a Fluent 3D emoji picture. Allowed to stay 3D:
+    // question / teaching content (题目、答案、玩法棋盘、小老师), map scenery and battle effects, the characters
+    // (monsters, heroes) and the pictures of gear items that have no candy icon (短剑、长弓、披风 …).
+    const rev = {}; for (const k in __t.IMG) rev[__t.IMG[k]] = k;
+    const chars = new Set([...__t.HEROES.map(h => h.e), ...__t.WORLDS_V2.flatMap(w => w.levels.map(l => l.emoji)),
+      ...Object.values(__t.GEAR_SLOTS).flatMap(s => s.pool.map(x => x.e)).filter(e => !__t.ICON_SVG[e])]);
+    const CONTENT = '#qText, #answers, #board, #tutor, .deco, .fx, .part, .dmg';
+    const seen = new Set();
+    for (const im of document.querySelectorAll('img.ei:not(.art)')) {
+      const e = rev[im.getAttribute('src')];
+      if (!e || chars.has(e) || im.closest(CONTENT) || seen.has(e)) continue;
+      if (!im.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+      const r = im.getBoundingClientRect();
+      if (r.width < 1 || r.bottom < 0 || r.top > H || r.right < 0 || r.left > W) continue;
+      seen.add(e); const c = im.parentElement.closest('[id], [class]');
+      out.push(`3D emoji ${e} in the GUI (${c ? desc(c).slice(0, 60) : '?'})`);
+    }
     return out;
   }, { ...view.safe, sel: KEY_UI, spare: SPARE });
   for (const x of bad) problems.push(`[${view.name}] ${name}: ${x}`);
@@ -724,35 +741,40 @@ async function playAll(view) {
     await p.screenshot({ path: path.join(SHOTS, `42-map-full-${w + 1}-${ids[w]}.png`), clip: box });
   }
   await p.setViewportSize(vp); await p.waitForTimeout(300);
-  // 世界接缝（家长 10-22）：上下两段重叠 120–200px，下面那段顶部渐变透明（叠化）；上面那段小路从接缝出来的 x 对准下面那段小路的终点（Boss）
-  const seams = await p.evaluate(() => {
-    const n = __t.WORLDS_V2.length, S = __t.MAP_SEAM, out = [];
-    const geo = w => { const b = document.querySelector(`.band[data-w="${w}"]`), cs = getComputedStyle(b), [dw, dh] = cs.backgroundSize.split(' ').map(parseFloat), px = parseFloat(cs.backgroundPositionX), rd = __t.ART_ROADS[__t.WORLDS_V2[w].id];
-      const y = b.offsetHeight - S; let entry = null;
-      for (let i = 1; i < rd.length && entry === null; i++) if (rd[i][1] * dh <= y) { const a = rd[i - 1], c = rd[i], t = (a[1] * dh - y) / ((a[1] - c[1]) * dh || 1); entry = px + (a[0] + (c[0] - a[0]) * t) * dw; }
-      return { top: b.offsetTop, h: b.offsetHeight, entry, exit: px + rd[rd.length - 1][0] * dw, fade: (cs.maskImage || cs.webkitMaskImage || 'none') !== 'none' }; };
-    for (let w = 0; w < n - 1; w++) { const lo = geo(w), up = geo(w + 1); out.push({ w, dx: Math.round(up.entry - lo.exit), overlap: up.top + up.h - lo.top, fade: lo.fade, topFade: up.fade === (w + 1 < n - 1) }); }
-    return out;
+  // 世界接缝（家长 10-22）：上下相邻的两层（地图段或过渡图 trans_*）重叠 120–200px，下面那层顶部渐变透明（叠化）；
+  // 小路在接缝处对齐：下面那层小路的出口（Boss / 过渡图顶部）和上面那层小路的入口（地图段在接缝处 / 过渡图底部）x 相差不超过 MAP_EDGE 左右
+  const seamCheck = () => p.evaluate(() => {
+    const n = __t.WORLDS_V2.length, S = __t.MAP_SEAM, layers = [];
+    const band = w => { const b = document.querySelector(`.band[data-w="${w}"]`), cs = getComputedStyle(b), [dw, dh] = cs.backgroundSize.split(' ').map(parseFloat), px = parseFloat(cs.backgroundPositionX), rd = __t.ART_ROADS[__t.WORLDS_V2[w].id];
+      const y = b.offsetHeight - S; let inX = null;
+      for (let i = 1; i < rd.length && inX === null; i++) if (rd[i][1] * dh <= y) { const a = rd[i - 1], c = rd[i], t = (a[1] * dh - y) / ((a[1] - c[1]) * dh || 1); inX = px + (a[0] + (c[0] - a[0]) * t) * dw; }
+      return { name: 'w' + (w + 1), top: b.offsetTop, h: b.offsetHeight, inX, outX: px + rd[rd.length - 1][0] * dw, fade: (cs.maskImage || cs.webkitMaskImage || 'none') !== 'none' }; };
+    for (let w = 0; w < n; w++) {
+      layers.push(band(w));
+      const t = document.querySelector(`.band.trans[data-t="${w}"]`);
+      if (t) { const r = __t.TRANS_ROADS[__t.WORLDS_V2[w].id + '_' + __t.WORLDS_V2[w + 1].id] || [0.5, 0.5], cs = getComputedStyle(t);
+        layers.push({ name: 't' + (w + 1), top: t.offsetTop, h: t.offsetHeight, inX: r[0] * t.offsetWidth, outX: r[1] * t.offsetWidth, fade: (cs.maskImage || cs.webkitMaskImage || 'none') !== 'none', full: Math.abs(t.offsetWidth - t.parentElement.offsetWidth) < 1 }); }
+    }
+    return layers.slice(1).map((up, i) => { const lo = layers[i]; return { at: lo.name + '/' + up.name, dx: Math.round(up.inX - lo.outX), overlap: up.top + up.h - lo.top, fade: lo.fade, full: up.full !== false }; });
   });
-  const badSeam = seams.filter(x => x.overlap < 120 || x.overlap > 200 || !x.fade || Math.abs(x.dx) > 40);
-  if (badSeam.length) problems.push(`[${view.name}] world seams should overlap 120–200px with a fade and line the roads up (|dx| ≤ 40px): ${JSON.stringify(badSeam)}`);
-  console.log('   seams dx', seams.map(x => x.dx).join(' '));
+  const seams = await seamCheck();
+  const badSeam = seams.filter(x => x.overlap < 120 || x.overlap > 200 || !x.fade || !x.full || Math.abs(x.dx) > 60);
+  if (badSeam.length) problems.push(`[${view.name}] world seams should overlap 120–200px with a fade and line the roads up (|dx| ≤ 60px): ${JSON.stringify(badSeam)}`);
+  const nTrans = await p.evaluate(() => document.querySelectorAll('.band.trans').length);
+  if (nTrans !== 7) problems.push(`[${view.name}] all 7 transition pictures (trans_*) should be on the map, found ${nTrans}`);
+  console.log('   seams', seams.map(x => x.at + ':' + x.dx).join(' '));
   const seamAt = async (top, name) => { await p.evaluate(t => { const s = document.getElementById('lscroll'); s.scrollTop = t - s.clientHeight / 2; }, top); await p.waitForTimeout(300); await shot(name); };
-  await seamAt(await p.evaluate(() => document.querySelector('.band[data-w="0"]').offsetTop + 80), '43-map-seam-1-2');
-  await seamAt(await p.evaluate(() => document.querySelector('.band[data-w="5"]').offsetTop + 80), '43-map-seam-6-7');
-  // 过渡图 trans_add_sub：插在两段之间（铺满宽度），两头都叠化；去掉后恢复直接叠化
-  const tr = await p.evaluate(() => {
-    const c = document.createElement('canvas'); c.width = 390; c.height = 200; const g = c.getContext('2d');
-    g.fillStyle = '#8fd16a'; g.fillRect(0, 0, 390, 200); g.fillStyle = '#e8c98f'; g.beginPath(); g.moveTo(150, 200); g.bezierCurveTo(120, 120, 260, 90, 200, 0); g.lineTo(250, 0); g.bezierCurveTo(310, 90, 170, 120, 210, 200); g.fill();
-    __t.setArt('trans_add_sub', c.toDataURL()); __t.renderMap();
-    const t = document.querySelector('.band.trans'), b0 = document.querySelector('.band[data-w="0"]'), b1 = document.querySelector('.band[data-w="1"]');
-    if (!t) return { trans: false };
-    return { trans: true, full: Math.abs(t.offsetWidth - t.parentElement.offsetWidth) < 1, between: t.offsetTop < b0.offsetTop && t.offsetTop + t.offsetHeight > b0.offsetTop && t.offsetTop < b1.offsetTop + b1.offsetHeight && t.offsetTop + t.offsetHeight > b1.offsetTop + b1.offsetHeight, top: t.offsetTop };
-  });
-  if (!tr.trans || !tr.full || !tr.between) problems.push(`[${view.name}] a transition picture should sit between the two worlds, full width: ${JSON.stringify(tr)}`);
-  if (tr.trans) await seamAt(tr.top + 100, '43b-map-trans');
+  for (const [t, name] of [[0, '43-map-trans-1-2'], [5, '43-map-trans-6-7']]) {
+    const tt = await p.evaluate(t => { const e = document.querySelector(`.band.trans[data-t="${t}"]`); return e ? [e.offsetTop, e.offsetHeight] : null; }, t);
+    if (tt) { await seamAt(tt[0] + tt[1] - 40, name + '-low'); await seamAt(tt[0] + 40, name + '-high'); }
+  }
+  // 没有过渡图的接缝：两段地图直接叠化（拿掉 trans_add_sub 试一下，再放回去）
+  const keepTr = await p.evaluate(() => __t.art('trans_add_sub'));
   await p.evaluate(() => { __t.setArt('trans_add_sub', null); __t.renderMap(); });
-  if (await p.evaluate(() => !!document.querySelector('.band.trans'))) problems.push(`[${view.name}] without the transition picture the seam should be a plain fade`);
+  const plain = (await seamCheck()).find(x => x.at === 'w1/w2');
+  if (!plain || await p.evaluate(() => !!document.querySelector('.band.trans[data-t="0"]')) || plain.overlap < 120 || plain.overlap > 200 || !plain.fade || Math.abs(plain.dx) > 40) problems.push(`[${view.name}] without a transition picture two worlds should fade straight into each other, roads lined up: ${JSON.stringify(plain)}`);
+  await seamAt(await p.evaluate(() => document.querySelector('.band[data-w="0"]').offsetTop + 80), '43b-map-seam-plain');
+  await p.evaluate(k => { __t.setArt('trans_add_sub', k); __t.renderMap(); }, keepTr);
   await p.evaluate(() => { __t.S.openAll = false; __t.renderMap(); });
   // 糖果风（家长 10-22）：按钮、面板、标签、道具按钮都是深棕粗描边 + 单层底部阴影，没有仿三维的内高光；图标用原画
   const candy = () => p.evaluate(() => {
@@ -781,7 +803,7 @@ async function playAll(view) {
   await p.evaluate(() => { const B = __t.B; __t.S.items.heal = 2; __t.S.items.cut = 2; __t.S.items.swap = 2; B.lucky = 0; B.shield = 0; B.hearts = B.maxH - 2; __t.renderItems(); });
   await p.evaluate(() => __t.useItem('heal')); await p.waitForTimeout(1400);
   await shot('63-candy-battle');
-  const cBat = await candy(), iBat = await p.evaluate(() => ({ items: document.querySelectorAll('#items img.icon').length + document.querySelectorAll('#items svg.isvg').length, svg: document.querySelectorAll('#items svg.isvg').length, hearts: document.querySelectorAll('#hearts img.icon').length, empty: document.querySelectorAll('#hearts .lost img.icon').length, back: !!document.querySelector('#bBack img.icon') }));
+  const cBat = await candy(), iBat = await p.evaluate(() => ({ items: document.querySelectorAll('#items img.icon').length + document.querySelectorAll('#items svg.cs').length, svg: document.querySelectorAll('#items svg.cs').length, hearts: document.querySelectorAll('#hearts img.icon').length, empty: document.querySelectorAll('#hearts .lost img.icon').length, back: !!document.querySelector('#bBack img.icon') }));
   if (cBat.length) problems.push(`[${view.name}] battle is not candy style: ${cBat.slice(0, 4)}`);
   if (iBat.items !== 3 || iBat.svg !== 2 || !iBat.hearts || !iBat.back) problems.push(`[${view.name}] battle should use the painted heart / potion / map icons and the candy 去错 / 换题 icons: ${JSON.stringify(iBat)}`);
   await p.evaluate(() => __t.setDrops(() => ({ exp: 15, gear: rollGear(10, false, { slot: 'weapon', quality: 'purple' }), item: 'cut', stone: 1, gearExp: 10 })));
