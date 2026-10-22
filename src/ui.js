@@ -542,26 +542,92 @@ const gearNeed = k => '获得过<b style="color:'+GEAR_QUALITY_MAP[k].col+'">'+G
    穿了盔甲：脚下多一圈盔甲品质颜色的光环（.aura）。没有原画就是 3D 图 */
 const HERO_ART = ["", "hero2_ninja", "hero2_robot", "hero2_astronaut", "hero2_trex", "hero2_dragon", "hero2_unicorn", "hero2_king"];
 const HERO_HANDS = [{}, {}, {fr:.17, fl:.84, fy:.73}, {fr:.20, fl:.82, fy:.74}, {fr:.40, fl:.80, fy:.60}, {fr:.17, fl:.84, fy:.74}, {fr:.02, fl:.98, fy:.56, float:true}, {}];
-const heroArtFor = (i, eq) => i===0 ? ((eq && eq.armor && art("hero_"+eq.armor.quality)) || art("hero_base")) : art(HERO_ART[i]);
+// 神秘勇士（下标 8）还没有原画：用小勇士的原画画成剪影 + 金色光效（CSS .a-h8 / .mys）
+const heroArtFor = (i, eq) => HEROES[i] && HEROES[i].mystic ? art("hero_base") : i===0 ? ((eq && eq.armor && art("hero_"+eq.armor.quality)) || art("hero_base")) : art(HERO_ART[i]);
 // 勇士选择页的头像（没解锁的在选择页里涂成剪影）
 const heroPic = i => { const u = heroArtFor(i, null); return u ? artTag(u, "ei art", img(HEROES[i].e)) : img(HEROES[i].e); };
 // 勇士页：擅长什么题
-const heroGoodText = h => h.good ? '擅长：<span class="hgood">'+Q_CATS[h.good]+'</span><br><small>（这类题多一些）</small>' : '什么题都一样拿手';
+const heroGoodText = h => h.mystic ? '每道选择题少一个错误选项，对对碰少一对，连连看少一组' : h.good ? '擅长：<span class="hgood">'+Q_CATS[h.good]+'</span><br><small>（这类题多一些）</small>' : '什么题都一样拿手';
+// 神秘勇士：剪影 + 金色光效（之后再画原画）；找到之前是黑色剪影
+const mysticPic = found => '<span class="mys'+(found?" found":"")+'">'+heroPic(mysticIdx())+'</span>';
 function openHeroes(){
   let view = S.hero;
+  // 没找到的神秘勇士：「神秘勇士在等你们去寻找……」、碎片进度、每天一次「结伴探险」
+  const renderMystic = first => {
+    const done = questToday(), fr = S.mystic.frags;
+    const body = '<div class="herostage mystic">'+mysticPic(false)+'<div><b class="qqq">？？？</b><p>神秘勇士在等你们去寻找……</p></div></div>'
+      + '<div class="frags">'+img("🗺️")+' 寻宝地图碎片 '+[...Array(MYSTIC_FRAGS)].map((_,i)=>'<span class="frag'+(i<fr?" on":"")+'"></span>').join("")+'<b class="num">'+fr+'/'+MYSTIC_FRAGS+'</b></div>'
+      + '<p class="muted"><small>选两位勇士结伴探险，'+MYSTIC_Q+' 道题答对 '+MYSTIC_PASS+' 道就算成功，每天一次</small></p>'
+      + '<div class="btnrow"><button class="btn white" id="hBack">回勇士</button><button class="btn purple" id="qGo"'+(done?' disabled':'')+'>'+(done ? '明天再来' : '结伴探险')+'</button></div>';
+    if(first) openPage({title:"选择勇士", back:true, onClose:renderMap, body}); else setBody(body);
+    say(done ? "今天已经探险过啦，明天再来找神秘勇士吧" : "神秘勇士在等你们去寻找");
+    $("hBack").onclick = ()=>{ sfx.click(); view = S.hero; render(false); };
+    if(!done) $("qGo").onclick = ()=>{ sfx.click(); pickPartners(); };
+  };
+  // 选两位已解锁的勇士结伴
+  const pickPartners = () => {
+    let sel = [];
+    const draw = () => {
+      setBody('<p class="gsay">'+img("🗺️")+' 选两位勇士一起去探险</p><div class="heroes">'+HEROES.map((x,i)=>x.mystic || !heroUnlocked(i) ? '' :
+          '<button class="hcard'+(sel.includes(i)?" sel":"")+'" data-i="'+i+'">'+heroPic(i)+'</button>').join("")+'</div>'
+        + '<div class="btnrow"><button class="btn white" id="pBack">回去</button><button class="btn green" id="pGo"'+(sel.length===2?'':' disabled')+'>出发探险 <b class="num">'+sel.length+'/2</b></button></div>');
+      $("pbody").querySelectorAll(".hcard").forEach(b=>b.onclick=()=>{ const i = +b.dataset.i; sfx.click();
+        sel = sel.includes(i) ? sel.filter(x=>x!==i) : sel.length<2 ? sel.concat(i) : [sel[1], i]; draw(); });
+      $("pBack").onclick = ()=>{ sfx.click(); renderMystic(false); };
+      if(sel.length===2) $("pGo").onclick = ()=>{ sfx.click(); runQuest(sel); };
+    };
+    draw(); say("选两位勇士，一起去寻找神秘勇士");
+  };
+  // 探险：MYSTIC_Q 道题（这个大关 Boss 关的计算类题，没有限时、答错不扣东西），答对 ≥ MYSTIC_PASS 道成功
+  const runQuest = pair => {
+    const [cw] = curLevel(), gen = levelDef(cw, NLV-1).math;
+    let n = 0, right = 0, q = null, busy = false;
+    const next = () => {
+      if(n>=MYSTIC_Q) return finish();
+      for(let k=0; k<30; k++){ q = gen(); if(q.kind!=="word" && Array.isArray(q.options)) break; }
+      if(hero().mystic) q = mysticTrim(q);
+      busy = false; questQ = q;
+      const show = q.html ? q.html : q.parts.map(p=>p==="?" ? '<span class="blank">?</span>' : '<span>'+p+'</span>').join(" ");
+      setBody('<div class="qhead">'+pair.map(i=>'<span class="qhero">'+heroPic(i)+'</span>').join("")+'<span class="qprog">第 <b class="num">'+(n+1)+'/'+MYSTIC_Q+'</b> 题 · 答对 <b class="num" id="qRight">'+right+'</b></span></div>'
+        + '<div class="qbox panel"><div class="q'+(q.small?" small":"")+'" id="qBox">'+show+'</div></div>'
+        + '<div class="answers qans'+(q.options.length===3?" three":"")+'">'+q.options.map(o=>'<button class="ans" data-v="'+o+'">'+(q.optHtml?q.optHtml(o):o)+'</button>').join("")+'</div>');
+      say(q.speak);
+      $("pbody").querySelectorAll(".ans").forEach(b=>b.onclick=()=>{
+        if(busy) return; busy = true;
+        const ok = b.dataset.v===String(q.answer);
+        if(ok){ right++; b.classList.add("right"); sfx.right(); }
+        else { b.classList.add("wrong"); sfx.wrong(); const a = $("pbody").querySelector('.ans[data-v="'+String(q.answer)+'"]'); if(a) a.classList.add("right"); }
+        n++; setTimeout(next, ok ? 600 : 1300);
+      });
+    };
+    const finish = () => {
+      const r = questResult(right, questForce);
+      let body = '<div class="qhead">'+pair.map(i=>'<span class="qhero">'+heroPic(i)+'</span>').join("")+'</div><p class="gsay">答对 <b class="num">'+right+'/'+MYSTIC_Q+'</b> 道</p>';
+      if(r.found){ body += '<div class="herostage mystic">'+mysticPic(true)+'<div><b>找到神秘勇士了！</b><p>'+img("✨")+' 能力：每道选择题少一个错误选项，对对碰少一对，连连看少一组</p></div></div>'; sfx.chest(); confetti(200); say("找到神秘勇士了！"); }
+      else if(r.frag){ body += '<p>'+img("🗺️")+' 这次没找到，但发现了新线索！<br>得到 1 块寻宝地图碎片（<b class="num">'+S.mystic.frags+'/'+MYSTIC_FRAGS+'</b>）</p>'; sfx.star(1); say("这次没找到，但发现了新线索！"); }
+      else { body += '<p>'+img("💪")+' 差一点点！答对 '+MYSTIC_PASS+' 道就能成功，明天再来！</p>'; say("差一点点，明天再来！"); }
+      body += '<div class="btnrow"><button class="btn green" id="qDone">回勇士</button></div>';
+      setBody(body);
+      $("qDone").onclick = ()=>{ sfx.click(); view = r.found ? mysticIdx() : S.hero; render(false); };
+    };
+    say("出发探险！"); next();
+  };
   const render = first => {
-    const h = HEROES[view], un = heroUnlocked(view);
+    const h = HEROES[view], un = heroUnlocked(view), showMystic = normalHeroesDone();
+    if(h.mystic && !un) return renderMystic(first);
     // 没解锁的勇士：只给剪影、「？？？」和解锁条件，名字、技能都不露（家长 10-22）
-    const body = (un ? '<div class="herostage" style="--hcol:'+h.col+'">'+heroPic(view)+'<div><b>'+h.n+'</b><p>'+img(h.shot)+' '+heroGoodText(h)+'</p></div></div>'
+    const body = (un ? '<div class="herostage'+(h.mystic?" mystic":"")+'" style="--hcol:'+h.col+'">'+(h.mystic ? mysticPic(true) : heroPic(view))+'<div><b>'+h.n+'</b><p>'+img(h.shot)+' '+heroGoodText(h)+'</p></div></div>'
         : '<div class="herostage locked"><span class="sil">'+heroPic(view)+'</span><div><b class="qqq">？？？</b>'
           + '<p class="lockline">'+img("🔒")+' '+(h.gear ? gearNeed(h.gear) : '需要 '+h.need+' 颗 '+img("⭐"))+'</p></div></div>')
-      + '<div class="heroes">'+HEROES.map((x,i)=>'<button class="hcard'+(i===S.hero?" sel":"")+(heroUnlocked(i)?"":" lock")+(i===view?" view":"")+'" data-i="'+i+'">'+heroPic(i)+(heroUnlocked(i)?"":'<span class="lk">'+img("🔒")+'</span>')+'</button>').join("")+'</div>'
+      + '<div class="heroes'+(showMystic?" h9":"")+'">'+HEROES.map((x,i)=>x.mystic ? (showMystic ? '<button class="hcard mystic'+(i===S.hero?" sel":"")+(heroUnlocked(i)?"":" lock")+(i===view?" view":"")+'" data-i="'+i+'">'+mysticPic(heroUnlocked(i))+'</button>' : '')
+        : '<button class="hcard'+(i===S.hero?" sel":"")+(heroUnlocked(i)?"":" lock")+(i===view?" view":"")+'" data-i="'+i+'">'+heroPic(i)+(heroUnlocked(i)?"":'<span class="lk">'+img("🔒")+'</span>')+'</button>').join("")+'</div>'
       + '<p>'+img("✨")+' 金色光环：所有勇士暴击多打 1 滴血'+(goldAura() ? '（已获得）' : '<br><small>拿到橙色或更好的装备就能获得</small>')+'</p>'
       + '<button class="btn green" id="hGo">'+img("⚔️")+' 出发！</button>';
     if(first) openPage({title:"选择勇士", back:true, onClose:renderMap, body}); else setBody(body);
     $("pbody").querySelectorAll(".hcard").forEach(b=>b.onclick=()=>{
       view = +b.dataset.i;
       if(heroUnlocked(view)){ S.hero = view; save(); sfx.right(); say(HEROES[view].n+"，"+strip(heroGoodText(HEROES[view]))); }
+      else if(HEROES[view].mystic) sfx.click();
       else { sfx.click(); say(HEROES[view].gear ? "拿到"+GEAR_QUALITY_MAP[HEROES[view].gear].name+"色装备，就能解锁这个勇士" : "再拿"+(HEROES[view].need-totalStars())+"颗星，就能解锁这个勇士"); }
       render(false);
     });
@@ -616,7 +682,7 @@ const isWorn = g => !!g && !!S.equipped[g.slot] && S.equipped[g.slot].id===g.id;
 // 小勇士 with original art: the armour's quality picks the whole look (hero_<品质>, else hero_base); weapon / shield
 // pictures sit in the hands if they exist. Other heroes, or no art at all: the 3D emoji with the gear icons around it.
 function heroArtURL(eq){ return heroArtFor(HEROES.indexOf(hero()), eq); }
-const heroFace = () => { const u = heroArtURL(S.equipped); return u ? artTag(u, "ei art", img(hero().e)) : img(hero().e); };
+const heroFace = () => { if(hero().mystic) return mysticPic(true); const u = heroArtURL(S.equipped); return u ? artTag(u, "ei art", img(hero().e)) : img(hero().e); };
 function avatarHTML(eq){
   const base = heroArtURL(eq);
   if(base){
@@ -1087,6 +1153,7 @@ function nextQuestion(given){
   let q = given, tries = 0;
   const gen = (S.py>0 && B.W.id!=="think" && Math.random()<S.py) ? pyQ : B.L.g;
   if(!q) do { q = gen(); tries++; } while(B.recent.includes(qKey(q)) && tries<30);
+  if(hero().mystic) q = mysticTrim(q);   // 神秘勇士：少一个错误选项
   B.recent.push(qKey(q)); if(B.recent.length>8) B.recent.shift();
   B.q = q; B.charge = 0; B.qt = 0; B.lastTick = 0; B.wrongThisQ = false; B.hintOpen = false; B.step = 0;
   $("tutor").hidden = true;
@@ -1249,7 +1316,7 @@ function punchFx(crit){
 /* 怪物闪避（第五轮）：答对后有 DODGE_RATE 的机会怪物闪开（显示「闪避！」+ 闪避动作，不掉血，自动换下一题，连击不断）。
    不会连续两次闪避；第 1 大关前 3 关不闪避；Boss 这一下可能打倒它（血量 ≤ 单次伤害上限）时不闪避。 */
 const DODGE_RATE = 0.04;
-let dodgeForce = null;   // 测试用（__t.setDodge）：固定闪避用的随机数
+let dodgeForce = null, questForce = null, questQ = null;   // questForce：测试用（__t.setQuest），固定探险找没找到的随机数   // 测试用（__t.setDodge）：固定闪避用的随机数
 function dodgeCheck(b, r){
   if(!b || b.lastDodge) return false;
   if(!b.run && b.w===0 && b.l<3) return false;
@@ -1370,9 +1437,11 @@ function startBoard(){
   if(B.mode==="match"){
     const layers = B.l >= 7 ? 2 : 1;
     B.board = makeMatchBoard(matchGenFor(B.w,B.l) || (()=>G.add(10)), {layers, cols: layers===2 ? 3 : 4});
+    if(hero().mystic) B.board = boardDropPair(B.board);   // 神秘勇士：少一对
     B.q = {kind:"board", speak: layers===2 ? "找出得数一样的两张卡片！上面的卡片拿走，下面的才能用哦！" : "找出得数一样的两张卡片！"};
   } else {
-    B.board = makeLinkBoard(linkPairs(B.w), {n:LINK_N});
+    const n = LINK_N - (hero().mystic ? 1 : 0);   // 神秘勇士：少一组
+    B.board = makeLinkBoard(llkPairs(B.w, n), {n});
     B.q = {kind:"board", speak:"把汉字和它的拼音连起来！"};
   }
   say(B.q.speak);

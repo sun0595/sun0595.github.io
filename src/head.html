@@ -161,6 +161,29 @@ svg.ei.cs{overflow:visible}
 .wchest.ready{background:#ffe08a;animation:pulse 1s infinite}
 .wchest.opened{opacity:.75}
 .hgood{color:#2563eb}
+/* 神秘勇士：剪影 + 金色光效；没找到时是暗一点的剪影 */
+.heroes.h9{grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.mys{display:inline-block;line-height:0}
+.mys .ei{filter:brightness(0) opacity(.6)}
+.mys.found .ei{filter:brightness(0) drop-shadow(0 0 4px #fde047) drop-shadow(0 0 10px #f59e0b);animation:mysGlow 1.6s ease-in-out infinite}
+@keyframes mysGlow{50%{filter:brightness(0) drop-shadow(0 0 7px #fef08a) drop-shadow(0 0 16px #f59e0b)}}
+.hcard .mys .ei{font-size:clamp(36px,10vw,52px)}
+.mys .ei.art{height:1em;width:auto}
+.hcard .mys .ei.art{height:clamp(40px,11vw,56px)}
+.herostage .mys .ei.art{height:clamp(80px,24vw,104px)}
+/* 战斗里的神秘勇士：身体剪影 + 金光，手里的武器盾牌照常显示 */
+.av.a-h8>.ei.art{filter:brightness(0) drop-shadow(0 0 4px #fde047) drop-shadow(0 0 10px #f59e0b)!important}
+.herostage .mys .ei{font-size:clamp(76px,22vw,96px)}
+.herostage.mystic{background:radial-gradient(circle at 18% 50%,#fde68a 0,rgba(255,255,255,0) 45%),linear-gradient(var(--cw1) var(--c-split),var(--cw2) 0)}
+.frags{display:flex;align-items:center;justify-content:center;gap:6px;font-size:16px}
+.frags .frag{width:20px;height:20px;border-radius:5px;border:var(--c-lw-s) solid var(--c-line);background:#f1e3c8;transform:rotate(8deg)}
+.frags .frag.on{background:#fbbf24}
+.qhead{display:flex;align-items:center;justify-content:center;gap:8px}
+.qhero .ei{font-size:44px}
+.qhero .ei.art{height:52px;width:auto}
+.qprog{font-size:16px;margin-left:6px}
+.qbox{padding:14px 8px}
+.qans .ans{min-height:64px}
 .wcbig{font-size:84px;line-height:1}
 .wcprog{display:flex;align-items:center;justify-content:center;gap:8px;font-size:18px}
 .wcprog .xbar{width:60%}

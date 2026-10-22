@@ -91,3 +91,59 @@ export async function r5Heroes(p, { view, problems, shot, tap }) {
   await tap('#pgBack'); await p.evaluate(() => { __t.S.hero = 0; });
   console.log('ok ', view.name, 'r5 heroes');
 }
+
+// ---- 4 神秘勇士「结伴探险」 ----
+export async function r5Mystic(p, { view, problems, shot, tap }) {
+  const bad = m => problems.push(`[${view.name}] r5: ${m}`);
+  // 普通勇士没集齐：勇士页没有神秘勇士
+  const hidden = await p.evaluate(() => { const keep = __t.S.lv.stars; __t.S.lv.stars = {}; __t.S.hero = 0; __t.openHeroes(); const n = document.querySelectorAll('.hcard.mystic').length; __t.S.lv.stars = keep; document.getElementById('pgBack').click(); return n; });
+  if (hidden) bad('普通勇士没集齐时不该出现神秘勇士');
+  await p.evaluate(() => { const T = __t; for (const w of T.WORLDS_V2) for (let l = 1; l <= 15; l++) T.S.lv.stars[w.id + '-' + l] = 3; T.S.mystic = { found: false, frags: 0, day: '' }; T.S.hero = 0; T.toMap(); T.openHeroes(); });
+  await p.waitForTimeout(300);
+  if (!(await p.evaluate(() => __t.normalHeroesDone() && !!document.querySelector('.hcard.mystic')))) bad('集齐普通勇士后勇士页应出现神秘剪影');
+  await tap('.hcard.mystic'); await p.waitForTimeout(300); await shot('83-mystic-wait');
+  if (!/神秘勇士在等你们去寻找/.test(await p.textContent('#pbody'))) bad('神秘勇士页应写「神秘勇士在等你们去寻找……」');
+  await tap('#qGo'); await p.waitForTimeout(300);
+  await tap('#pbody .hcard[data-i="1"]'); await tap('#pbody .hcard[data-i="3"]'); await p.waitForTimeout(200); await shot('83-quest-pick');
+  await p.evaluate(() => __t.setQuest(0.99));   // 成功但没找到 → 得 1 块碎片
+  await tap('#pGo'); await p.waitForTimeout(300); await shot('83-quest-q');
+  for (let i = 0; i < 10; i++) {
+    const a = await p.evaluate(() => String(__t.questQ.answer));
+    await tap(`#pbody .ans[data-v="${a}"]`); await p.waitForTimeout(700);
+  }
+  await p.waitForTimeout(300); await shot('83-quest-frag');
+  const r1 = await p.evaluate(() => ({ m: Object.assign({}, __t.S.mystic), txt: document.getElementById('pbody').textContent }));
+  if (r1.m.frags !== 1 || r1.m.found || !/这次没找到，但发现了新线索/.test(r1.txt)) bad('探险成功没找到应得 1 块碎片并提示新线索: ' + JSON.stringify(r1.m));
+  await tap('#qDone'); await p.waitForTimeout(200); await tap('.hcard.mystic'); await p.waitForTimeout(200);
+  if (!(await p.evaluate(() => document.getElementById('qGo').disabled))) bad('每天只能探险一次');
+  // 保底：再成功 4 次（都没抽中）→ 第 5 块碎片时必得；失败（答对 < 8）什么都不扣
+  const pity = await p.evaluate(() => { const T = __t, out = []; for (let k = 0; k < 4; k++) { T.S.mystic.day = ''; const r = T.questResult(8, 0.99); out.push([T.S.mystic.frags, r.found]); }
+    T.S.mystic = { found: false, frags: 2, day: '' }; const f = T.questResult(7, 0); const fail = [T.S.mystic.frags, f.found, f.pass];
+    T.S.mystic = { found: false, frags: 0, day: '' }; const lucky = T.questResult(10, 0.1).found;
+    return { out, fail, lucky }; });
+  if (JSON.stringify(pity.out) !== '[[2,false],[3,false],[4,false],[5,true]]') bad('集满 5 块碎片必得神秘勇士: ' + JSON.stringify(pity.out));
+  if (pity.fail[0] !== 2 || pity.fail[1] || pity.fail[2]) bad('探险失败不该扣碎片、也不该找到: ' + JSON.stringify(pity.fail));
+  if (!pity.lucky) bad('探险成功抽中 20% 应直接找到');
+  // 找到以后：勇士页能选它，剪影 + 金色光效
+  await p.evaluate(() => { document.getElementById('pgBack').click(); __t.S.mystic.found = true; __t.openHeroes(); });
+  await tap('.hcard.mystic'); await p.waitForTimeout(300); await shot('83-mystic-found');
+  if (!(await p.evaluate(() => __t.S.hero === __t.mysticIdx() && !!document.querySelector('.herostage .mys.found')))) bad('找到神秘勇士后应能选它');
+  await tap('#pgBack');
+  // 能力：选择题少一个错误选项（至少留 2 个）、对对碰少一对、连连看少一组
+  const ab = await p.evaluate(() => { const T = __t, bad = [];
+    for (let i = 0; i < 2000; i++) { const q = [T.G.cmp10(), T.G.add(10), T.G.pic4(10), T.G.trap(20)][i % 4], n = q.options.length, t = T.mysticTrim(q);
+      if (t.options.length !== Math.max(2, n - 1) || !t.options.some(o => String(o) === String(q.answer))) { bad.push(JSON.stringify([q.options, t.options, q.answer])); break; } }
+    const two = T.mysticTrim({ answer: 1, options: [1, 2] }).options.length;
+    const boards = [1, 2].map(layers => { const b = makeMatchBoard(() => T.G.add(10), { layers, cols: layers === 2 ? 3 : 4 }), cards = b.cards || b, n0 = cards.length; const b2 = T.boardDropPair(b), c2 = b2.cards || b2, ids = new Set(c2.map(c => c.id));
+      return { n0, n1: c2.length, dangling: c2.some(c => (c.coveredBy || []).some(id => !ids.has(id))) }; });
+    return { bad, two, boards }; });
+  if (ab.bad.length || ab.two !== 2) bad('神秘勇士应少一个错误选项、最少留 2 个: ' + JSON.stringify(ab));
+  if (ab.boards.some(b => b.n1 !== b.n0 - 2 || b.dangling)) bad('神秘勇士在对对碰应少一对: ' + JSON.stringify(ab.boards));
+  const link = await p.evaluate(async () => { const T = __t; const l = T.LEVEL_MODES[0].modes.indexOf('link'); T.startLevel(0, l); await new Promise(r => setTimeout(r, 1800)); return T.B.board.left.length; });
+  const opt = await p.evaluate(async () => { const T = __t; T.toMap(); T.startLevel(1, 4); await new Promise(r => setTimeout(r, 1800)); return document.querySelectorAll('#answers .ans').length; });
+  await shot('83-mystic-battle');
+  if (opt !== 3 && opt !== 2) bad('神秘勇士战斗里的选择题应少一个选项: ' + opt);
+  if (link !== 3) bad('神秘勇士在连连看应少一组（4 → 3）: ' + link);
+  await p.evaluate(() => { __t.setQuest(null); __t.S.hero = 0; __t.toMap(); });
+  console.log('ok ', view.name, 'r5 mystic');
+}
