@@ -133,6 +133,35 @@ export async function invCheck(page, n = 2000) {
       });
     });
     stats.share = __t.LEVEL_PLAN.map((W, w) => `${W.name} ${(share[w] * 100).toFixed(0)}%`).join('，');
+    // 三步连式 G.chain3：每档、直接算 / 逆向各抽样 2000 次：算式代回去成立、每一步都在这一档范围里、答案在选项里、没有负数
+    const CH = { '5': [0, 5], '10': [0, 10], '20': [0, 20], '20n': [0, 20], tens: [0, 100], hund: [0, 1000], d1: [10, 99], d1c: [10, 99], d2: [10, 99] };
+    for (const [t, [lo, hi]] of Object.entries(CH)) for (const inv of [false, true]) {
+      const errs = new Set();
+      for (let i = 0; i < n && errs.size < 4; i++) {
+        const q = __t.G.chain3(t, inv), v = q.parts.map(x => x === '?' ? q.answer : x), [a, o1, b, o2, c, eq, r] = v;
+        const m = o1 === '+' ? a + b : a - b, res = o2 === '+' ? m + c : m - c;
+        if (eq !== '=' || res !== (inv ? r : q.answer)) errs.add('代回去不成立: ' + q.parts.join(' ') + ' ? = ' + q.answer);
+        if ([a, m, res].some(x => x < lo || x > hi)) errs.add('超出范围: ' + q.parts.join(' '));
+        if (!q.options || q.options.length !== 4 || new Set(q.options).size !== 4 || !q.options.includes(q.answer) || q.options.some(o => !Number.isInteger(o) || o < 0)) errs.add('选项不对: ' + JSON.stringify(q.options) + ' 答案 ' + q.answer);
+        if (inv !== isInv(q)) errs.add('逆向位置不对: ' + q.parts.join(' '));
+        if (typeof q.speak !== 'string' || /[<>?]/.test(q.speak.replace(/？$/, ''))) errs.add('speak 不是纯文字: ' + q.speak);
+        for (const m2 of strip(q.hint || '').matchAll(/(\S)\s*=\s*(\d+)(?!\d)/g)) if (inv && m2[1] !== '?' && +m2[2] === q.answer) errs.add('讲解直接写出了答案: ' + strip(q.hint));
+        if (/undefined|NaN/.test(q.hint)) errs.add('讲解里有 undefined / NaN');
+      }
+      for (const e of errs) out.push(`chain3(${t}${inv ? ', 逆向' : ''}): ${e}`);
+    }
+    // 每关题型轮换：battle 关连出 300 道，同一种形式（加 / 减 / 连式 / 逆向 / 应用题）不能连着 3 道；每关都有加也有减，第 3 关起有连式
+    const rot = [];
+    __t.LEVEL_PLAN.forEach((W, w) => W.levels.forEach((lv, l) => {
+      const d = __t.levelDef(w, l); if (d.mode !== 'battle') return;
+      const seq = []; for (let i = 0; i < 300; i++) seq.push(__t.qForm(d.g()));
+      for (let i = 2; i < seq.length; i++) if (seq[i] === seq[i - 1] && seq[i] === seq[i - 2]) { out.push(`${W.name} 第 ${l + 1} 关连出 3 道「${seq[i]}」`); break; }
+      if (!seq.includes('add') || !seq.includes('sub')) out.push(`${W.name} 第 ${l + 1} 关应该加法、减法都有: ${[...new Set(seq)]}`);
+      if (l >= 2 && !seq.includes('chain')) out.push(`${W.name} 第 ${l + 1} 关应该有连式`);
+      if (l < 2 && seq.includes('chain')) out.push(`${W.name} 第 ${l + 1} 关只出单纯加减，不该有连式`);
+      rot.push(new Set(seq).size);
+    }));
+    stats.rotate = `battle 关每关 ${Math.min(...rot)}～${Math.max(...rot)} 种形式`;
     return { problems: out, stats };
   }, { n, RANGE: INV_RANGE, SHARE: INV_SHARE });
 }
@@ -148,8 +177,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const r = await wpCheck(p), ri = await invCheck(p);
   await b.close();
   for (const [k, v] of Object.entries(r.stats)) console.log(`${k.padEnd(15)} ${v.n} 次  变体 ${v.variants}  答案 ${v.answers}（${v.distinct} 种）`);
-  for (const [k, v] of Object.entries(ri.stats)) if (k !== 'share') console.log(`${k.padEnd(15)} ${v.n} 次  答案 ${v.answers}`);
+  for (const [k, v] of Object.entries(ri.stats)) if (k !== 'share' && k !== 'rotate') console.log(`${k.padEnd(15)} ${v.n} 次  答案 ${v.answers}`);
   console.log('逆向题占比（battle 关）：' + ri.stats.share);
+  console.log('题型轮换：' + ri.stats.rotate);
   const bad = errs.map(e => 'JS error: ' + e).concat(r.problems, ri.problems);
   if (bad.length) { console.error('\nFAILED:\n- ' + bad.join('\n- ')); process.exit(1); }
   console.log('wp_check: all word problem types and inverse questions OK');
