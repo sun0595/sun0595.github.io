@@ -13,6 +13,7 @@
 import { chromium } from 'playwright';
 import { wpCheck, invCheck, qbankCheck, r5Check } from './wp_check.mjs';
 import { mkdirSync } from 'fs';
+import { r5Systems } from './r5_systems.mjs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -1118,11 +1119,25 @@ async function itemMigration() {
   await ctx.close();
 }
 
-await itemMigration();
-await playAll({ name: '375', viewport: { width: 375, height: 667 }, dpr: 2, safe: { top: 0, bottom: 0 } });
-await playAll({ name: '393', viewport: { width: 393, height: 852 }, dpr: 3, safe: { top: 59, bottom: 34 } });
-await betaCheck();
-await resetCheck();
+// 第五轮系统（闪避、成长显示、大关宝箱、勇士擅长、结伴探险、题型开关、家长新页签）：见 r5_systems.mjs。
+// 只跑这一部分：ONLY=r5 node tools/smoke_test.mjs
+async function r5Run(view) {
+  const SHOTS = path.join(ROOT, 'build', 'shots', view.name); mkdirSync(SHOTS, { recursive: true });
+  const { ctx, p } = await newPage(view);
+  await p.goto('file://' + path.join(ROOT, 'build', 'test.html'));
+  await p.evaluate(([k, s]) => localStorage.setItem(k, JSON.stringify(s)), [V1, SAVE]);
+  await p.reload(); await p.waitForTimeout(600);
+  await r5Systems(p, { view, problems, shot: name => shotCheck(p, view, SHOTS, name), tap: sel => p.click(sel, { force: true }) });
+  await ctx.close();
+}
+const VIEWS = [{ name: '375', viewport: { width: 375, height: 667 }, dpr: 2, safe: { top: 0, bottom: 0 } }, { name: '393', viewport: { width: 393, height: 852 }, dpr: 3, safe: { top: 59, bottom: 34 } }];
+if (process.env.ONLY !== 'r5') {
+  await itemMigration();
+  for (const v of VIEWS) await playAll(v);
+  await betaCheck();
+  await resetCheck();
+}
+for (const v of VIEWS) await r5Run(v);
 await b.close();
 if (problems.length) { console.error('\nFAILED:\n- ' + problems.join('\n- ')); process.exit(1); }
 console.log('\nALL GOOD — screenshots in build/shots/375/ and build/shots/393/');

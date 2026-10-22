@@ -65,7 +65,7 @@ const ri = (a,b) => a + Math.floor(Math.random()*(b-a+1));
 const pick = arr => arr[Math.floor(Math.random()*arr.length)];
 const shuffle = a => { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]} return a; };
 '''
-TEST_HOOK = ("window.__t={showRunReward,WP_TRAP,WP_TRAP_KEYS,SMALL_P,ROUND5,startRun,openRunMenu,useItem,qTime,openBag,get B(){return B},get S(){return S},G,WP,WP_NEW,wpPool,LEVEL_PLAN,invRate,"
+TEST_HOOK = ("window.__t={showRunReward,setDodge(v){ dodgeForce = v; },dodgeCheck,monsterDodge,DODGE_RATE,WP_TRAP,WP_TRAP_KEYS,SMALL_P,ROUND5,startRun,openRunMenu,useItem,qTime,openBag,get B(){return B},get S(){return S},G,WP,WP_NEW,wpPool,LEVEL_PLAN,invRate,"
              "WORLDS_V2,HEROES,IMG,ICON_SVG,GEAR_SLOTS,CLOUD_H,CLOUD_OV,HERO_HANDS,qForm,synthPlan,autoSynth,LEVEL_MODES,layoutMap,ART_ROADS,img,startLevel,nextQuestion,toMap,levelDef,matchGenFor,matchPoolOK,curLevel,renderMap,hitCap,"
              "pyQ,pyBlend,pyBlendHz,blendQ,PY,LLK_SETS,llkPairs,pyLegal,pySplit,pyMark,pyBasic,pyInit,pyFin,pyCat,canInit,canFin,BLEND_FINS,PY_TYPES,"
              "wordOpts,kidOpts,numOptions,linkPick,invTier,INV_TIERS,INV_FORMS,"

@@ -205,7 +205,7 @@ svg.ei.cs{overflow:visible}
 .fighter{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:3px;width:44%}
 .sprite{line-height:0;animation:bob 1.6s ease-in-out infinite}
 .sprite .ei{font-size:clamp(78px,23vw,118px);vertical-align:0;filter:drop-shadow(0 6px 4px rgba(0,0,0,.25))}
-.mon .sprite:not(.hit):not(.lunge):not(.dead){animation-delay:-.8s}
+.mon .sprite:not(.hit):not(.lunge):not(.dodge):not(.dead){animation-delay:-.8s}
 @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 .tag{position:relative;z-index:2;font-size:14px;color:#fff;background:rgba(58,42,30,.8);border:var(--c-lw-s) solid var(--c-line);border-radius:10px;padding:1px 10px;white-space:nowrap}
 .hearts{position:relative;z-index:2;display:flex;gap:1px;padding:3px 7px;border-radius:14px;background:rgba(58,42,30,.7);border:var(--c-lw-s) solid var(--c-line)}
@@ -235,6 +235,11 @@ svg.ei.cs{overflow:visible}
 @keyframes monHit{0%{filter:brightness(3) saturate(0);transform:translateX(16px) scale(1.28,.7)}25%{filter:brightness(1.6) saturate(.4);transform:translateX(30px) scale(.84,1.2) rotate(6deg)}55%{filter:none;transform:translateX(10px) scale(1.08,.94)}78%{transform:translateX(2px) scale(.97,1.03)}100%{filter:none;transform:none}}
 @keyframes monHitB{0%{filter:brightness(3) saturate(0);transform:translateX(12px) scale(1.2,.78)}25%{filter:brightness(1.8) saturate(.3);transform:translateX(22px) scale(.88,1.14) rotate(4deg)}40%{transform:translateX(16px) scale(1.06,.95)}60%{filter:none;transform:translateX(6px) scale(.97,1.03)}100%{filter:none;transform:none}}
 .lunge{animation:lunge .5s cubic-bezier(.5,0,.6,1)!important}
+/* 怪物闪避：往后上方一跳躲开，再落回原地；「闪避！」是蓝色大字 */
+.dodge{animation:monDodge .7s cubic-bezier(.3,.9,.4,1)!important}
+@keyframes monDodge{0%{transform:none}25%{transform:translate(38%,-22%) rotate(14deg) scale(.92)}55%{transform:translate(30%,-8%) rotate(8deg)}100%{transform:none}}
+.dmg.hitn.dodgetxt{white-space:nowrap}
+.dmg.hitn.dodgetxt b{font:400 40px/1 var(--f-ui);color:#7dd3fc;-webkit-text-stroke:7px var(--ink);text-shadow:0 4px 0 var(--ink)}
 @keyframes lunge{0%{transform:translateX(0)}10%{transform:translateX(10%) scale(.92)}30%{transform:translateX(-115%) scale(1.35)}100%{transform:translateX(0)}}
 /* 勇士出手：冲到怪兽面前（--dash 由 JS 量出来），35% 处命中；拿剑挥砍带转身，空手是直拳 */
 .atk-slash{animation:heroSlash .48s cubic-bezier(.3,0,.4,1)}
@@ -844,6 +849,6 @@ svg.ei.cs{overflow:visible}
   .lt{width:72px;height:72px}.lt>.ei{font-size:44px}
 }
 @media (prefers-reduced-motion: reduce){
-  .sprite:not(.hit):not(.lunge):not(.dead):not(.attack):not(.atk-slash):not(.atk-punch):not(.hurt):not(.shake),.node.current .ball,.lt::before,.chest .ei,.card,.gcard,.gcard::after,.gt,.gup{animation:none!important}
+  .sprite:not(.hit):not(.lunge):not(.dodge):not(.dead):not(.attack):not(.atk-slash):not(.atk-punch):not(.hurt):not(.shake),.node.current .ball,.lt::before,.chest .ei,.card,.gcard,.gcard::after,.gt,.gup{animation:none!important}
 }
 </style>
