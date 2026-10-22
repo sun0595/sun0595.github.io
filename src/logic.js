@@ -2481,7 +2481,7 @@ G.color = function(w, mode){
     } else { const set = pick(mode==="shade" ? COLOR_SHADE : COLOR_HUE); ans = mode==="shade" ? set[0] : pick(set); opts = shuffle(set.slice()); }
     html = kStem(null, "哪一个是<b>"+cName(ans)+"</b>？"); speak = "哪一个是"+cName(ans)+"？";
     hint = '<p class="htitle">认颜色</p><p>'+(mode==="shade" ? "这几个颜色很像，仔细比一比，想一想"+cName(ans)+"的东西：" : "想一想"+cName(ans)+"的东西：")+'</p>'
-      + '<p>'+({red:"红红的草莓、西红柿",yellow:"黄黄的香蕉",blue:"蓝蓝的天空",green:"绿绿的树叶",black:"黑黑的头发",white:"白白的云朵",orange:"橙色的胡萝卜",purple:"紫色的茄子",pink:"粉红色的桃花"})[ans]+'</p>';
+      + '<p>'+({red:"红红的草莓、西红柿",yellow:"黄黄的香蕉",blue:"蓝蓝的天空",green:"绿绿的树叶",black:"黑黑的头发",white:"白白的云朵",orange:"橙色的胡萝卜",purple:"紫色的茄子",pink:"粉红色的桃花",brown:"棕色的巧克力、树干",gray:"灰灰的大象、石头"})[ans]+'</p>';
   }
   return {kind:"color", mode, html, speak, answer:ans, options:opts, optHtml:cBlock, disp:cName, hint, rec:speak, key:"color"+mode+ans+opts.join(""), kq:true};
 };
