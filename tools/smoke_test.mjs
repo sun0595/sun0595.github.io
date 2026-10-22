@@ -11,7 +11,7 @@
 //   python3 tools/build.py --test && node tools/smoke_test.mjs
 // Needs: npm i playwright  (and `npx playwright install chromium`, or set CHROMIUM_PATH)
 import { chromium } from 'playwright';
-import { wpCheck, invCheck, qbankCheck } from './wp_check.mjs';
+import { wpCheck, invCheck, qbankCheck, r5Check } from './wp_check.mjs';
 import { mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -176,7 +176,7 @@ async function playAll(view) {
   await shot('04c-item-cut-after-wrong');
   await p.evaluate(() => { __t.S.items.swap = 1; __t.useItem('swap'); __t.B.lucky = 0; }); await p.waitForTimeout(300);
   // 换题降一档：两位数 → 一位数，进位 → 不进位，整百 → 整十
-  const easy = await p.evaluate(() => { const r = {}; for (const [w, l] of [[6, 0], [5, 0], [6, 7]]) { const L = __t.levelDef(w, l), q0 = L.math(), out = []; for (let i = 0; i < 30; i++) out.push(L.easy(q0)); r[w + '-' + l] = Math.max(...out.map(q => Math.max(...q.parts.filter(x => /^\d+$/.test(x)).map(Number)))); } return r; });
+  const easy = await p.evaluate(() => { const r = {}; for (const [w, l] of [[6, 0], [5, 0], [6, 7]]) { const L = __t.levelDef(w, l); let q0 = L.math(); for (let k = 0; k < 500 && !(q0.parts && q0.answer > 20); k++) q0 = L.math(); const out = []; for (let i = 0; i < 30; i++) { const e = L.easy(q0); if (e.parts) out.push(e); } r[w + '-' + l] = Math.max(...out.map(q => Math.max(...q.parts.filter(x => /^\d+$/.test(x)).map(Number)))); } return r; });
   if (!(easy['5-0'] < 200)) problems.push(`[${view.name}] 换题 on 整百 should give 整十 questions: ${JSON.stringify(easy)}`);
   // 答错：心立刻少一颗（怪兽马上扑过来，不等蓄力）；挨完打，小老师的提示在画面中央弹出（战斗区大小不变），弹窗开着时蓄力暂停
   const arenaBox = () => p.evaluate(() => { const r = document.getElementById('arena').getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round).join(','); });
@@ -395,6 +395,9 @@ async function playAll(view) {
     console.log('inv_check', ir.stats.share, ir.problems.length ? 'BAD' : 'ok');
     const qr = await qbankCheck(p);
     for (const x of qr.problems) problems.push(`[qbank_check] ${x}`);
+    const r5r = await r5Check(p);
+    for (const x of r5r.problems) problems.push(`[r5_check] ${x}`);
+    console.log('r5_check', r5r.stats.trapKinds, 'trap templates;', r5r.stats.table.map(t => t.world + ' >20:' + t.big).join(' '), r5r.problems.length ? 'BAD' : 'ok');
     console.log('qbank_check', qr.stats.pos.length, 'generators, forest inverse', qr.stats.forest, qr.problems.length ? 'BAD' : 'ok');
   }
   // 连式逆向每关第一次出现：当「思维挑战」出（40 秒、请小老师讲一讲、三步讲解）。魔法森林第 5 关（5 以内）和云顶雪山第 9 关（数最大）
@@ -463,6 +466,22 @@ async function playAll(view) {
   if (longQ.length) problems.push(`[${view.name}] long questions should not wrap into many lines at this width: ${JSON.stringify(longQ.slice(0, 6))}`);
   await p.evaluate(() => { __t.closeHint(); __t.nextQuestion(__t.G.chain3('hund', true)); }); await p.waitForTimeout(300); await shot('14f-long-chain');
   await p.evaluate(() => { __t.closeHint(); __t.nextQuestion(__t.WP.twoStep()); }); await p.waitForTimeout(300); await shot('14g-long-word');
+  // 第五轮新题型：每种拍题面和讲解（最后一步）。易错应用题每个模板拍题面，有代表性的几种再拍讲解
+  const r5 = [['cmp10', 'G.cmp10()'], ['pic4-join', 'G.pic4(10,"join")'], ['pic4-part', 'G.pic4(10,"part")'], ['pic4-leave', 'G.pic4(10,"leave")'], ['shapeEq', 'G.shapeEq(10)'],
+    ['shapeLogic-A', 'G.shapeLogic("A")'], ['shapeLogic-B', 'G.shapeLogic("B")'], ['shapeLogic-C', 'G.shapeLogic("C")']];
+  const keys = await p.evaluate(() => __t.WP_TRAP_KEYS);
+  for (const k of keys) r5.push(['trap-' + k, `G.trap(20,"${k}")`]);
+  const hintOf = ['cmp10', 'pic4-join', 'pic4-part', 'pic4-leave', 'shapeEq', 'shapeLogic-A', 'shapeLogic-B', 'shapeLogic-C', 'trap-hideSlide', 'trap-qTotal', 'trap-qOvertake', 'trap-qLeave', 'trap-busOrigin', 'trap-pages', 'trap-treesGaps', 'trap-giveEqual', 'trap-hideSeek'];
+  for (const [name, expr] of r5) {
+    await p.evaluate(expr => { __t.closeHint(); const q = new Function('G', 'return ' + expr)(__t.G); __t.nextQuestion(q); }, expr); await p.waitForTimeout(250);
+    await shot('14r5-' + name + '-q');
+    if (hintOf.includes(name)) {
+      await p.evaluate(() => { __t.showHint(); }); await p.waitForTimeout(200);
+      for (let i = 0; i < 3; i++) await tap('#stNext').catch(() => {});
+      await p.waitForTimeout(250); await shot('14r5-' + name + '-hint');
+    }
+  }
+  await p.evaluate(() => __t.closeHint());
   await leaveBattle(); await p.evaluate(() => __t.showRunReward({ run: { mode: 'epic' }, firstMedal: true })); await p.waitForTimeout(400); await shot('15-run-reward');
   const runBag = await p.evaluate(() => __t.S.bag.length);
   await tap('.card[data-i="0"]'); await p.waitForTimeout(700); await shot('15b-run-card');
