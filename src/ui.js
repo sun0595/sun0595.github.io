@@ -512,8 +512,13 @@ function openLevel(){
 }
 // 装备解锁的勇士：获得过这个品质（或更高）的装备
 const gearNeed = k => '获得过<b style="color:'+GEAR_QUALITY_MAP[k].col+'">'+GEAR_QUALITY_MAP[k].name+'色</b>或更好的装备';
-// 勇士选择页的头像：小勇士有原画（hero_base）就用原画，其他勇士是 3D 图
-const heroPic = i => i===0 && art("hero_base") ? artTag(art("hero_base"), "ei art", img(HEROES[0].e)) : img(HEROES[i].e);
+/* 勇士原画：小勇士按身上盔甲的品质换整套外观（hero_<品质>，没穿是 hero_base）；其他勇士各一张 hero2_<名字>。
+   人形勇士（小勇士、忍者、宇航员、装备国王）手里拿武器、盾牌原画；机器人、霸王龙、神龙、独角兽不叠。没有原画就是 3D 图 */
+const HERO_ART = ["", "hero2_ninja", "hero2_robot", "hero2_astronaut", "hero2_trex", "hero2_dragon", "hero2_unicorn", "hero2_king"];
+const HERO_HANDS = [true, true, false, true, false, false, false, true];
+const heroArtFor = (i, eq) => i===0 ? ((eq && eq.armor && art("hero_"+eq.armor.quality)) || art("hero_base")) : art(HERO_ART[i]);
+// 勇士选择页的头像（没解锁的在选择页里涂成剪影）
+const heroPic = i => { const u = heroArtFor(i, null); return u ? artTag(u, "ei art", img(HEROES[i].e)) : img(HEROES[i].e); };
 function openHeroes(){
   let view = S.hero;
   const render = first => {
@@ -554,13 +559,15 @@ const isWorn = g => !!g && !!S.equipped[g.slot] && S.equipped[g.slot].id===g.id;
 // placeholder look until the real art arrives: hero emoji with the four pieces stacked on head / hands / chest
 // 小勇士 with original art: the armour's quality picks the whole look (hero_<品质>, else hero_base); weapon / shield
 // pictures sit in the hands if they exist. Other heroes, or no art at all: the 3D emoji with the gear icons around it.
-function heroArtURL(eq){ if(hero()!==HEROES[0]) return null; return (eq.armor && art("hero_"+eq.armor.quality)) || art("hero_base"); }
+function heroArtURL(eq){ return heroArtFor(HEROES.indexOf(hero()), eq); }
 const heroFace = () => { const u = heroArtURL(S.equipped); return u ? artTag(u, "ei art", img(hero().e)) : img(hero().e); };
 function avatarHTML(eq){
   const base = heroArtURL(eq);
   if(base){
-    const hand = (slot, side) => eq[slot] && art(slot+"_"+eq[slot].quality) ? artTag(art(slot+"_"+eq[slot].quality), "hand "+side+" q-"+eq[slot].quality, "", "--qc:"+qCol(eq[slot])) : "";
-    const look = eq.armor && art("hero_"+eq.armor.quality) ? eq.armor.quality : "base";   // fists sit a little differently per look
+    const hi = HEROES.indexOf(hero()), hands = HERO_HANDS[hi];
+    const hand = (slot, side) => hands && eq[slot] && art(slot+"_"+eq[slot].quality) ? artTag(art(slot+"_"+eq[slot].quality), "hand "+side+" q-"+eq[slot].quality, "", "--qc:"+qCol(eq[slot])) : "";
+    // fists sit a little differently per look (小勇士的盔甲品质，或别的勇士 h1…h7)
+    const look = hi ? "h"+hi : eq.armor && art("hero_"+eq.armor.quality) ? eq.armor.quality : "base";
     return '<span class="av lay a-'+look+'">'+artTag(base, "ei art", img(hero().e))+hand("weapon","rh")+hand("shield","lh")+'</span>';
   }
   return '<span class="av">'+img(hero().e)+SLOT_KEYS.map(k=>eq[k] ? '<span class="ag '+k+' q-'+eq[k].quality+'" style="--qc:'+qCol(eq[k])+'">'+img(eq[k].e)+'</span>' : '').join("")+'</span>';
@@ -693,7 +700,8 @@ function openParent(tab){
         + tg("tOpen","全部关卡直接开放",S.openAll)
         + tg("tVoice","语音读题",S.voice)
         + tg("tSound","音效",S.sound)+'</div>'
-        + '<button class="btn red" id="mReset" style="font-size:18px">'+(confirmReset?"再点一次，确认清空全部进度":"清空进度，重新开始")+'</button>';
+        + '<button class="btn red" id="mReset" style="font-size:18px">'+(confirmReset?"再点一次，确认清空全部进度":"清空进度，重新开始")+'</button>'
+        + '<p class="muted credit"><small>部分美术由 AI 生成</small></p>';
     } else if(tab==="voice"){
       body += VOICES.length
         ? '<select class="vsel" id="voiceSel"><option value="">自动挑选（'+VOICES[0].name+'）</option>'+VOICES.map(v=>'<option value="'+v.name.replace(/"/g,"&quot;")+'"'+(v.name===S.voiceName?" selected":"")+'>'+v.name+'</option>').join("")+'</select>'
