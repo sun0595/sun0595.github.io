@@ -297,10 +297,14 @@ async function playAll(view) {
   // 分解 tapped twice quickly on the same spot: only one piece goes, what is worn stays on
   const n0 = await p.evaluate(() => ({ n: __t.S.bag.length, worn: Object.values(__t.S.equipped).map(g => g && g.id).join() }));
   await p.waitForTimeout(400);
+  const cardH = await p.evaluate(() => document.querySelector('#pbody .gcard').offsetHeight);
   const sb = await p.locator('#gSalvage').boundingBox();
   await p.touchscreen.tap(sb.x + sb.width / 2, sb.y + sb.height / 2); await p.waitForTimeout(80);
   await p.touchscreen.tap(sb.x + sb.width / 2, sb.y + sb.height / 2); await p.waitForTimeout(300); await shot('09d-bag-salvage');
   const sal = await p.evaluate(() => ({ n: __t.S.bag.length, gone: !__t.S.bag.some(x => x.id === 'asc1'), worn: Object.values(__t.S.equipped).map(g => g && g.id).join(), note: (document.getElementById('gGone') || {}).textContent, btns: document.querySelectorAll('.gwear').length }));
+  // 分解后的卡片和原来一样高，下面的格子不往上跳（393 上第二下曾点到下面的装备，又打开了一张带按钮的卡）
+  const goneH = await p.evaluate(() => (document.getElementById('gGone') || {}).offsetHeight || 0);
+  if (Math.abs(goneH - cardH) > 2) problems.push(`[${view.name}] the 已分解 card should keep the gear card's height (${cardH}px), got ${goneH}px`);
   if (sal.n !== n0.n - 1 || !sal.gone || !/35/.test(sal.note || '') || sal.btns) problems.push(`[${view.name}] 分解 a pink piece should remove it, give 35 gear experience and leave a card with no buttons: ${JSON.stringify(sal)}`);
   if (sal.worn !== n0.worn) problems.push(`[${view.name}] a double tap on 分解 must not change the worn gear`);
   await p.evaluate(() => { for (let i = 1; i <= 3; i++) addGear({ id: 'syn' + i, slot: 'shield', quality: 'white', name: '测试·盾' + i, e: '🛡️', lv: 1, exp: 0, affixes: [{ id: 'shield', val: 1 }] }); });
