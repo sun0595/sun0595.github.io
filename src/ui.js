@@ -210,22 +210,11 @@ function nodePos(l){
    the road's end. Every band is only as tall as its road needs for MAP_GAP px between monsters (between ART_H_MIN and
    ART_H_MAX), so all worlds are equally dense. No road listed → the usual rows of three. */
 const ART_H_MIN = 860, ART_H_MAX = 1600, ART_SIGN = 150, MAP_GAP = 10;
-/* 世界之间的接缝（家长 10-22：地图要连贯）：
-   - 上下两段原画重叠 MAP_SEAM px，下面那段的顶部在这段里渐变成透明，露出上面那段的底部（叠化）；
-     世界牌放在所有地图段上面的一层（.wsign.ov），不会被接缝盖住。
-   - 原画比地图宽（cover 按高度铺满），每段左右平移（MAPL.ox），让这段小路的入口 x 对准下面那段小路的出口（Boss 处）的 x；
-     平移不能让小路上的关卡出画（留 MAP_EDGE px），对不齐时尽量靠近。
-   - 有过渡图 trans_<下面世界>_<上面世界>（铺满宽度，小路从下穿到上）就插在两段之间（家长第三轮：原来过渡段将近一屏、
-     上面没有关卡，像一大片空白）。现在只显示原画中间 TRANS_CROP 这一截（约半屏），两头各和上下两段叠化 TRANS_SEAM px；
-     上面那个世界的世界牌挪到过渡图底部，它的第 1、2 关站在过渡图的小路上（TRANS_LV），第 3 关起才在自己的地图段上。 */
-const MAP_SEAM = 160, MAP_EDGE = 34, TRANS_H = 180, TRANS_SEAM = 124, TRANS_SIGN = 110, TRANS_CROP = [0.14, 0.88], TRANS_N = 2;
-// 个别过渡图多露一点底部：熔岩火山的 Boss 站得很靠上，世界牌要夹在 Boss 和下一个世界的第 1 关之间
-const TRANS_CROP_AT = {ten_ice:[0.14, 1.0]};
-// 过渡图里小路的 x（图宽的比例）：[显示部分底边进来的地方, 顶边出去的地方]，按原画里小路的中线量的
-const TRANS_ROADS = {add_sub:[0.62,0.5], sub_ten:[0.625,0.51], ten_ice:[0.6,0.6], ice_tens:[0.7,0.57], tens_hundreds:[0.57,0.53], hundreds_digit1:[0.7,0.55], digit1_digit2:[0.6,0.5]};
-// 站在过渡图小路上的上面那个世界的第 1、2 关：[x, y]（整张原画的比例，y 从上往下）
-const TRANS_LV = {add_sub:[[0.495,0.624],[0.409,0.399]], sub_ten:[[0.569,0.624],[0.41,0.399]], ten_ice:[[0.413,0.549],[0.642,0.449]],
-  ice_tens:[[0.454,0.624],[0.432,0.424]], tens_hundreds:[[0.619,0.624],[0.5,0.474]], hundreds_digit1:[[0.36,0.6],[0.68,0.42]], digit1_digit2:[[0.485,0.624],[0.5,0.46]]};
+/* 世界之间的接缝（家长第五轮：半透明叠化成了"双重曝光"，两条路错位叠在一起）：
+   每段原画完整、不透明地显示，上下两段之间隔一条不透明的云带（CLOUD_H 高，约 1/5 屏），云带上下各盖住两段 CLOUD_OV px，
+   下面那个世界的小路在云带下面结束、上面那个世界的小路从云带上面开始，接口都藏在云里；世界牌和副标题放在云带正中。
+   最下面的世界底下也有一条云带放它的世界牌。过渡图 trans_* 不再使用（构建时不内嵌）。 */
+const CLOUD_H = 136, CLOUD_OV = 40, CLOUD_SIGN = CLOUD_OV + 44, MAP_EDGE = 34;
 const ART_ROADS = {
   // 森林：按原画里沙土小路的像素中线量出来（每只怪兽都站在路上），S 形绕两个弯，Boss 在山洞口
   add: [[0.373,0.99],[0.398,0.94],[0.463,0.915],[0.542,0.89],[0.602,0.865],[0.631,0.84],[0.636,0.815],[0.617,0.79],[0.565,0.765],[0.476,0.74],[0.379,0.715],[0.321,0.69],[0.31,0.665],[0.33,0.64],[0.379,0.615],[0.454,0.59],[0.546,0.565],[0.62,0.54],[0.662,0.515],[0.672,0.49],[0.653,0.465],[0.592,0.44],[0.5,0.415],[0.426,0.39],[0.402,0.365],[0.413,0.34],[0.449,0.315],[0.494,0.29],[0.52,0.275]],
@@ -300,59 +289,42 @@ function roadXAt(id, g, y){
   for(let i=1;i<P.length;i++) if(P[i][1] <= y){ const [a,b] = [P[i-1], P[i]], t = a[1]===b[1] ? 0 : (a[1]-y)/(a[1]-b[1]); return a[0]+(b[0]-a[0])*Math.max(0,Math.min(1,t)); }
   return P[P.length-1][0];
 }
-/* sideways shift of a band's picture: its road comes out of the seam below (the top of the cross-fade, MAP_SEAM above its
-   bottom) at inX — where the road below ends (the Boss of the world below, or the top of a transition picture) — and its
-   road's end (the Boss) sits at outX, where the transition picture above starts its road. With both, the shift splits the
-   difference. Only the part of the road the levels stand on (above the sign) has to stay MAP_EDGE inside the screen. */
+/* sideways shift of a band's picture: centred unless its road should come out at inX (seam height above the bottom) or
+   end at outX; with both, the shift splits the difference. Only the part of the road the levels stand on (above the
+   sign) has to stay MAP_EDGE inside the screen. */
 function bandShift(id, W, H, inX, outX, sign, seam){
   const g = artGeo(id, W, H), rd = ART_ROADS[id], xs = rd.filter(([,fy])=>fy*g.dh-g.oy <= H-sign).map(([fx])=>fx*g.dw);
   const lo = Math.max(0, Math.max(...xs) - W + MAP_EDGE), hi = Math.min(g.dw - W, Math.min(...xs) - MAP_EDGE);
   const wants = [];
-  if(inX!=null) wants.push(roadXAt(id, g, H - (seam||MAP_SEAM)) - inX);
+  if(inX!=null) wants.push(roadXAt(id, g, H - (seam||CLOUD_OV)) - inX);
   if(outX!=null) wants.push(rd[rd.length-1][0]*g.dw - outX);
   const want = wants.length ? wants.reduce((a,b)=>a+b)/wants.length : g.ox0;
   return lo > hi ? Math.max(0, Math.min(g.dw - W, g.ox0)) : Math.max(lo, Math.min(hi, want));
 }
-// where the road leaves the top (out) / enters the bottom (in) of the transition picture between world w and w+1, px
-const transX = (w, W, end) => { const t = TRANS_ROADS[WORLDS_V2[w].id+"_"+WORLDS_V2[w+1].id]; return (t ? t[end==="top"?1:0] : 0.5) * W; };
 const LAYOUT_CACHE = {};
-const transName = w => "trans_"+WORLDS_V2[w].id+"_"+WORLDS_V2[w+1].id;   // between world w and the one above it
 function layoutMap(W){
-  const n = WORLDS_V2.length, hs = [], tops = [], pos = {}, artBand = [], ox = [], sign = [], trans = [], nb = [];
-  const key = W+":"+WORLDS_V2.map((x,w)=>(art("map_"+x.id)?1:0)+(w<n-1 && art(transName(w))?"t":"")).join("");
+  const n = WORLDS_V2.length, hs = [], tops = [], pos = {}, artBand = [], ox = [], clouds = [];
+  const key = W+":"+WORLDS_V2.map(x=>art("map_"+x.id)?1:0).join("");
   if(LAYOUT_CACHE[key]) return LAYOUT_CACHE[key];
   const roadOK = w => artBand[w] && ART_ROADS[WORLDS_V2[w].id] && ART_SIZE["map_"+WORLDS_V2[w].id];
   for(let w=0; w<n; w++) artBand[w] = !!art("map_"+WORLDS_V2[w].id);
-  const seamBelow = w => w>0 && artBand[w] && (artBand[w-1] || trans[w-1]);
-  // 过渡图：整张按宽度铺满是 full 高，只显示中间 TRANS_CROP 那一截（h 高，背景往上挪 off）
-  for(let w=0; w<n-1; w++) if(artBand[w] && artBand[w+1] && art(transName(w))){ const sz = ART_SIZE[transName(w)], full = sz ? W*sz[1]/sz[0] : TRANS_H/(TRANS_CROP[1]-TRANS_CROP[0]);
-    const cr = TRANS_CROP_AT[transName(w).slice(6)] || TRANS_CROP;
-    trans[w] = {name:transName(w), full, off: full*cr[0], h: Math.round(full*(cr[1]-cr[0]))}; }
-  // 下面有过渡图的地图段：前 TRANS_N 关在过渡图上，这段只排剩下的；世界牌也不在这段底部，底部只留 TRANS_SIGN
-  const onTrans = w => w>0 && trans[w-1] && roadOK(w) && TRANS_LV[trans[w-1].name.slice(6)];
-  for(let w=0; w<n; w++){ nb[w] = onTrans(w) ? NLV-TRANS_N : NLV; sign[w] = onTrans(w) ? TRANS_SIGN : ART_SIGN;
-    hs[w] = !artBand[w] ? SEG_H : roadOK(w) ? roadBandH(WORLDS_V2[w].id, W, sign[w], nb[w]) : ART_H_MAX; }
-  for(let w=0; w<n; w++){
-    if(!roadOK(w)) continue;
-    const id = WORLDS_V2[w].id, below = w>0 && roadOK(w-1) ? WORLDS_V2[w-1].id : null;
-    const inX = w>0 && trans[w-1] ? transX(w-1, W, "top") : below ? ART_ROADS[below][ART_ROADS[below].length-1][0]*artGeo(below, W, hs[w-1]).dw - ox[w-1] : null;
-    const outX = w<n-1 && trans[w] ? transX(w, W, "bottom") : null;
-    ox[w] = bandShift(id, W, hs[w], inX, outX, sign[w], w>0 && trans[w-1] ? TRANS_SEAM : MAP_SEAM);
-  }
-  // stack from the top world down; painted neighbours overlap by MAP_SEAM
+  // 第 1 关站在云带上沿再往上一点（CLOUD_SIGN），世界牌在云里，不占地图段
+  for(let w=0; w<n; w++) hs[w] = !artBand[w] ? SEG_H : roadOK(w) ? roadBandH(WORLDS_V2[w].id, W, CLOUD_SIGN) : ART_H_MAX;
+  // 每段原画居中（不再为对齐小路左右平移），只保证关卡不出画
+  for(let w=0; w<n; w++) if(roadOK(w)) ox[w] = bandShift(WORLDS_V2[w].id, W, hs[w], null, null, CLOUD_SIGN);
+  // stack from the top world down: band, then the cloud under it (overlapping both bands by CLOUD_OV)
   let y = 0;
   for(let w=n-1; w>=0; w--){
     tops[w] = y; y += hs[w];
-    if(w>0 && trans[w-1]){ y -= TRANS_SEAM; trans[w-1].top = y; y += trans[w-1].h - TRANS_SEAM; }
-    else if(w>0 && seamBelow(w)) y -= MAP_SEAM;
+    clouds[w] = {top: y - CLOUD_OV, h: CLOUD_H};
+    y += CLOUD_H - 2*CLOUD_OV;
   }
+  const total = clouds[0].top + CLOUD_H;
   for(let w=0; w<n; w++){
-    const k = NLV - nb[w];
-    if(k){ const t = trans[w-1]; TRANS_LV[t.name.slice(6)].forEach(([fx,fy],l) => { pos[w+"-"+l] = [Math.round(fx*1000)/10, Math.round(t.top + fy*t.full - t.off)]; }); }
-    if(roadOK(w)) roadLevels(WORLDS_V2[w].id, W, hs[w], null, ox[w], sign[w], nb[w]).forEach(([x,yy],l) => { pos[w+"-"+(l+k)] = [Math.round(x/W*1000)/10, Math.round(tops[w]+yy)]; });
+    if(roadOK(w)) roadLevels(WORLDS_V2[w].id, W, hs[w], null, ox[w], CLOUD_SIGN).forEach(([x,yy],l) => { pos[w+"-"+l] = [Math.round(x/W*1000)/10, Math.round(tops[w]+yy)]; });
     else for(let l=0;l<NLV;l++){ const [x,yb] = nodePos(l); pos[w+"-"+l] = [x, tops[w] + hs[w] - yb]; }
   }
-  return LAYOUT_CACHE[key] = {W, tops, hs, artBand, ox, sign, trans, nb, seam: w => w<n-1 && artBand[w] && (trans[w] || seamBelow(w+1)), total: y + (artBand[0] ? 0 : MAP_OVER + 20), pos};
+  return LAYOUT_CACHE[key] = {W, tops, hs, artBand, ox, clouds, total, pos};
 }
 const nodeX = (w,l) => MAPL.pos[w+"-"+l][0];
 // y (px from the top of the whole map) of a level's centre
@@ -388,6 +360,20 @@ function roadD(pts){
   }
   return d;
 }
+/* 云带：一条蓬松的白云（上下两排圆鼓包 + 中间实心），深棕描边、底部一圈淡蓝（两段色），柔和底影由 CSS 加。
+   按真实宽度 W 画，鼓包不会被拉扁；中间实心部分从 TOP 到 H-TOP，盖住上下两段地图的边（CLOUD_OV 在实心部分里）。 */
+function cloudURL(W, H){
+  const TOP = 26, ps = [];
+  for(let i=0, x=-10; x<W+40; i++){ const r = 20 + (i*7)%13; ps.push([x, TOP+10, r], [x+24, H-TOP-10, r - 4 + (i*5)%7]); x += r*1.55; }
+  const top = ps.filter((_,i)=>i%2===0), bot = ps.filter((_,i)=>i%2);
+  const c = (arr, dy, fill) => arr.map(([x,y,r])=>"<circle cx='"+x.toFixed(1)+"' cy='"+(y+dy)+"' r='"+r+"' fill='"+fill+"'/>").join("");
+  const rect = (y0, y1, fill) => "<rect x='-20' y='"+y0+"' width='"+(W+40)+"' height='"+(y1-y0)+"' fill='"+fill+"'/>";
+  const body = fill => c(top, 0, fill) + c(bot, 0, fill) + rect(TOP+10, H-TOP-10, fill);
+  let svg = "<svg xmlns='http://www.w3.org/2000/svg' width='"+W+"' height='"+H+"' viewBox='0 0 "+W+" "+H+"'>"
+    + "<g stroke='#3A2A1E' stroke-width='6'>"+body("#3A2A1E")+"</g>"   // outline: the same shapes, stroked, under the fill
+    + body("#d8ecfb") + c(top, 0, "#fff") + c(bot, -12, "#fff") + rect(TOP+10, H-TOP-22, "#fff");
+  return svgURL(svg+"</svg>");
+}
 let mapScroll = null, flashCur = false;
 function renderMap(focus, width){
   const [cw, cl] = curLevel();
@@ -418,14 +404,12 @@ function renderMap(focus, width){
     const deco = bg ? "" : [0,1,2,3,4].map(r=>[0,1].map(side=>{ const [e,,,sz] = dl[(r*2+side+wi)%dl.length], y = SEG_H - MAP_PAD_B - r*MAP_ROW + 36 + side*18;
       return '<span class="deco" style="'+(side?'right':'left')+':'+(6+(r%2)*3)+'%;top:'+y+'px;font-size:'+Math.round(Math.min(sz,64)*.8)+'px">'+img(e)+'</span>'; }).join("")).join("");
     const bossDone = starOf(wi, NLV-1)>0;
-    // the band's top fades into whatever is above it (the next world or a transition picture)
-    const trUp = MAPL.trans[wi], tr = wi>0 && MAPL.trans[wi-1];
-    segs += '<div class="band'+(bg?" art":"")+(MAPL.seam(wi)?" fade":"")+'" data-w="'+wi+'" style="top:'+top+'px;height:'+bh+'px;--seam:'+(trUp?TRANS_SEAM:MAP_SEAM)+'px">'+(bg?'':'<div class="cliff" data-w="'+wi+'"></div>')+deco+'</div>';
-    // the sign at the band's bottom goes on a layer above all bands, so a seam fading over it never hides it
-    // 世界牌在这个世界的起点：下面有过渡图（第 1、2 关在过渡图上）就在过渡图底部（下面世界的 Boss 太靠上就再往上挪，不盖住 Boss），否则在地图段底部
-    signs += '<div class="wsign ov'+(worldOpen(wi)?"":" locked")+'" data-w="'+wi+'" style="top:'+(tr && MAPL.nb[wi]<NLV ? Math.min(tr.top+tr.h, nodeY(wi-1, NLV-1) - 48) : top+bh)+'px"><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><span class="wsub2"><small>'+w.sub+'</small>'
+    segs += '<div class="band'+(bg?" art":"")+'" data-w="'+wi+'" style="top:'+top+'px;height:'+bh+'px">'+(bg?'':'<div class="cliff" data-w="'+wi+'"></div>')+deco+'</div>';
+    // 这个世界底下的云带，世界牌在云带正中（云带的图在下面按宽度画）
+    const cb = MAPL.clouds[wi];
+    signs += '<div class="cloud" data-c="'+wi+'" style="top:'+cb.top+'px;height:'+cb.h+'px"></div>'
+      + '<div class="wsign cl'+(worldOpen(wi)?"":" locked")+'" data-w="'+wi+'" style="top:'+(cb.top+cb.h/2)+'px"><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><span class="wsub2"><small>'+w.sub+'</small>'
       + (bossDone ? '<button class="btn white wrun" data-w="'+wi+'">'+img("🏅")+'连闯</button>' : '')+'</span></div>';
-    if(tr) segs += '<div class="band trans fade" data-t="'+(wi-1)+'" style="top:'+tr.top+'px;height:'+tr.h+'px;--seam:'+TRANS_SEAM+'px"></div>';
   }
   for(let wi=0; wi<WORLDS_V2.length; wi++) WORLDS_V2[wi].levels.forEach((L,li)=>{
     const lo = levelOpen(wi,li), st = starOf(wi,li), m = mastery(wi,li), x = nodeX(wi,li), y = nodeY(wi,li), mode = L.boss ? "battle" : LEVEL_MODES[wi].modes[li];
@@ -463,12 +447,8 @@ function renderMap(focus, width){
     el.style.backgroundImage = 'url("'+bg+'")';
     if(MAPL.ox[wi]!=null){ const g = artGeo(id, MAPL.W, MAPL.hs[wi]); el.style.backgroundSize = g.dw.toFixed(1)+"px "+g.dh.toFixed(1)+"px"; el.style.backgroundPosition = (-MAPL.ox[wi]).toFixed(1)+"px "+(-g.oy).toFixed(1)+"px"; }
     const t = new Image(); t.onerror = strip; t.src = bg; });
-  // 过渡图：背景按宽度铺满，只露出中间那一截；图坏了就用上下两个世界的颜色渐变，不会留一大块空白
-  mp.querySelectorAll(".band.trans").forEach(el=>{ const tw = +el.dataset.t, tr = MAPL.trans[tw], url = art(tr.name);
-    const flat = () => { el.style.backgroundImage = "linear-gradient("+SCENES[WORLDS_V2[tw+1].id].h[1]+","+SCENES[WORLDS_V2[tw].id].h[0]+")"; el.style.backgroundSize = "100% 100%"; el.style.backgroundPosition = "0 0"; };
-    if(!url) return flat();
-    el.style.backgroundImage = 'url("'+url+'")'; el.style.backgroundSize = MAPL.W+"px "+tr.full.toFixed(1)+"px"; el.style.backgroundPosition = "0 "+(-tr.off).toFixed(1)+"px";
-    const t = new Image(); t.onerror = flat; t.src = url; });
+  const cu = cloudURL(MAPL.W, CLOUD_H);
+  mp.querySelectorAll(".cloud").forEach(el=>{ el.style.backgroundImage = cu; });
   const sc = $("lscroll");
   // first render can be measured before the layout settles: redo once if the real width differs
   if(sc.clientWidth && Math.abs(sc.clientWidth - MAPL.W) > 2 && !width) return renderMap(focus, sc.clientWidth);
