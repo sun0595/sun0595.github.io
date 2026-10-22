@@ -608,6 +608,15 @@ svg.ei.cs{overflow:visible}
 .av.lay .hand{position:absolute;height:auto;pointer-events:none;filter:drop-shadow(0 0 2px var(--qc)) drop-shadow(0 0 5px var(--qc))}
 .av.lay .hand.rh{width:36%;left:calc(var(--fr)*100% - 18%);top:calc(var(--fy)*100% - 52%);transform:rotate(-18deg);transform-origin:50% 84%}
 .av.lay .hand.lh{width:42%;left:calc(var(--fl)*100% - 21%);top:calc(var(--fy)*100% - 17%);transform:rotate(6deg)}
+/* 没有手的勇士（独角兽）：武器、盾牌悬浮在身体两侧，轻轻上下浮动 */
+.av.lay.float .hand{width:32%}
+.av.lay.float .hand.rh{left:calc(var(--fr)*100% - 20%);animation:hFloatR 2.4s ease-in-out infinite}
+.av.lay.float .hand.lh{left:calc(var(--fl)*100% - 12%);animation:hFloatL 2.4s ease-in-out -1.2s infinite}
+@keyframes hFloatR{0%,100%{transform:translateY(0) rotate(-18deg)}50%{transform:translateY(-9%) rotate(-12deg)}}
+@keyframes hFloatL{0%,100%{transform:translateY(0) rotate(6deg)}50%{transform:translateY(-9%) rotate(0deg)}}
+/* 穿了盔甲：脚下一圈盔甲品质颜色的光环（在勇士原画后面） */
+.av.lay>.ei.art{position:relative}
+.av.lay .aura{position:absolute;left:4%;right:4%;bottom:-5%;height:16%;border-radius:50%;border:var(--c-lw) solid var(--c-line);background:var(--qc);opacity:.9;box-shadow:0 0 0 3px var(--qc),0 0 12px 2px var(--qc)}
 /* rewards (家长 10-21): experience bar, gear experience, drops — no chest step */
 .page.win .pbody{gap:10px}
 .rexp{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:16px;border:var(--c-lw) solid var(--c-line);background:var(--cw1)}
@@ -712,6 +721,13 @@ svg.ei.cs{overflow:visible}
 .gnone .ei{font-size:44px;filter:grayscale(1);opacity:.5}
 .ggone .ei{filter:none;opacity:1}
 .synrow #sBack{flex:0 0 auto;padding:8px 14px}
+.synhead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.synhead .gsay{margin:0;text-align:left}
+.synhead #sAuto{flex:none;white-space:nowrap;padding:6px 10px;gap:4px}
+.synplan{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:16px;border:var(--c-lw) solid var(--c-line);background:var(--cw1);font-size:17px}
+.synplan p{margin:0}
+#aNo,#aGo{white-space:nowrap}
+.synplan .num{font:800 20px var(--f-num)}
 .synrow #sGo{white-space:nowrap;padding:8px 10px;gap:4px}
 .ggrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:2px 4px}
 .gt{position:relative;aspect-ratio:1;max-height:66px;border-radius:14px;border:var(--c-lw) solid var(--c-line);background:var(--cw1);display:grid;place-items:center;box-shadow:inset 0 0 0 3px var(--qc),var(--c-sh-press),0 0 var(--g1) var(--qc);animation:tGlow var(--gt) ease-in-out infinite}
@@ -758,12 +774,16 @@ svg.ei.cs{overflow:visible}
 .hcard.view{border-color:var(--cb2);box-shadow:inset 0 0 0 3px var(--cb1),var(--c-sh)}
 .hcard.sel.view{border-color:var(--c-line);box-shadow:inset 0 0 0 3px #fff,var(--c-sh)}
 /* parent */
-.toggle{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 2px;border-bottom:2px dashed #e2dcf3;text-align:left;width:100%;font-size:17px}
-.toggle .sw{width:56px;height:32px;border-radius:999px;background:#e2d3b8;border:var(--c-lw) solid var(--c-line);position:relative;flex:none}
-.toggle .sw::after{content:"";position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:var(--cw1);border:var(--c-lw-s) solid var(--c-line);transition:left .2s}
+/* 设置开关行（家长第三轮：iPhone 上文字和开关没对齐）：两列网格，文字左、开关右，垂直居中；左右各留 8px；
+   按钮在 Safari 里自带的样式全部清掉，开关的圆点用 top:50% 居中，不靠字体基线 */
+.tgls{display:flex;flex-direction:column;width:100%;max-width:420px;margin:0 auto}
+.toggle{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:10px;box-sizing:border-box;width:100%;min-height:54px;margin:0;padding:8px;border-bottom:2px dashed #e2dcf3;text-align:left;font-size:17px;line-height:1.25;-webkit-appearance:none;appearance:none}
+.toggle .tl{display:block;min-width:0;justify-self:start}
+.toggle .sw{display:block;justify-self:end;box-sizing:border-box;width:56px;height:32px;border-radius:999px;background:#e2d3b8;border:var(--c-lw) solid var(--c-line);position:relative}
+.toggle .sw::after{content:"";position:absolute;box-sizing:border-box;top:50%;left:2px;width:24px;height:24px;margin-top:-12px;border-radius:50%;background:var(--cw1);border:var(--c-lw-s) solid var(--c-line);transition:left .2s}
 .toggle.on .sw{background:var(--cg2)}
-.toggle.on .sw::after{left:26px}
-.seg3{display:flex;border:var(--c-lw) solid var(--c-line);border-radius:12px;overflow:hidden;flex:none}
+.toggle.on .sw::after{left:calc(100% - 26px)}
+.seg3{display:flex;justify-self:end;border:var(--c-lw) solid var(--c-line);border-radius:12px;overflow:hidden;flex:none}
 .seg3 button{padding:6px 10px;font-size:15px;background:var(--cw1)}
 .seg3 button.on{background:var(--cy1)}
 .stat{display:grid;grid-template-columns:5em 1fr 4.6em;gap:8px;align-items:center;font-size:15px;text-align:left}

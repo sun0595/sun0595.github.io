@@ -430,157 +430,239 @@ G.inv = function(tier, form){
   return mk(parts, speak, ans, null, {options:kidOpts(ans, traps, 0, hi), steps:st, inv:form, small: s>=100, key:"inv"+parts.join("")});
 };
 
-/* ================= 120 关难度计划（纯数据，还没接入 WORLDS） =================
-   8 个世界，各 15 关，第 15 关是 Boss。
-   mix 每一项是 {g, args?}。接入时：G[item.g](...(item.args||[]))，再用 mix(...) 组合。
-   inv 是逆向思维题（G.inv，见上）：t = 档，forms = 出哪几种形式，从第 from 关起出现，
-   占比从 lo 线性升到第 14 关的 hi（Boss 关也按 hi）。本关 mix 里已有的填空题（missAdd / missSub / make10）算在占比里，
-   不够的才用 G.inv 补，见 invRate()。消除玩法只用「算式 = ?」，不受影响（matchGenFor 用 plainQ 过滤）。
-   比大小、连加连减、找规律仍用 G.compare / G.chain / G.pattern，这张表先不排。 */
+/* ================= 三步连式 G.chain3(档, 逆向) =================
+   连加（a + b + c）、连减（a − b − c）、加减混合（a + b − c / a − b + c），每一步的得数都在这一档的范围里、不出负数：
+   "5" / "10" / "20"：5、10、20 以内（"20n" = 20 以内，减法不退位，给还没学退位的凑十火山）；
+   tens：整十，100 以内；hund：整百，1000 以内；d1：两位数加减一位数，不进位不退位（"d1c" 可以进位退位），得数都是两位数；
+   d2：两位数加减两位数，不进位不退位。
+   inv = true：三个数里随机一个换成 ?，等号右边写得数（如 10 + ? − 3 = 8），讲解教「从后往前想」，不直接说答案。 */
+const CHAIN_TIERS = {
+  "5":   {max:5,  start:()=>ri(1,5)},
+  "10":  {max:10, start:()=>ri(1,10)},
+  "20":  {max:20, start:()=>ri(2,20)},
+  "20n": {max:20, start:()=>ri(2,20), noBorrow:true},
+  tens:  {max:100, unit:10, start:()=>10*ri(1,9)},
+  hund:  {max:1000, unit:100, start:()=>100*ri(1,9)},
+  d1:    {max:99, min:10, one:true, start:()=>ri(11,89)},
+  d1c:   {max:99, min:10, one:true, carry:true, start:()=>ri(11,89)},
+  d2:    {max:99, min:10, two:true, start:()=>ri(11,89)}
+};
+// 这一档里，从 m 出发做一次 op 的第二个数；做不了就 null
+function chainStep(T, m, op){
+  if(T.unit){ const k = op==="+" ? (T.max-m)/T.unit : m/T.unit; return k>=1 ? T.unit*ri(1,k) : null; }
+  const o = m%10, t = Math.floor(m/10);
+  if(T.one && !T.carry) return op==="+" ? (o<9 ? ri(1,9-o) : null) : (o>=1 ? ri(1,o) : null);
+  if(T.one) return op==="+" ? (m<T.max ? ri(1,Math.min(9,T.max-m)) : null) : (m>T.min ? ri(1,Math.min(9,m-T.min)) : null);
+  if(T.two){
+    if(op==="+") return t<=8 && o<=9 ? 10*ri(1,9-t) + ri(0,9-o) : null;
+    return t>=2 ? 10*ri(1,t-1) + ri(0,o) : null;
+  }
+  if(op==="+") return m<T.max ? ri(1,T.max-m) : null;
+  if(T.noBorrow && m>10) return o>=1 ? ri(1,o) : null;
+  return m>0 ? ri(1,m) : null;
+}
+G.chain3 = function(tier, inv){
+  const T = CHAIN_TIERS[tier] || CHAIN_TIERS["10"], z = zhNum, w = o => o==="+" ? "加" : "减";
+  let a, o1, b, o2, c, m, r, pos = 0;
+  for(let k=0;;k++){
+    [o1, o2] = pick([["+","+"],["−","−"],["+","−"],["−","+"]]);
+    a = T.start(); if(a>T.max) a = T.max;
+    b = chainStep(T, a, o1==="+"?"+":"−"); if(b==null) continue;
+    m = o1==="+" ? a+b : a-b;
+    c = chainStep(T, m, o2==="+"?"+":"−"); if(c==null) continue;
+    r = o2==="+" ? m+c : m-c;
+    // 逆向：讲解里会写出中间数和得数，它们不能刚好等于答案（不然像是直接说出了答案）
+    pos = pick([0,2,4]); const x = [a,b,c][pos/2];
+    if(r>=(T.min||0) && r<=T.max && (!inv || (x!==m && x!==r)) || k>200) break;
+  }
+  const big = T.max>=100, hi = T.max*2, F = t => "<b style='white-space:nowrap'>"+t+"</b>";
+  if(!inv){
+    const hint = '<p class="htitle">从左往右算</p><p>先算 '+F(a+' '+o1+' '+b+' = '+m)+'</p><p>再算 '+F(m+' '+o2+' '+c+' = ?')+'</p>';
+    return mk([a,o1,b,o2,c,"=","?"], z(a)+w(o1)+z(b)+w(o2)+z(c)+"等于几？", r, hint,
+      {options:kidOpts(r, [o2==="+"?m-c:m+c, m, a+b+c, r+(T.unit||1), r-(T.unit||1)], 0, hi), small:true, chain:o1+o2, key:"c3"+[a,o1,b,o2,c].join("")});
+  }
+  const ans = [a,b,c][pos/2];
+  const parts = [a,o1,b,o2,c,"=",r]; parts[pos] = "?";
+  const sp = parts.slice(0,5).map((x,i)=>i%2 ? w(x) : x==="?" ? "几" : z(x)).join("")+"等于"+z(r)+"？";
+  const back = (op, n, to) => op==="+" ? to+" − "+n : to+" + "+n;   // 「做 op n 之前」是几
+  let st;
+  if(pos===4){
+    st = [F(a+" "+o1+" "+b+" = "+m)+"：先把前面知道的算出来。",
+          m+" "+o2+" ? = "+r+"："+(o2==="+" ? m+" 再添上几，才能变成 "+r+"？" : "从 "+m+" 里拿走几，还剩 "+r+"？"),
+          "反过来想：算一算 "+F(o2==="+" ? r+" − "+m+" = ?" : m+" − "+r+" = ?")+"，再代回去验算。"];
+  } else {
+    st = [F(parts.slice(0,5).join(" ")+" = "+r)+"：从后往前想。最后一步 "+o2+" "+c+" 以前是几？",
+          "反过来想："+F(back(o2, c, r)+" = "+m)+"，所以 "+F(pos===2 ? a+" "+o1+" ? = "+m : "? "+o1+" "+b+" = "+m)+"。",
+          "再反过来想：算一算 "+F((pos===2 ? (o1==="+" ? m+" − "+a : a+" − "+m) : (o1==="+" ? m+" − "+b : m+" + "+b))+" = ?")+"，再代回去验算。"];
+  }
+  const traps = [r, m, r+c, Math.abs(r-c), ans+(T.unit||1), ans-(T.unit||1)];
+  return mk(parts, sp, ans, '<p class="htitle">连式里的未知数</p>'+st.map(t=>'<p>'+t+'</p>').join(""),
+    {options:kidOpts(ans, traps, 0, hi), small:true, inv:"c"+pos, chain:o1+o2, key:"c3i"+parts.join("")});
+};
+// 题型（一关里轮换用）：应用题 / 拼音 / 逆向（? 不在最后）/ 连式 / 加 / 减
+function qForm(q){
+  if(!q) return "";
+  if(q.kind==="word" || q.kind==="py" || q.kind==="cmp" || q.kind==="shape") return q.kind;
+  const p = q.parts || [], i = p.indexOf("?");
+  if(i>=0 && i<p.length-2) return "inv";
+  if(p.length>=7) return "chain";
+  return p.includes("−") ? "sub" : p.includes("+") ? "add" : q.kind;
+}
+
+/* ================= 120 关难度计划 =================
+   8 个世界，各 15 关，第 15 关是 Boss。世界只用地点命名，副标题是这一世界的数字范围（家长第三轮反馈）。
+   mix 每一项是 {g, args?}：G[item.g](...(item.args||[]))，再用 mix(...) 组合。
+   每个世界里加法、减法穿插出现：第 1–2 关只有单纯的加和减，第 3 关起加入三步连式 chain3（连加、连减、加减混合，
+   得数都在这一档范围里），battle 关第 3 关起还会混进应用题（wpPool，见 levelDef）。
+   inv 是逆向题：t = 两步逆向 G.inv 的档，c = 连式逆向 G.chain3(c, true) 的档（mix 里有连式的关才出），从第 from 关起出现，
+   占比从 lo 线性升到第 14 关的 hi（Boss 关也按 hi），合起来约 30%。本关 mix 里已有的填空题（make10）算在占比里，见 invRate()。
+   同一关里题型轮换：levelDef 的出题器不让同一种形式（加 / 减 / 连式 / 逆向 / 应用题）连出 3 道。
+   消除玩法只用「两个数的算式 = ?」，不受影响（matchGenFor 用 plainQ 过滤，也不用连式）。 */
+const A_ = (g, ...args) => args.length ? {g, args} : {g};
 const LEVEL_PLAN = [
-  {world:1, id:"add", name:"加法森林", sub:"10 以内加法", inv:{t:"10", forms:["a+?","?+b"], from:4, lo:.1, hi:.25},
+  {world:1, id:"add", name:"魔法森林", sub:"10 以内", inv:{t:"10", c:"10", from:4, lo:.4, hi:.5},
    levels:[
-    {n:1, mix:[{g:"add",args:[5]}]},
-    {n:2, mix:[{g:"add",args:[5]}]},
-    {n:3, mix:[{g:"add",args:[5]}]},
-    {n:4, mix:[{g:"add",args:[5]},{g:"add",args:[10]}]},
-    {n:5, mix:[{g:"add",args:[10]}]},
-    {n:6, mix:[{g:"add",args:[10]}]},
-    {n:7, mix:[{g:"add",args:[10]}]},
-    {n:8, mix:[{g:"missAdd",args:[5]}]},
-    {n:9, mix:[{g:"missAdd",args:[10]}]},
-    {n:10, mix:[{g:"missAdd",args:[10]}]},
-    {n:11, mix:[{g:"add",args:[10]},{g:"missAdd",args:[10]}]},
-    {n:12, mix:[{g:"make10"}]},
-    {n:13, mix:[{g:"make10"},{g:"add",args:[10]}]},
-    {n:14, mix:[{g:"add",args:[10]},{g:"missAdd",args:[10]},{g:"make10"}]},
-    {n:15, boss:true, mix:[{g:"add",args:[5]},{g:"add",args:[10]},{g:"missAdd",args:[10]},{g:"make10"}]}
+    {n:1, mix:[A_("add",5),A_("sub",5)]},
+    {n:2, mix:[A_("add",5),A_("sub",5)]},
+    {n:3, mix:[A_("add",5),A_("sub",5),A_("chain3","5")]},
+    {n:4, mix:[A_("add",10),A_("sub",5),A_("chain3","5")]},
+    {n:5, mix:[A_("add",10),A_("sub",10),A_("chain3","5")]},
+    {n:6, mix:[A_("add",10),A_("sub",10),A_("chain3","10")]},
+    {n:7, mix:[A_("add",10),A_("sub",10),A_("chain3","10")]},
+    {n:8, mix:[A_("add",10),A_("sub",10),A_("chain3","10")]},
+    {n:9, mix:[A_("add",10),A_("sub",10),A_("chain3","10")]},
+    {n:10, mix:[A_("add",10),A_("sub",10),A_("chain3","10")]},
+    {n:11, mix:[A_("add",10),A_("sub",10),A_("chain3","10"),A_("make10")]},
+    {n:12, mix:[A_("add",10),A_("sub",10),A_("chain3","10")]},
+    {n:13, mix:[A_("add",10),A_("sub",10),A_("chain3","10"),A_("make10")]},
+    {n:14, mix:[A_("add",10),A_("sub",10),A_("chain3","10")]},
+    {n:15, boss:true, mix:[A_("add",10),A_("sub",10),A_("chain3","10"),A_("make10")]}
   ]},
-  {world:2, id:"sub", name:"减法洞穴", sub:"10 以内减法", inv:{t:"10", forms:["a+?","?+b","a-?","?-b"], from:1, lo:.2, hi:.3},
+  {world:2, id:"sub", name:"水晶洞穴", sub:"10 以内", inv:{t:"10", c:"10", from:1, lo:.25, hi:.35},
    levels:[
-    {n:1, mix:[{g:"sub",args:[5]}]},
-    {n:2, mix:[{g:"sub",args:[5]}]},
-    {n:3, mix:[{g:"sub",args:[5]}]},
-    {n:4, mix:[{g:"sub",args:[5]},{g:"sub",args:[10]}]},
-    {n:5, mix:[{g:"sub",args:[10]}]},
-    {n:6, mix:[{g:"sub",args:[10]}]},
-    {n:7, mix:[{g:"sub",args:[10]}]},
-    {n:8, mix:[{g:"missSub",args:[5]}]},
-    {n:9, mix:[{g:"missSub",args:[10]}]},
-    {n:10, mix:[{g:"missSub",args:[10]}]},
-    {n:11, mix:[{g:"sub",args:[10]},{g:"missSub",args:[10]}]},
-    {n:12, mix:[{g:"sub",args:[10]},{g:"add",args:[10]}]},
-    {n:13, mix:[{g:"missSub",args:[10]},{g:"missAdd",args:[10]}]},
-    {n:14, mix:[{g:"sub",args:[10]},{g:"missSub",args:[10]},{g:"add",args:[10]}]},
-    {n:15, boss:true, mix:[{g:"sub",args:[5]},{g:"sub",args:[10]},{g:"missSub",args:[10]},{g:"add",args:[10]},{g:"missAdd",args:[10]}]}
+    {n:1, mix:[A_("add",10),A_("sub",5)]},
+    {n:2, mix:[A_("add",10),A_("sub",10)]},
+    {n:3, mix:[A_("add",10),A_("sub",10),A_("chain3","10")]},
+    {n:4, mix:[A_("add",10),A_("sub",10),A_("chain3","10")]},
+    {n:5, mix:[A_("add",10),A_("sub",10),A_("sub",10),A_("chain3","10")]},
+    {n:6, mix:[A_("add",10),A_("sub",10),A_("chain3","10")]},
+    {n:7, mix:[A_("add",10),A_("sub",10),A_("chain3","10")]},
+    {n:8, mix:[A_("add",10),A_("sub",10),A_("sub",10),A_("chain3","10")]},
+    {n:9, mix:[A_("add",10),A_("sub",10),A_("chain3","10")]},
+    {n:10, mix:[A_("add",10),A_("sub",10),A_("chain3","10")]},
+    {n:11, mix:[A_("add",10),A_("sub",10),A_("chain3","10"),A_("make10")]},
+    {n:12, mix:[A_("add",10),A_("sub",10),A_("chain3","10")]},
+    {n:13, mix:[A_("add",10),A_("sub",10),A_("chain3","10")]},
+    {n:14, mix:[A_("add",10),A_("sub",10),A_("chain3","10"),A_("make10")]},
+    {n:15, boss:true, mix:[A_("add",10),A_("sub",10),A_("chain3","10"),A_("make10")]}
   ]},
-  {world:3, id:"ten", name:"凑十火山", sub:"20 以内进位加法", inv:{t:"20", forms:["a+?","?+b","a-?","?-b"], from:1, lo:.15, hi:.3},
+  {world:3, id:"ten", name:"熔岩火山", sub:"20 以内", inv:{t:"20", c:"20n", from:1, lo:.25, hi:.35},
    levels:[
-    {n:1, mix:[{g:"make10"}]},
-    {n:2, mix:[{g:"make10"}]},
-    {n:3, mix:[{g:"carry",args:[[9]]}]},
-    {n:4, mix:[{g:"carry",args:[[9]]}]},
-    {n:5, mix:[{g:"carry",args:[[9]]},{g:"make10"}]},
-    {n:6, mix:[{g:"carry",args:[[8,7]]}]},
-    {n:7, mix:[{g:"carry",args:[[8,7]]}]},
-    {n:8, mix:[{g:"carry",args:[[8,7]]},{g:"carry",args:[[9]]}]},
-    {n:9, mix:[{g:"carry",args:[[6,5]]}]},
-    {n:10, mix:[{g:"carryAny"}]},
-    {n:11, mix:[{g:"carryAny"}]},
-    {n:12, mix:[{g:"carryAny"},{g:"make10"}]},
-    {n:13, mix:[{g:"carryAny"},{g:"add",args:[10]}]},
-    {n:14, mix:[{g:"carry",args:[[9]]},{g:"carry",args:[[8,7]]},{g:"carryAny"}]},
-    {n:15, boss:true, mix:[{g:"make10"},{g:"carry",args:[[9]]},{g:"carry",args:[[8,7]]},{g:"carry",args:[[6,5]]},{g:"carryAny"}]}
+    {n:1, mix:[A_("carry",[9]),A_("teenNoBorrow")]},
+    {n:2, mix:[A_("carry",[9]),A_("teenNoBorrow")]},
+    {n:3, mix:[A_("carry",[9]),A_("teenNoBorrow"),A_("chain3","20n")]},
+    {n:4, mix:[A_("carry",[9]),A_("teenNoBorrow"),A_("chain3","20n")]},
+    {n:5, mix:[A_("carry",[8,7]),A_("teenNoBorrow"),A_("chain3","20n")]},
+    {n:6, mix:[A_("carry",[8,7]),A_("sub",10),A_("chain3","20n")]},
+    {n:7, mix:[A_("carry",[8,7]),A_("teenNoBorrow"),A_("chain3","20n")]},
+    {n:8, mix:[A_("carry",[6,5]),A_("teenNoBorrow"),A_("chain3","20n")]},
+    {n:9, mix:[A_("carry",[6,5]),A_("sub",10),A_("chain3","20n")]},
+    {n:10, mix:[A_("carryAny"),A_("teenNoBorrow"),A_("chain3","20n")]},
+    {n:11, mix:[A_("carryAny"),A_("teenNoBorrow"),A_("chain3","20n")]},
+    {n:12, mix:[A_("carryAny"),A_("teenNoBorrow"),A_("chain3","20n"),A_("make10")]},
+    {n:13, mix:[A_("carryAny"),A_("sub",10),A_("chain3","20n")]},
+    {n:14, mix:[A_("carryAny"),A_("teenNoBorrow"),A_("chain3","20n")]},
+    {n:15, boss:true, mix:[A_("carryAny"),A_("carry",[9]),A_("teenNoBorrow"),A_("chain3","20n"),A_("make10")]}
   ]},
-  {world:4, id:"ice", name:"冰雪城堡", sub:"20 以内退位减法", inv:{t:"20", forms:["a-?","?-b","a+?","?+b"], from:1, lo:.3, hi:.4},
+  {world:4, id:"ice", name:"冰雪城堡", sub:"20 以内", inv:{t:"20", c:"20", from:1, lo:.25, hi:.35},
    levels:[
-    {n:1, mix:[{g:"teenNoBorrow"}]},
-    {n:2, mix:[{g:"teenNoBorrow"}]},
-    {n:3, mix:[{g:"teenNoBorrow"}]},
-    {n:4, mix:[{g:"borrow",args:[[9]]}]},
-    {n:5, mix:[{g:"borrow",args:[[9]]}]},
-    {n:6, mix:[{g:"borrow",args:[[9]]},{g:"teenNoBorrow"}]},
-    {n:7, mix:[{g:"borrow",args:[[8,7]]}]},
-    {n:8, mix:[{g:"borrow",args:[[8,7]]}]},
-    {n:9, mix:[{g:"borrow",args:[[8,7]]},{g:"borrow",args:[[9]]}]},
-    {n:10, mix:[{g:"borrowAny"}]},
-    {n:11, mix:[{g:"borrowAny"}]},
-    {n:12, mix:[{g:"borrowAny"},{g:"teenNoBorrow"}]},
-    {n:13, mix:[{g:"borrowAny"},{g:"carryAny"}]},
-    {n:14, mix:[{g:"borrow",args:[[9]]},{g:"borrowAny"},{g:"carryAny"}]},
-    {n:15, boss:true, mix:[{g:"teenNoBorrow"},{g:"borrow",args:[[9]]},{g:"borrow",args:[[8,7]]},{g:"borrowAny"},{g:"carryAny"}]}
+    {n:1, mix:[A_("carryAny"),A_("borrow",[9])]},
+    {n:2, mix:[A_("carryAny"),A_("borrow",[9])]},
+    {n:3, mix:[A_("carryAny"),A_("borrow",[9]),A_("chain3","20")]},
+    {n:4, mix:[A_("carryAny"),A_("teenNoBorrow"),A_("borrow",[9]),A_("chain3","20")]},
+    {n:5, mix:[A_("carryAny"),A_("borrow",[8,7]),A_("chain3","20")]},
+    {n:6, mix:[A_("carryAny"),A_("borrow",[8,7]),A_("chain3","20")]},
+    {n:7, mix:[A_("carryAny"),A_("teenNoBorrow"),A_("borrow",[8,7]),A_("chain3","20")]},
+    {n:8, mix:[A_("carryAny"),A_("borrowAny"),A_("chain3","20")]},
+    {n:9, mix:[A_("carryAny"),A_("borrowAny"),A_("chain3","20")]},
+    {n:10, mix:[A_("carryAny"),A_("borrowAny"),A_("chain3","20")]},
+    {n:11, mix:[A_("carryAny"),A_("borrowAny"),A_("chain3","20")]},
+    {n:12, mix:[A_("carryAny"),A_("borrowAny"),A_("teenNoBorrow"),A_("chain3","20")]},
+    {n:13, mix:[A_("carryAny"),A_("borrowAny"),A_("chain3","20")]},
+    {n:14, mix:[A_("carryAny"),A_("borrowAny"),A_("chain3","20")]},
+    {n:15, boss:true, mix:[A_("carryAny"),A_("borrow",[9]),A_("borrowAny"),A_("chain3","20")]}
   ]},
-  {world:5, id:"tens", name:"整十草原", sub:"整十数加减", inv:{t:"tens", forms:["a+?","?+b","a-?","?-b"], from:1, lo:.3, hi:.4},
+  {world:5, id:"tens", name:"彩虹草原", sub:"100 以内", inv:{t:"tens", c:"tens", from:1, lo:.25, hi:.35},
    levels:[
-    {n:1, mix:[{g:"addTen"}]},
-    {n:2, mix:[{g:"addTen"}]},
-    {n:3, mix:[{g:"addTen"}]},
-    {n:4, mix:[{g:"addTen"},{g:"add",args:[10]}]},
-    {n:5, mix:[{g:"subTen"}]},
-    {n:6, mix:[{g:"subTen"}]},
-    {n:7, mix:[{g:"subTen"}]},
-    {n:8, mix:[{g:"subTen"},{g:"sub",args:[10]}]},
-    {n:9, mix:[{g:"addTen"},{g:"subTen"}]},
-    {n:10, mix:[{g:"addTen"},{g:"subTen"}]},
-    {n:11, mix:[{g:"addTen"},{g:"subTen"},{g:"add",args:[10]}]},
-    {n:12, mix:[{g:"addTen"},{g:"subTen"},{g:"sub",args:[10]}]},
-    {n:13, mix:[{g:"addTen"},{g:"subTen"}]},
-    {n:14, mix:[{g:"addTen"},{g:"subTen"},{g:"make10"}]},
-    {n:15, boss:true, mix:[{g:"addTen"},{g:"subTen"},{g:"add",args:[10]},{g:"sub",args:[10]},{g:"carryAny"}]}
+    {n:1, mix:[A_("addTen"),A_("subTen")]},
+    {n:2, mix:[A_("addTen"),A_("subTen")]},
+    {n:3, mix:[A_("addTen"),A_("subTen"),A_("chain3","tens")]},
+    {n:4, mix:[A_("addTen"),A_("subTen"),A_("chain3","tens")]},
+    {n:5, mix:[A_("addTen"),A_("subTen"),A_("chain3","tens")]},
+    {n:6, mix:[A_("addTen"),A_("subTen"),A_("chain3","tens"),A_("carryAny")]},
+    {n:7, mix:[A_("addTen"),A_("subTen"),A_("chain3","tens")]},
+    {n:8, mix:[A_("addTen"),A_("subTen"),A_("chain3","tens"),A_("borrowAny")]},
+    {n:9, mix:[A_("addTen"),A_("subTen"),A_("chain3","tens")]},
+    {n:10, mix:[A_("addTen"),A_("subTen"),A_("chain3","tens")]},
+    {n:11, mix:[A_("addTen"),A_("subTen"),A_("chain3","tens")]},
+    {n:12, mix:[A_("addTen"),A_("subTen"),A_("chain3","tens"),A_("chain3","20")]},
+    {n:13, mix:[A_("addTen"),A_("subTen"),A_("chain3","tens")]},
+    {n:14, mix:[A_("addTen"),A_("subTen"),A_("chain3","tens")]},
+    {n:15, boss:true, mix:[A_("addTen"),A_("subTen"),A_("chain3","tens"),A_("carryAny"),A_("borrowAny")]}
   ]},
-  {world:6, id:"hundreds", name:"整百雪山", sub:"整百数加减", inv:{t:"hund", forms:["a+?","?+b","a-?","?-b"], from:1, lo:.3, hi:.4},
+  {world:6, id:"hundreds", name:"云顶雪山", sub:"1000 以内", inv:{t:"hund", c:"hund", from:1, lo:.25, hi:.35},
    levels:[
-    {n:1, mix:[{g:"addHundred"}]},
-    {n:2, mix:[{g:"addHundred"}]},
-    {n:3, mix:[{g:"addHundred"}]},
-    {n:4, mix:[{g:"addHundred"},{g:"addTen"}]},
-    {n:5, mix:[{g:"subHundred"}]},
-    {n:6, mix:[{g:"subHundred"}]},
-    {n:7, mix:[{g:"subHundred"}]},
-    {n:8, mix:[{g:"subHundred"},{g:"subTen"}]},
-    {n:9, mix:[{g:"addHundred"},{g:"subHundred"}]},
-    {n:10, mix:[{g:"addHundred"},{g:"subHundred"}]},
-    {n:11, mix:[{g:"addHundred"},{g:"subHundred"},{g:"addTen"}]},
-    {n:12, mix:[{g:"addHundred"},{g:"subHundred"},{g:"subTen"}]},
-    {n:13, mix:[{g:"addHundred"},{g:"addTen"},{g:"subTen"}]},
-    {n:14, mix:[{g:"addHundred"},{g:"subHundred"},{g:"addTen"},{g:"subTen"}]},
-    {n:15, boss:true, mix:[{g:"addHundred"},{g:"subHundred"},{g:"addTen"},{g:"subTen"},{g:"add",args:[10]},{g:"sub",args:[10]}]}
+    {n:1, mix:[A_("addHundred"),A_("subHundred")]},
+    {n:2, mix:[A_("addHundred"),A_("subHundred")]},
+    {n:3, mix:[A_("addHundred"),A_("subHundred"),A_("chain3","hund")]},
+    {n:4, mix:[A_("addHundred"),A_("subHundred"),A_("chain3","hund")]},
+    {n:5, mix:[A_("addHundred"),A_("subHundred"),A_("chain3","hund"),A_("addTen")]},
+    {n:6, mix:[A_("addHundred"),A_("subHundred"),A_("chain3","hund")]},
+    {n:7, mix:[A_("addHundred"),A_("subHundred"),A_("chain3","hund"),A_("subTen")]},
+    {n:8, mix:[A_("addHundred"),A_("subHundred"),A_("chain3","hund")]},
+    {n:9, mix:[A_("addHundred"),A_("subHundred"),A_("chain3","hund")]},
+    {n:10, mix:[A_("addHundred"),A_("subHundred"),A_("chain3","hund"),A_("chain3","tens")]},
+    {n:11, mix:[A_("addHundred"),A_("subHundred"),A_("chain3","hund")]},
+    {n:12, mix:[A_("addHundred"),A_("subHundred"),A_("chain3","hund")]},
+    {n:13, mix:[A_("addHundred"),A_("subHundred"),A_("chain3","hund"),A_("addTen"),A_("subTen")]},
+    {n:14, mix:[A_("addHundred"),A_("subHundred"),A_("chain3","hund")]},
+    {n:15, boss:true, mix:[A_("addHundred"),A_("subHundred"),A_("chain3","hund"),A_("addTen"),A_("subTen")]}
   ]},
-  {world:7, id:"digit1", name:"数字小镇", sub:"两位数与一位数", inv:{t:"d1", forms:["a+?","?+b","a-?","?-b"], from:1, lo:.3, hi:.4},
+  {world:7, id:"digit1", name:"糖果小镇", sub:"100 以内", inv:{t:"d1", c:"d1", from:1, lo:.25, hi:.35},
    levels:[
-    {n:1, mix:[{g:"add1NoCarry"}]},
-    {n:2, mix:[{g:"add1NoCarry"}]},
-    {n:3, mix:[{g:"add1NoCarry"}]},
-    {n:4, mix:[{g:"sub1NoBorrow"}]},
-    {n:5, mix:[{g:"sub1NoBorrow"}]},
-    {n:6, mix:[{g:"sub1NoBorrow"}]},
-    {n:7, mix:[{g:"add1NoCarry"},{g:"sub1NoBorrow"}]},
-    {n:8, mix:[{g:"add1Carry"}]},
-    {n:9, mix:[{g:"add1Carry"}]},
-    {n:10, mix:[{g:"add1Carry"}]},
-    {n:11, mix:[{g:"sub1Borrow"}]},
-    {n:12, mix:[{g:"sub1Borrow"}]},
-    {n:13, mix:[{g:"sub1Borrow"},{g:"add1Carry"}]},
-    {n:14, mix:[{g:"add1NoCarry"},{g:"sub1NoBorrow"},{g:"add1Carry"},{g:"sub1Borrow"}]},
-    {n:15, boss:true, mix:[{g:"add1NoCarry"},{g:"sub1NoBorrow"},{g:"add1Carry"},{g:"sub1Borrow"},{g:"addTen"},{g:"subTen"}]}
+    {n:1, mix:[A_("add1NoCarry"),A_("sub1NoBorrow")]},
+    {n:2, mix:[A_("add1NoCarry"),A_("sub1NoBorrow")]},
+    {n:3, mix:[A_("add1NoCarry"),A_("sub1NoBorrow"),A_("chain3","d1")]},
+    {n:4, mix:[A_("add1NoCarry"),A_("sub1NoBorrow"),A_("chain3","d1")]},
+    {n:5, mix:[A_("add1NoCarry"),A_("sub1NoBorrow"),A_("chain3","d1")]},
+    {n:6, mix:[A_("add1NoCarry"),A_("sub1NoBorrow"),A_("chain3","d1")]},
+    {n:7, mix:[A_("add1Carry"),A_("sub1NoBorrow"),A_("chain3","d1")]},
+    {n:8, mix:[A_("add1Carry"),A_("sub1NoBorrow"),A_("chain3","d1")]},
+    {n:9, mix:[A_("add1Carry"),A_("sub1Borrow"),A_("chain3","d1")]},
+    {n:10, mix:[A_("add1Carry"),A_("sub1Borrow"),A_("chain3","d1c")]},
+    {n:11, mix:[A_("add1Carry"),A_("sub1Borrow"),A_("chain3","d1c")]},
+    {n:12, mix:[A_("add1NoCarry"),A_("sub1Borrow"),A_("chain3","d1c")]},
+    {n:13, mix:[A_("add1Carry"),A_("sub1NoBorrow"),A_("chain3","d1c")]},
+    {n:14, mix:[A_("add1Carry"),A_("sub1Borrow"),A_("chain3","d1c")]},
+    {n:15, boss:true, mix:[A_("add1NoCarry"),A_("sub1NoBorrow"),A_("add1Carry"),A_("sub1Borrow"),A_("chain3","d1c")]}
   ]},
-  {world:8, id:"digit2", name:"竖式城堡", sub:"两位数加减两位数", inv:{t:"d2", forms:["a+?","?+b","a-?","?-b"], from:1, lo:.3, hi:.4},
+  {world:8, id:"digit2", name:"星光城堡", sub:"100 以内", inv:{t:"d2", c:"d2", from:1, lo:.25, hi:.35},
    levels:[
-    {n:1, mix:[{g:"add2NoCarry"}]},
-    {n:2, mix:[{g:"add2NoCarry"}]},
-    {n:3, mix:[{g:"add2NoCarry"}]},
-    {n:4, mix:[{g:"add2NoCarry"},{g:"add1NoCarry"}]},
-    {n:5, mix:[{g:"sub2NoBorrow"}]},
-    {n:6, mix:[{g:"sub2NoBorrow"}]},
-    {n:7, mix:[{g:"sub2NoBorrow"}]},
-    {n:8, mix:[{g:"sub2NoBorrow"},{g:"sub1NoBorrow"}]},
-    {n:9, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"}]},
-    {n:10, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"}]},
-    {n:11, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"},{g:"add1Carry"}]},
-    {n:12, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"},{g:"sub1Borrow"}]},
-    {n:13, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"},{g:"addTen"},{g:"subTen"}]},
-    {n:14, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"},{g:"addHundred"},{g:"subHundred"}]},
-    {n:15, boss:true, mix:[{g:"add2NoCarry"},{g:"sub2NoBorrow"},{g:"add1Carry"},{g:"sub1Borrow"},{g:"addTen"},{g:"subTen"},{g:"addHundred"},{g:"subHundred"}]}
+    {n:1, mix:[A_("add2NoCarry"),A_("sub2NoBorrow")]},
+    {n:2, mix:[A_("add2NoCarry"),A_("sub2NoBorrow")]},
+    {n:3, mix:[A_("add2NoCarry"),A_("sub2NoBorrow"),A_("chain3","d2")]},
+    {n:4, mix:[A_("add2NoCarry"),A_("sub2NoBorrow"),A_("chain3","d2")]},
+    {n:5, mix:[A_("add2NoCarry"),A_("sub2NoBorrow"),A_("chain3","d2"),A_("add1Carry")]},
+    {n:6, mix:[A_("add2NoCarry"),A_("sub2NoBorrow"),A_("chain3","d2")]},
+    {n:7, mix:[A_("add2NoCarry"),A_("sub2NoBorrow"),A_("chain3","d2"),A_("sub1Borrow")]},
+    {n:8, mix:[A_("add2NoCarry"),A_("sub2NoBorrow"),A_("chain3","d2")]},
+    {n:9, mix:[A_("add2NoCarry"),A_("sub2NoBorrow"),A_("chain3","d2")]},
+    {n:10, mix:[A_("add2NoCarry"),A_("sub2NoBorrow"),A_("chain3","d2"),A_("chain3","d1c")]},
+    {n:11, mix:[A_("add2NoCarry"),A_("sub2NoBorrow"),A_("chain3","d2")]},
+    {n:12, mix:[A_("add2NoCarry"),A_("sub2NoBorrow"),A_("chain3","d2"),A_("addTen"),A_("subTen")]},
+    {n:13, mix:[A_("add2NoCarry"),A_("sub2NoBorrow"),A_("chain3","d2")]},
+    {n:14, mix:[A_("add2NoCarry"),A_("sub2NoBorrow"),A_("chain3","d2"),A_("addHundred"),A_("subHundred")]},
+    {n:15, boss:true, mix:[A_("add2NoCarry"),A_("sub2NoBorrow"),A_("chain3","d2"),A_("add1Carry"),A_("sub1Borrow"),A_("chain3","tens")]}
   ]}
 ];
 
@@ -591,7 +673,7 @@ const LEVEL_PLAN = [
    从第 2 关起，任意连续三关不能再是同一种玩法。
    每个世界至少 2 关 match，另有 1 到 2 关 link 或 blend。第 15 关一定是 battle。 */
 const WORLDS_V2 = [
-  {id:"add", name:"加法森林", sub:"10 以内加法", scene:"森林", levels:[
+  {id:"add", name:"魔法森林", sub:"10 以内", scene:"森林", levels:[
     {n:1, emoji:"🐛", name:"毛毛虫"},
     {n:2, emoji:"🐸", name:"跳跳蛙"},
     {n:3, emoji:"🦎", name:"小蜥蜴"},
@@ -608,7 +690,7 @@ const WORLDS_V2 = [
     {n:14, emoji:"🦊", name:"赤狐"},
     {n:15, emoji:"🦍", name:"猩猩大王", boss:true}
   ]},
-  {id:"sub", name:"减法洞穴", sub:"10 以内减法", scene:"洞穴", levels:[
+  {id:"sub", name:"水晶洞穴", sub:"10 以内", scene:"洞穴", levels:[
     {n:1, emoji:"🦇", name:"暗蝠"},
     {n:2, emoji:"🕷️", name:"结网蛛"},
     {n:3, emoji:"🦂", name:"尾蝎"},
@@ -625,7 +707,7 @@ const WORLDS_V2 = [
     {n:14, emoji:"👻", name:"游魂"},
     {n:15, emoji:"🧛", name:"吸血伯爵", boss:true}
   ]},
-  {id:"ten", name:"凑十火山", sub:"20 以内进位加法", scene:"火山", levels:[
+  {id:"ten", name:"熔岩火山", sub:"20 以内", scene:"火山", levels:[
     {n:1, emoji:"🦀", name:"熔岩蟹"},
     {n:2, emoji:"🐊", name:"火鳄"},
     {n:3, emoji:"🦏", name:"铁甲犀"},
@@ -642,7 +724,7 @@ const WORLDS_V2 = [
     {n:14, emoji:"🦃", name:"火鸟"},
     {n:15, emoji:"🐉", name:"熔岩龙王", boss:true}
   ]},
-  {id:"ice", name:"冰雪城堡", sub:"20 以内退位减法", scene:"冰雪", levels:[
+  {id:"ice", name:"冰雪城堡", sub:"20 以内", scene:"冰雪", levels:[
     {n:1, emoji:"🐧", name:"企鹅兵"},
     {n:2, emoji:"⛄", name:"雪人卫"},
     {n:3, emoji:"🦢", name:"冰天鹅"},
@@ -659,7 +741,7 @@ const WORLDS_V2 = [
     {n:14, emoji:"🦚", name:"霜孔雀"},
     {n:15, emoji:"🦈", name:"冰鲨王", boss:true}
   ]},
-  {id:"tens", name:"整十草原", sub:"整十数加减", scene:"草原", levels:[
+  {id:"tens", name:"彩虹草原", sub:"100 以内", scene:"草原", levels:[
     {n:1, emoji:"🐴", name:"野马"},
     {n:2, emoji:"🦓", name:"斑马"},
     {n:3, emoji:"🦒", name:"长颈鹿"},
@@ -676,7 +758,7 @@ const WORLDS_V2 = [
     {n:14, emoji:"🐁", name:"田鼠"},
     {n:15, emoji:"🦄", name:"独角兽王", boss:true}
   ]},
-  {id:"hundreds", name:"整百雪山", sub:"整百数加减", scene:"雪山", levels:[
+  {id:"hundreds", name:"云顶雪山", sub:"1000 以内", scene:"雪山", levels:[
     {n:1, emoji:"🦙", name:"雪羊驼"},
     {n:2, emoji:"🦣", name:"小猛犸"},
     {n:3, emoji:"🦬", name:"霜野牛"},
@@ -693,7 +775,7 @@ const WORLDS_V2 = [
     {n:14, emoji:"🦘", name:"岩袋鼠"},
     {n:15, emoji:"🐻‍❄️", name:"北极熊王", boss:true}
   ]},
-  {id:"digit1", name:"数字小镇", sub:"两位数与一位数", scene:"小镇", levels:[
+  {id:"digit1", name:"糖果小镇", sub:"100 以内", scene:"小镇", levels:[
     {n:1, emoji:"🐹", name:"仓鼠"},
     {n:2, emoji:"🐶", name:"看门狗"},
     {n:3, emoji:"🐱", name:"花猫"},
@@ -710,7 +792,7 @@ const WORLDS_V2 = [
     {n:14, emoji:"🦕", name:"小恐龙"},
     {n:15, emoji:"🐙", name:"章鱼大王", boss:true}
   ]},
-  {id:"digit2", name:"竖式城堡", sub:"两位数加减两位数", scene:"城堡", levels:[
+  {id:"digit2", name:"星光城堡", sub:"100 以内", scene:"城堡", levels:[
     {n:1, emoji:"🧙", name:"小巫师"},
     {n:2, emoji:"🧚", name:"小仙子"},
     {n:3, emoji:"🧟", name:"僵尸"},
@@ -1139,9 +1221,10 @@ const cover = t => '<span style="display:inline-grid;place-items:center;vertical
 const picRow = (inner, fs) => '<div style="font-size:'+(fs||18)+'px;line-height:1.3;margin-top:4px">'+inner+'</div>';
 
 const WP = {
-  joinResult(){
+  // joinResult / joinChange / separateStart / compareDiff / compareBigger 可以传最大数 M（默认 20；前两个世界用 10）
+  joinResult(M=20){
     const [A,B] = names(2), [u,th,pic] = pick(THINGS);
-    const a = ri(3,12), b = ri(2,Math.min(8,20-a)), s = a+b;
+    const a = ri(M<20?2:3,Math.min(12,M-2)), b = ri(2,Math.min(8,M-a)), s = a+b;
     return wq({key:"jr"+a+"+"+b, pic, answer:s, traps:[a-b,a,s+10],
       html:P(A)+"有"+N(a)+u+th+"，"+P(B)+"又送给"+A+N(b)+u+"。现在"+P(A)+"一共有几"+u+th+"？",
       steps:[
@@ -1150,9 +1233,9 @@ const WP = {
         {t:"求一共有几"+u+"，就是把两段合起来：<b>"+a+" + "+b+" = ?</b>", v:bars([{l:A,segs:[{v:a},{v:b,c:"b"}],brace:{from:0,len:s,t:"一共 ?"}}],s)}
       ]});
   },
-  joinChange(){
+  joinChange(M=20){
     const [A] = names(1), [u,th,pic] = pick(THINGS);
-    const a = ri(3,11), c = ri(a+2,Math.min(20,a+9)), d = c-a;
+    const a = ri(M<20?2:3,Math.min(11,M-2)), c = ri(a+2,Math.min(M,a+9)), d = c-a;
     return wq({key:"jc"+a+"-"+c, pic, answer:d, traps:[a+c,a,c],
       html:P(A)+"原来有"+N(a)+u+th+"，妈妈又给了"+A+"一些，现在有"+N(c)+u+"。妈妈给了几"+u+"？",
       steps:[
@@ -1161,9 +1244,9 @@ const WP = {
         {t:"一共的去掉原来的，就是妈妈给的：<b>"+c+" − "+a+" = ?</b>", v:bars([{l:A,segs:[{v:a,c:"x"},{v:d,c:"q hl",t:"?"}],brace:{from:0,len:c,t:"一共 "+c}}],c)}
       ]});
   },
-  separateStart(){
+  separateStart(M=20){
     const [A,B] = names(2), [u,th,pic] = pick(THINGS);
-    const r = ri(2,12), b = ri(2,Math.min(8,20-r)), s = r+b;
+    const r = ri(2,Math.min(12,M-2)), b = ri(2,Math.min(8,M-r)), s = r+b;
     return wq({key:"ss"+r+"+"+b, pic, answer:s, traps:[r-b,r,b],
       html:P(A)+"有一些"+th+"，送给"+P(B)+N(b)+u+"以后，还剩"+N(r)+u+"。"+P(A)+"原来有几"+u+"？",
       steps:[
@@ -1182,9 +1265,9 @@ const WP = {
         {t:"又上来 <b>"+c+"</b> 人（蓝色）：<b>"+m+" + "+c+" = ?</b>", v:dots([{n:m,c:"a"},{n:c,c:"b"}])}
       ]});
   },
-  compareDiff(){
+  compareDiff(M=20){
     const [A,B] = names(2), [u,th,pic] = pick(THINGS);
-    const a = ri(6,18), b = ri(2,a-1), d = a-b;
+    const a = ri(Math.min(6,M-2),Math.min(18,M)), b = ri(2,a-1), d = a-b;
     return wq({key:"cd"+a+"-"+b, pic, answer:d, traps:[a+b,a,b],
       html:P(A)+"有"+N(a)+u+th+"，"+P(B)+"有"+N(b)+u+th+"。"+P(A)+"比"+P(B)+"多几"+u+"？",
       steps:[
@@ -1193,9 +1276,9 @@ const WP = {
         {t:"多出来的那段就是答案：<b>"+a+" − "+b+" = ?</b>", v:bars([{l:A,segs:[{v:b},{v:d,c:"d hl",t:"?"}]},{l:B,segs:[{v:b,c:"b"}]}],a)}
       ]});
   },
-  compareBigger(){
+  compareBigger(M=20){
     const [A,B] = names(2), [u,th,pic] = pick(THINGS);
-    const b = ri(3,12), d = ri(2,Math.min(8,20-b)), a = b+d;
+    const b = ri(M<20?2:3,Math.min(12,M-2)), d = ri(2,Math.min(8,M-b)), a = b+d;
     return wq({key:"cb"+b+"+"+d, pic, answer:a, traps:[b-d,d,b],
       html:P(B)+"有"+N(b)+u+th+"，"+P(A)+"比"+P(B)+"多"+N(d)+u+"。"+P(A)+"有几"+u+"？",
       steps:[
@@ -1727,16 +1810,18 @@ const diffOf = (w,l) => Math.min(mastery(w,l),3);
 const WP_EASY = ["joinResult","compareDiff","compareBigger","joinChange","separateStart"];
 const WP_MORE = WP_EASY.concat(["queue","queuePos","between","compareTrap","gaps"]);
 /* 第二批题型按难度插入：[题型, 档位 h, 从第几个世界起（下标）, 到第几个世界前为止]
-   凑十火山（2）起：看图列式、比多少、分类计数、认整点；冰雪城堡（3）起：排队（我前面/后面）、1 元找零；
-   整十草原（4）起全部换成进阶档：数到 18、两行 14 个圆点、三色三形状和相差、半点和选钟面、从后往前数第几、10/20 元找零和 1 元几角。 */
+   熔岩火山（2）起：看图列式、比多少、分类计数、认整点；冰雪城堡（3）起：排队（我前面/后面）、1 元找零；
+   彩虹草原（4）起全部换成进阶档：数到 18、两行 14 个圆点、三色三形状和相差、半点和选钟面、从后往前数第几、10/20 元找零和 1 元几角。 */
 const WP_NEW = [
   ["picCover",0,2,4],["compareRows",0,2,4],["sortCount",0,2,4],["clock",0,2,4],
   ["lineUp",0,3,4],["money",0,3,4],
   ["picCover",1,4],["compareRows",1,4],["sortCount",1,4],["clock",1,4],["lineUp",1,4],["money",1,4]
 ];
-const wpPool = w => (w>=4 ? WP_MORE : WP_EASY).filter(k=>WP[k]).map(k=>()=>WP[k]())
+// 前两个世界（10 以内）用 10 以内的简单应用题（WP_SMALL 这几种可以传最大数）
+const WP_SMALL = ["joinResult","joinChange","separateStart","compareDiff","compareBigger"];
+const wpPool = w => w<2 ? WP_SMALL.filter(k=>WP[k]).map(k=>()=>WP[k](10)) : (w>=4 ? WP_MORE : WP_EASY).filter(k=>WP[k]).map(k=>()=>WP[k]())
   .concat(WP_NEW.filter(([k,h,a,b])=>WP[k] && w>=a && (b==null || w<b)).map(([k,h])=>()=>WP[k](h)));
-const WP_RATE = 0.12;
+const WP_RATE = 0.15, WP_FROM = 2;   // battle 关从第 3 关起（下标 2）混进应用题
 const planFn = it => () => G[it.g](...(it.args||[]));
 /* 道具「换题」：同类型降一档（两位数 → 一位数，进位 → 不进位，填空 → 直接算，整百 → 整十 …），最低一档就还是它自己 */
 const EASIER = {add:()=>({g:"add",args:[5]}), sub:()=>({g:"sub",args:[5]}),
@@ -1744,7 +1829,11 @@ const EASIER = {add:()=>({g:"add",args:[5]}), sub:()=>({g:"sub",args:[5]}),
   carryAny:()=>({g:"add",args:[10]}), teenNoBorrow:()=>({g:"sub",args:[10]}), borrowAny:()=>({g:"sub",args:[10]}),
   addTen:()=>({g:"add",args:[10]}), subTen:()=>({g:"sub",args:[10]}), addHundred:()=>({g:"addTen"}), subHundred:()=>({g:"subTen"}),
   add1NoCarry:()=>({g:"addTen"}), add1Carry:()=>({g:"add1NoCarry"}), sub1NoBorrow:()=>({g:"subTen"}), sub1Borrow:()=>({g:"sub1NoBorrow"}),
-  add2NoCarry:()=>({g:"add1NoCarry"}), sub2NoBorrow:()=>({g:"sub1NoBorrow"})};
+  add2NoCarry:()=>({g:"add1NoCarry"}), sub2NoBorrow:()=>({g:"sub1NoBorrow"}),
+  carry:()=>({g:"add",args:[10]}), borrow:()=>({g:"sub",args:[10]}),
+  // 连式换成同一档的一步加法
+  chain3:it=>({"5":{g:"add",args:[5]}, "10":{g:"add",args:[10]}, "20":{g:"add",args:[10]}, "20n":{g:"add",args:[10]}, tens:{g:"addTen"}, hund:{g:"addTen"},
+    d1:{g:"add1NoCarry"}, d1c:{g:"add1NoCarry"}, d2:{g:"add1NoCarry"}}[(it.args||[])[0]] || {g:"add",args:[10]})};
 const easierIt = it => EASIER[it.g] ? EASIER[it.g](it) : it;
 const INV_G = new Set(["missAdd","missSub","make10"]);
 // 这一关额外用 G.inv 出题的比例：让（mix 里原有的填空题 + G.inv）合起来达到目标占比
@@ -1755,20 +1844,33 @@ function invRate(w,l){
   const mixs = LEVEL_PLAN[w].levels[l].mix, p0 = mixs.filter(it=>INV_G.has(it.g)).length/mixs.length;
   return p0>=t ? 0 : (t-p0)/(1-p0);
 }
+/* 同一关里题型轮换：同一种形式（qForm：加 / 减 / 连式 / 逆向 / 应用题）不连出 3 道，连着两道一样就重抽（最多 20 次）。 */
+function rotate(gen){
+  const last = [];
+  return () => {
+    let q = gen();
+    for(let k=0; k<20 && last.length===2 && last[0]===last[1] && qForm(q)===last[0]; k++) q = gen();
+    last.push(qForm(q)); if(last.length>2) last.shift();
+    return q;
+  };
+}
 /* 一关的全部信息。怪兽血量 = 10 + floor(全局关卡序号 / 10)，Boss 再 +5（星级档位另加，见 ui.js startLevel）。
    blend（拼读）关整关都出拼读题 blendQ（连闯里仍用 L.math 出计算题，见 ui.js startLevel）。 */
 function levelDef(w,l){
   const W2 = WORLDS_V2[w], lv = W2.levels[l], plan = LEVEL_PLAN[w].levels[l];
   const mode = lv.boss ? "battle" : (LEVEL_MODES[w].modes[l] || "battle");
   const base = mix(...plan.mix.map(planFn)), inv = invRate(w,l), iv = LEVEL_PLAN[w].inv;
-  const math = inv>0 ? () => Math.random()<inv ? G.inv(iv.t, pick(iv.forms)) : base() : base;
+  // 逆向题：mix 里有连式的关，四成出连式逆向（10 + ? − 3 = 8），其余是两步逆向（? + 3 = 7）
+  const hasChain = plan.mix.some(it=>it.g==="chain3");
+  const invQ = () => hasChain && Math.random()<.4 ? G.chain3(iv.c, true) : G.inv(iv.t, pick(INV_FORMS));
+  const math = rotate(inv>0 ? () => Math.random()<inv ? invQ() : base() : base);
   let g = math;
   if(mode==="blend") g = blendQ;
-  else if(mode==="battle" && w>=2){ const pool = wpPool(w); g = () => Math.random()<WP_RATE ? pick(pool)() : math(); }
+  else if(mode==="battle" && l>=WP_FROM){ const pool = wpPool(w); g = rotate(() => Math.random()<WP_RATE ? pick(pool)() : math()); }
   const i = gIndex(w,l);
   // 换题用：应用题换一道简单的应用题，拼音 / 拼读题换一道别的，计算题按 EASIER 降一档
   const easyMath = mix(...plan.mix.map(it=>planFn(easierIt(it))));
-  const easy = q => q && q.kind==="word" ? WP[pick(WP_EASY.filter(k=>WP[k]))]() : q && q.kind==="py" ? (mode==="blend" ? blendQ() : pyQ()) : easyMath();
+  const easy = q => q && q.kind==="word" ? (w<2 ? WP[pick(WP_SMALL)](10) : WP[pick(WP_EASY.filter(k=>WP[k]))]()) : q && q.kind==="py" ? (mode==="blend" ? blendQ() : pyQ()) : easyMath();
   return {w, l, m:lv.emoji, n:lv.name, boss:!!lv.boss, mode, g, math, easy, hp:10 + Math.floor(i/10) + (lv.boss?5:0)};
 }
 /* 算术消除用的出题器：只要"算式 = ?"这种直接算的题（不要填空题），而且至少 6 个得数各有 2 道不同算式，
@@ -1781,10 +1883,12 @@ function matchPoolOK(gen){
   return [...pool.values()].filter(x=>x.size>=2).length >= 6;
 }
 function matchGenFor(w,l){
-  const items = LEVEL_PLAN[w].levels[l].mix, all = LEVEL_PLAN[w].levels.flatMap(x=>x.mix);
+  // 连式（三个数）放不进消除卡片，不用
+  const two = it => it.g!=="chain3";
+  const items = LEVEL_PLAN[w].levels[l].mix.filter(two), all = LEVEL_PLAN[w].levels.flatMap(x=>x.mix).filter(two);
   const distinct = it => { const f = planFn(it), v = new Set(); for(let i=0;i<60;i++){ const q = f(); if(plainQ(q)) v.add(q.answer); } return v.size; };
   const cands = items.slice().sort((a,b)=>distinct(b)-distinct(a)).map(it=>[it])
-    .concat([items, LEVEL_PLAN[w].levels[NLV-1].mix, all]);
+    .concat([items, LEVEL_PLAN[w].levels[NLV-1].mix.filter(two), all]);
   for(const c of cands){
     const fns = c.map(planFn).filter(f=>plainQ(f()));
     if(!fns.length) continue;
@@ -2459,6 +2563,32 @@ function synthGear(ids){
   return {ok:true, gear:made};
 }
 
+/* 一键合成：从最低品质起，把没穿的同品质装备每 3 件合成 1 件高一档，合出来的再参加上一档（逐级向上，红色不再合成）。
+   synthPlan() 只算不动存档：[{q, nq, use, make}]；autoSynth() 照着做，返回最后留下的新装备（中途又被合掉的不算）。 */
+function synthPlan(){
+  const plan = []; let carry = 0;
+  for(const q of Q_ORDER){
+    const nq = nextQuality(q); if(!nq) break;
+    const have = bagOf(q).length + carry, make = Math.floor(have/3);
+    if(make) plan.push({q, nq, use: make*3, make});
+    carry = make;
+  }
+  return plan;
+}
+function autoSynth(){
+  const made = [];
+  for(const q of Q_ORDER){
+    if(!nextQuality(q)) break;
+    let pool = bagOf(q);
+    while(pool.length >= 3){
+      const r = synthGear(pool.slice(0,3).map(g=>g.id)); if(!r.ok) break;
+      made.push(r.gear); pool = bagOf(q);
+    }
+  }
+  const left = new Set((S.bag||[]).map(g=>g && g.id));
+  return made.filter(g=>left.has(g.id));
+}
+
 function salvageValue(gear){ return SALVAGE_EXP[gear && gear.quality] || 0; }
 function discardDrop(gear){
   if(!gear) return {ok:false, error:"missing"};
@@ -2565,7 +2695,7 @@ if(typeof window !== "undefined"){
   window.gainExp = gainExp; window.expNeed = expNeed; window.addExp = addExp; window.levelReward = levelReward;
   window.monsterDrop = monsterDrop; window.rollVictoryDrops = rollVictoryDrops; window.applyDrops = applyDrops;
   window.gearExpNeed = gearExpNeed; window.addGearExp = addGearExp; window.canAscend = canAscend; window.ascendGear = ascendGear;
-  window.canSynth = canSynth; window.synthGear = synthGear; window.discardDrop = discardDrop; window.salvageGear = salvageGear;
+  window.canSynth = canSynth; window.synthGear = synthGear; window.synthPlan = synthPlan; window.autoSynth = autoSynth; window.discardDrop = discardDrop; window.salvageGear = salvageGear;
   window.openAllChests = openAllChests; window.tryFlee = tryFlee; window.fleePenalty = fleePenalty;
   window.FLEE_RATE = FLEE_RATE; window.FLEE_EXP_LOSS = FLEE_EXP_LOSS;
   window.DROP_CHANCE_BY_WORLD = DROP_CHANCE_BY_WORLD; window.ITEM_DROP_RATE = ITEM_DROP_RATE;
