@@ -13,6 +13,7 @@
 import { chromium } from 'playwright';
 import { wpCheck, invCheck, qbankCheck, r5Check } from './wp_check.mjs';
 import { mkdirSync } from 'fs';
+import { r5Systems, r5Growth, r5Heroes, r5Mystic, r5Parent, r5Migrate } from './r5_systems.mjs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -25,6 +26,13 @@ const SAVE = { stars, stickers: { '🐶': 3, '🐱': 2, '💎': 2 }, medals: { a
 // buttons, titles and panels that must stay fully on screen and out of the safe areas
 // a page (openPage) must leave at least this much height free, see shotCheck
 const SPARE = 16;
+// 界面里会重画自己的按钮（穿上、分解、合成、一键合成 → 确认合成……）用 tapOnce() 挡掉 400ms 内的第二下（防孩子手快连点）。
+// 测试点得比孩子快得多，在快的电脑上第二下会落进这 400ms 被挡掉（主持人 macOS 上「一键合成」后的 #aGo 就这样没点上）：
+// 点这些按钮时，离上一次点它们至少隔 TAP_GAP（别的按钮照常，消除的快速连击测试还要很快地连点）。
+const TAP_GAP = 420, GUARDED = /#(gOn|gOff|gSalvage|gAscend|sAuto|aGo|sGo|sWear|wcWear)\b|\.(dwear|ddrop|mrep)\b/;
+const tapper = p => { let last = 0; return async sel => {
+  if (GUARDED.test(sel)) { const wait = last + TAP_GAP - Date.now(); if (wait > 0) await p.waitForTimeout(wait); last = Date.now(); }
+  return p.click(sel, { force: true }); }; };
 const KEY_UI = 'button, .btn, .ibtn, .ribbon, .ttl, .wintitle, .pill, .tab, .ans, .item, .node, .wtitle, .nexthero, #bTitle, .qcard, .hint, .note, .page, .mboard, .lboard, .wview';
 
 async function newPage(view) {
@@ -120,7 +128,7 @@ async function playAll(view) {
   await p.evaluate(([k, s]) => localStorage.setItem(k, JSON.stringify(s)), [V1, SAVE]);
   await p.reload(); await p.waitForTimeout(600);
   const shot = name => shotCheck(p, view, SHOTS, name);
-  const tap = sel => p.click(sel, { force: true });
+  const tap = tapper(p);
   // where a node sits inside the scrolled map: in view? how far from the middle?
   const centred = sel => p.evaluate(sel => { const n = document.querySelector(sel), s = document.getElementById('lscroll'); if (!n) return { missing: sel }; const a = n.getBoundingClientRect(), b = s.getBoundingClientRect(); const c = (a.top + a.bottom) / 2; return { inView: a.top >= b.top - 1 && a.bottom <= b.bottom + 1, off: Math.round(Math.abs(c - (b.top + b.bottom) / 2)) }; }, sel);
   const scrollToBand = async w => { await p.evaluate(w => { const b = document.querySelector(`.band[data-w="${w}"]`), s = document.getElementById('lscroll'); s.scrollTop = b.offsetTop + b.offsetHeight - s.clientHeight; }, w); await p.waitForTimeout(250); };
@@ -320,8 +328,8 @@ async function playAll(view) {
   await p.evaluate(() => { for (let i = 0; i < 7; i++) addGear({ id: 'aw' + i, slot: 'weapon', quality: 'white', name: '测试·剑' + i, e: '🗡️', lv: 1, exp: 0, affixes: [{ id: 'atk', val: 1 }] });
     for (let i = 0; i < 2; i++) addGear({ id: 'ab' + i, slot: 'helmet', quality: 'blue', name: '测试·盔' + i, e: '🪖', lv: 1, exp: 0, affixes: [{ id: 'atk', val: 1 }] }); });
   // 穿着的同品质装备也在合成页里：灰色、标「穿戴中」、不能选，点它提示先回背包脱下
-  const wq = await p.evaluate(() => { const g = Object.values(__t.S.equipped).find(Boolean); return g && { q: g.quality, id: g.id }; });
-  if (!wq) problems.push(`[${view.name}] the test save should be wearing something before 合成`);
+  const wq = await p.evaluate(() => { const g = Object.values(__t.S.equipped).find(x => x && x.quality !== 'red'); return g && { q: g.quality, id: g.id }; });  // 红色不能再合成，合成页没有红色页签
+  if (!wq) { /* 身上只有红装（随机掉落）：这一项检查跳过 */ }
   else {
     await tap(`.qtab[data-q="${wq.q}"]`); await p.waitForTimeout(200);
     for (let i = 0; i < 5 && !(await p.isVisible(`.gt[data-id="${wq.id}"]`)) && await p.isVisible('#gNext') && await p.isEnabled('#gNext'); i++) { await tap('#gNext'); await p.waitForTimeout(150); }
@@ -365,7 +373,7 @@ async function playAll(view) {
   else {
     await tap(`.hcard[data-i="${li}"]`); await p.waitForTimeout(300); await shot('10b-hero-locked');
     const lk = await p.evaluate(i => { const st = document.querySelector('.herostage'), h = __t.HEROES[i], t = st.textContent;
-      return { qqq: /？？？/.test(t), name: t.includes(h.n), skill: t.includes(h.skill), sil: !!st.querySelector('.sil .ei'), silArt: !!st.querySelector('.sil img.art'), filter: getComputedStyle(st.querySelector('.sil .ei')).filter, need: !!st.querySelector('.lockline') }; }, li);
+      return { qqq: /？？？/.test(t), name: t.includes(h.n), skill: /擅长/.test(t), sil: !!st.querySelector('.sil .ei'), silArt: !!st.querySelector('.sil img.art'), filter: getComputedStyle(st.querySelector('.sil .ei')).filter, need: !!st.querySelector('.lockline') }; }, li);
     if (!lk.qqq || lk.name || lk.skill || !lk.sil || !lk.silArt || !/brightness\(0\)/.test(lk.filter) || !lk.need) problems.push(`[${view.name}] a locked hero should only show a silhouette, 「？？？」 and how to unlock it: ${JSON.stringify(lk)}`);
   }
   await tap('#pgBack'); await tap('#parentBtn'); await p.waitForTimeout(300); await shot('11-parent');
@@ -374,7 +382,17 @@ async function playAll(view) {
     return [...document.querySelectorAll('#pbody .toggle')].map(t => { const r = t.getBoundingClientRect(), l = t.querySelector('.tl').getBoundingClientRect(), c = (t.querySelector('.sw') || t.querySelector('.seg3')).getBoundingClientRect();
       return { txt: t.querySelector('.tl').textContent, dy: Math.round(Math.abs((l.top + l.bottom) / 2 - (c.top + c.bottom) / 2) * 10) / 10, padL: Math.round(l.left - r.left), padR: Math.round(r.right - c.right), right: Math.round(c.right), inside: r.left >= pb.left - 1 && r.right <= pb.right + 1 }; }); });
   const tglBad = tgl.filter(t => t.dy > 1.5 || Math.abs(t.padL - t.padR) > 1 || t.right !== tgl[0].right || !t.inside);
-  if (tgl.length < 5 || tglBad.length) problems.push(`[${view.name}] settings rows: text and switch should be vertically centred, same left / right margin, switches right-aligned, inside the panel: ${JSON.stringify(tglBad.length ? tglBad : tgl)}`);
+  // （第五轮：插入拼音题挪到「题型」页签，设置页签剩 4 行）
+  if (tgl.length < 4 || tglBad.length) problems.push(`[${view.name}] settings rows: text and switch should be vertically centred, same left / right margin, switches right-aligned, inside the panel: ${JSON.stringify(tglBad.length ? tglBad : tgl)}`);
+  // 「题型」页签：拼音题一行 + 两列 8 个开关，同样要对齐（每一列的开关右边对齐）
+  await tap('.tab[data-t="qs"]'); await p.waitForTimeout(200);
+  const qt = await p.evaluate(() => { const pb = document.getElementById('pbody').getBoundingClientRect();
+    return [...document.querySelectorAll('#pbody .toggle')].map(t => { const r = t.getBoundingClientRect(), l = t.querySelector('.tl').getBoundingClientRect(), c = (t.querySelector('.sw') || t.querySelector('.seg3')).getBoundingClientRect();
+      return { txt: t.querySelector('.tl').textContent, col: t.closest('.two') ? (r.left < pb.left + pb.width / 2 ? 'L' : 'R') : '-', dy: Math.round(Math.abs((l.top + l.bottom) / 2 - (c.top + c.bottom) / 2) * 10) / 10, padL: Math.round(l.left - r.left), padR: Math.round(r.right - c.right), right: Math.round(c.right), inside: r.left >= pb.left - 1 && r.right <= pb.right + 1 }; }); });
+  const colRight = {}; for (const t of qt) if (colRight[t.col] == null) colRight[t.col] = t.right;
+  const qtBad = qt.filter(t => t.dy > 1.5 || Math.abs(t.padL - t.padR) > 1 || t.right !== colRight[t.col] || !t.inside);
+  if (qt.length !== 9 || qtBad.length) problems.push(`[${view.name}] 题型 rows should be aligned like the settings rows: ${JSON.stringify(qtBad.length ? qtBad : qt)}`);
+  await tap('.tab[data-t="set"]'); await p.waitForTimeout(200);
   if (!await p.evaluate(() => /部分美术由 AI 生成/.test(document.getElementById('pbody').textContent))) problems.push(`[${view.name}] the parent page should say 「部分美术由 AI 生成」 at the bottom`);
   await tap('.tab[data-t="rep"]'); await shot('12-report'); await tap('#pgBack');
   await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.openAll = true; s.mapWorld = 2; localStorage.setItem(k, JSON.stringify(s)); }, V1);
@@ -1118,11 +1136,31 @@ async function itemMigration() {
   await ctx.close();
 }
 
-await itemMigration();
-await playAll({ name: '375', viewport: { width: 375, height: 667 }, dpr: 2, safe: { top: 0, bottom: 0 } });
-await playAll({ name: '393', viewport: { width: 393, height: 852 }, dpr: 3, safe: { top: 59, bottom: 34 } });
-await betaCheck();
-await resetCheck();
+// 第五轮系统（闪避、成长显示、大关宝箱、勇士擅长、结伴探险、题型开关、家长新页签）：见 r5_systems.mjs。
+// 只跑这一部分：ONLY=r5 node tools/smoke_test.mjs
+async function r5Run(view) {
+  const SHOTS = path.join(ROOT, 'build', 'shots', view.name); mkdirSync(SHOTS, { recursive: true });
+  const { ctx, p } = await newPage(view);
+  await p.goto('file://' + path.join(ROOT, 'build', 'test.html'));
+  await p.evaluate(([k, s]) => localStorage.setItem(k, JSON.stringify(s)), [V1, SAVE]);
+  await p.reload(); await p.waitForTimeout(600);
+  const o = { view, problems, shot: name => shotCheck(p, view, SHOTS, name), tap: tapper(p) };
+  await r5Systems(p, o);
+  await r5Growth(p, o);
+  await r5Heroes(p, o);
+  await r5Mystic(p, o);
+  await r5Parent(p, o);
+  await r5Migrate(p, o, V1);
+  await ctx.close();
+}
+const VIEWS = [{ name: '375', viewport: { width: 375, height: 667 }, dpr: 2, safe: { top: 0, bottom: 0 } }, { name: '393', viewport: { width: 393, height: 852 }, dpr: 3, safe: { top: 59, bottom: 34 } }];
+if (process.env.ONLY !== 'r5') {
+  await itemMigration();
+  for (const v of VIEWS) await playAll(v);
+  await betaCheck();
+  await resetCheck();
+}
+for (const v of VIEWS) await r5Run(v);
 await b.close();
 if (problems.length) { console.error('\nFAILED:\n- ' + problems.join('\n- ')); process.exit(1); }
 console.log('\nALL GOOD — screenshots in build/shots/375/ and build/shots/393/');

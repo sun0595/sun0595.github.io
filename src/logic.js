@@ -2084,16 +2084,21 @@ const WORLDS = [
       {m:"👹",n:"大魔王",hp:12,t:18,boss:true,g:mix(()=>G.compare(),()=>G.chain(),()=>G.pattern(),()=>G.borrowAny(),()=>G.carryAny(),W.twoStep,W.queuePos)}
     ]}
 ];
+/* 勇士（第五轮）：不再有数值技能（护盾、暴击、减速、回心……都去掉了，平衡交给装备和等级），改成「擅长一类题」：
+   选它时这类题多出一些（HERO_BOOST，出现率 +10%～15%），见 heroSpecial()。good = 擅长的题型类别（Q_CATS），小勇士什么都一样。
+   shot / fx / col 只是攻击特效和颜色。 */
 const HEROES = [
-  {e:"🧒",n:"小勇士",need:0, shot:"⚔️",fx:"💥",col:"#ffd23f",skill:"连对 3 题打出暴击"},
-  {e:"🥷",n:"忍者",need:8, shot:"✴️",fx:"🌀",col:"#a855f7",skill:"身手快：连对 2 题就能暴击",critAt:2},
-  {e:"🤖",n:"机器人",need:18,shot:"⚡",fx:"⚡",col:"#38bdf8",skill:"能量护盾：每关挡住第 1 次攻击",shield:1},
-  {e:"👨‍🚀",n:"宇航员",need:30,shot:"🚀",fx:"💫",col:"#60a5fa",skill:"时间减速：怪兽蓄力慢 30%",slow:1.3},
-  {e:"🦖",n:"霸王龙",need:45,shot:"🔥",fx:"🔥",col:"#f97316",skill:"烈焰暴击：暴击一次打掉 3 滴血",critDmg:3},
-  {e:"🐲",n:"神龙",need:65,shot:"🌈",fx:"🌈",col:"#ec4899",skill:"龙之恢复：每连对 5 题回 1 颗心",heal:5},
+  {e:"🧒",n:"小勇士",need:0, shot:"⚔️",fx:"💥",col:"#ffd23f",good:null},
+  {e:"🥷",n:"忍者",need:8, shot:"✴️",fx:"🌀",col:"#a855f7",good:"calc"},
+  {e:"🤖",n:"机器人",need:18,shot:"⚡",fx:"⚡",col:"#38bdf8",good:"cmp"},
+  {e:"👨‍🚀",n:"宇航员",need:30,shot:"🚀",fx:"💫",col:"#60a5fa",good:"shape"},
+  {e:"🦖",n:"霸王龙",need:45,shot:"🔥",fx:"🔥",col:"#f97316",good:"chain"},
+  {e:"🐲",n:"神龙",need:65,shot:"🌈",fx:"🌈",col:"#ec4899",good:"trap"},
   // gear: 获得过这个品质（或更高）的装备就解锁；set: 旧存档里集齐过贴纸的孩子照样保留
-  {e:"🦄",n:"独角兽",gear:"purple",set:"n",shot:"✨",fx:"🌟",col:"#f0abfc",skill:"幸运光环：每关第 1 次答错不扣心",lucky:1},
-  {e:"🤴",n:"装备国王",gear:"red",set:"l",shot:"👑",fx:"🎆",col:"#facc15",skill:"全能：护盾 + 连对 2 题暴击 + 时间减速",shield:1,critAt:2,slow:1.3}
+  {e:"🦄",n:"独角兽",gear:"purple",set:"n",shot:"✨",fx:"🌟",col:"#f0abfc",good:"word"},
+  {e:"🤴",n:"装备国王",gear:"red",set:"l",shot:"👑",fx:"🎆",col:"#facc15",good:"pic4"},
+  // 神秘勇士：集齐 6 位按星星解锁的普通勇士后，去「结伴探险」寻找（见 MYSTIC_*）；能力是每道选择题少一个错误选项
+  {e:"🦸",n:"神秘勇士",mystic:true,shot:"✨",fx:"🌟",col:"#fbbf24",good:null}
 ];
 const STK = {
   n:{name:"普通", list:["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🐔","🐧","🐤","🦉","🐝","🐞","🦋","🐢","🐙","🐬","🐳","🦖","🦕","🚗","🚓","🚒","🚑","🚜","🏎️","🚀","🛸","🚁","⛵","🚂","⚽"]},
@@ -2280,6 +2285,48 @@ function rotate(gen){
     return q;
   };
 }
+/* 题型类别（第五轮）：勇士擅长、家长开关都按这个分。qCat(q) 看题目对象认出类别。 */
+const Q_CATS = {calc:"计算", chain:"连加连减", cmp:"比大小", shape:"图形题", pic4:"看图说话", word:"应用题", trap:"易错题",
+  fact:"小知识", spot:"科普题", color:"颜色题", py:"拼音"};
+function qCat(q){
+  if(!q) return "calc";
+  if(q.kind==="py") return "py";
+  if(q.trap) return "trap";
+  if(q.kind==="fact" || q.kind==="spot" || q.kind==="color") return q.kind;
+  const k = String(q.key||"");
+  if(/^p4/.test(k)) return "pic4";
+  if(q.shape || /^sl/.test(k)) return "shape";
+  if(q.kind==="cmp") return "cmp";
+  if(q.intro || qForm(q)==="chain") return "chain";
+  if(q.kind==="word") return "word";
+  return "calc";
+}
+// 家长设置里能关掉的插入题（拼音题另有「关 / 偶尔 / 经常」）。小知识、科普、颜色题下一轮才有题，开关先留着。
+const Q_SWITCHES = [["word","插入应用题"],["shape","插入图形题"],["fact","插入小知识"],["pic4","插入看图说话"],["cmp","插入比大小"],["trap","插入易错题"],["spot","插入科普题"],["color","插入颜色题"]];
+const qOn = c => !S.qOn || S.qOn[c]!==false;
+// 擅长这类题时，现成题库里没有就直接出一道（按大关的数字范围）
+const GOOD_GEN = {
+  calc: w => w<2 ? G.add(10) : G.carryAny(), cmp: () => G.cmp10(), pic4: () => G.pic4(10), trap: w => G.trap(w<2 ? 10 : 20),
+  shape: w => w>=6 && Math.random()<.5 ? G.shapeLogic() : G.shapeEq(10),
+  chain: w => G.chain3(w<2 ? "10" : w===2 ? "20n" : "20"),
+  word: w => pick(wpPool(w))()
+};
+const HERO_BOOST = 0.125;   // 擅长的那类题出现率提高这么多（绝对值，约 +12.5%）
+/* 包一层出题器：先按家长开关把关掉的类别换掉（最多重抽 40 次，实在不行出一道这一大关的计算题），
+   再按勇士擅长的类别加量：这类题在这关原本占 s，就以 HERO_BOOST/(1−s) 的机会把别的题换成这一类，总共正好多出约 HERO_BOOST。 */
+function qFilter(gen, w){
+  const share = {};   // 这关每个类别原本的占比（第一次要用时抽样 800 道估出来）
+  const base = () => { let q = gen(); for(let k=0; k<40 && !qOn(qCat(q)); k++) q = gen(); return qOn(qCat(q)) ? q : GOOD_GEN.calc(w); };
+  return () => {
+    let q = base();
+    const c = hero().good;
+    if(!c || !qOn(c) || qCat(q)===c) return q;
+    if(share[c]==null){ let n = 0; for(let i=0;i<800;i++) if(qCat(base())===c) n++; share[c] = n/800; }
+    if(Math.random() >= Math.min(.9, HERO_BOOST/(1-share[c]))) return q;
+    for(let k=0; k<40; k++){ const q2 = base(); if(qCat(q2)===c) return q2; }
+    return GOOD_GEN[c] ? GOOD_GEN[c](w) : q;
+  };
+}
 /* 一关的全部信息。怪兽血量 = 10 + floor(全局关卡序号 / 10)，Boss 再 +5（星级档位另加，见 ui.js startLevel）。
    blend（拼读）关整关都出拼读题 blendQ（连闯里仍用 L.math 出计算题，见 ui.js startLevel）。 */
 function levelDef(w,l){
@@ -2312,7 +2359,9 @@ function levelDef(w,l){
   const isBig = q => q && (q.answer>20 || (q.parts||[]).some(x => typeof x==="number" && x>20));
   const easyMath = q => isBig(q) ? easyBig() : easySmall();
   const easy = q => q && q.kind==="word" ? (w<2 ? WP[pick(WP_SMALL)](10) : WP[pick(WP_EASY.filter(k=>WP[k]))]()) : q && q.kind==="py" ? (mode==="blend" ? blendQ(w) : pyQ(w)) : easyMath(q);
-  return {w, l, m:lv.emoji, n:lv.name, boss:!!lv.boss, mode, g, math, easy, hp:10 + Math.floor(i/10) + (lv.boss?5:0)};
+  // 家长开关和勇士擅长（拼读关整关拼读，不动）
+  if(mode!=="blend") g = qFilter(g, w);
+  return {w, l, m:lv.emoji, n:lv.name, boss:!!lv.boss, mode, g, math:qFilter(math, w), easy, hp:10 + Math.floor(i/10) + (lv.boss?5:0)};
 }
 /* 算术消除用的出题器：只要"算式 = ?"这种直接算的题（不要填空题），而且至少 6 个得数各有 2 道不同算式，
    这样 makeMatchBoard 永远不会走"补 20 以上加法"的保底。先试本关 mix 里得数最多的那个，不够就用整关 mix，
@@ -2347,7 +2396,45 @@ const ITEMS = {heal:{e:"💖",n:"加心",tip:"💖 加一颗心"}, cut:{e:"🧹"
 const qRank = k => ["white","blue","pink","purple","orange","red"].indexOf(k);
 const hasBest = k => qRank(S.bestQ||"") >= qRank(k);
 const goldAura = () => hasBest("orange") || setDone("r");
-const heroUnlocked = i => { const h = HEROES[i]; return h.gear ? (hasBest(h.gear) || setDone(h.set)) : totalStars()>=h.need; };
+const heroUnlocked = i => { const h = HEROES[i]; return h.mystic ? !!(S.mystic && S.mystic.found) : h.gear ? (hasBest(h.gear) || setDone(h.set)) : totalStars()>=h.need; };
+/* 神秘勇士「结伴探险」（第五轮）：6 位普通勇士（按星星解锁的）都解锁后出现；每天 1 次，选两位已解锁的勇士结伴，
+   做 MYSTIC_Q 道加难题（本大关 Boss 关的题），答对 ≥ MYSTIC_PASS 道算成功。成功后 MYSTIC_FIND 的机会找到；
+   没找到得 1 块寻宝地图碎片，集满 MYSTIC_FRAGS 块必得。失败什么都不扣，明天再来。 */
+const MYSTIC_Q = 10, MYSTIC_PASS = 8, MYSTIC_FIND = 0.2, MYSTIC_FRAGS = 5;
+const normalHeroesDone = () => HEROES.every((h,i)=>h.need==null || heroUnlocked(i));
+const mysticIdx = () => HEROES.findIndex(h=>h.mystic);
+const questToday = () => S.mystic.day===today();
+// 一次探险的结果：right = 答对几道，r = 随机数（测试可以传）。返回 {pass, found, frag}
+function questResult(right, r){
+  S.mystic.day = today();
+  const out = {pass: right>=MYSTIC_PASS, found:false, frag:false};
+  if(out.pass && !S.mystic.found){
+    if((r==null ? Math.random() : r) < MYSTIC_FIND) out.found = true;
+    else { S.mystic.frags = Math.min(MYSTIC_FRAGS, S.mystic.frags+1); out.frag = true; if(S.mystic.frags>=MYSTIC_FRAGS) out.found = true; }
+    if(out.found) S.mystic.found = true;
+  }
+  save();
+  return out;
+}
+// 神秘勇士的能力：选择题去掉一个错误选项（至少留 2 个）
+function mysticTrim(q){
+  if(!q || !Array.isArray(q.options) || q.options.length<=2) return q;
+  const wrong = q.options.filter(o=>String(o)!==String(q.answer));
+  const drop = pick(wrong);
+  return Object.assign({}, q, {options: q.options.filter(o=>o!==drop), trimmed:true});
+}
+// 对对碰少一对：去掉一对上面没有压着别的卡、自己也没被压着的卡（两层的棋盘也一样能用）
+function boardDropPair(board){
+  const cards = board && (board.cards || board); if(!Array.isArray(cards)) return board;
+  // 两层的棋盘：拿走一对上层的卡，压在下面的卡跟着露出来
+  const free = v => cards.filter(c=>c.value===v).every(c=>!(c.coveredBy||[]).length);
+  const vals = [...new Set(cards.map(c=>c.value))].filter(free);
+  if(!vals.length) return board;
+  const v = pick(vals), gone = new Set(cards.filter(c=>c.value===v).map(c=>c.id));
+  const keep = cards.filter(c=>!gone.has(c.id)).map(c=>Object.assign(c, {coveredBy:(c.coveredBy||[]).filter(id=>!gone.has(id))}));
+  if(board.cards){ board.cards = keep; return board; }
+  return keep;
+}
 const stickerCount = () => Object.keys(S.stickers).length;
 function hero(){ if(!heroUnlocked(S.hero)) S.hero=0; return HEROES[S.hero]; }
 
@@ -2788,6 +2875,38 @@ if(typeof window !== "undefined"){
   if(changed) save();
 })();
 
+/* 第五轮新增存档字段（都有默认值；旧存档打开时补上，不改名、不删旧字段）：
+   wchest  每个大关的「大关宝箱」开过没有 {世界id: true}
+   qOn     家长设置里各类插入题的开关 {类别: true/false}，默认全开（见 Q_SWITCHES）
+   mystic  神秘勇士「结伴探险」：found 找到了没有、frags 寻宝地图碎片、day 今天探险过的日期
+   reports 家长点「这题有问题」记下的题（最多 100 条）；colorLog 颜色题答错记录（颜色题下一轮加入） */
+function ensureR5(st){
+  let changed = false;
+  const obj = (k, v) => { if(!st[k] || typeof st[k]!=="object" || Array.isArray(st[k])!==Array.isArray(v)){ st[k] = v; changed = true; } };
+  obj("wchest", {}); obj("qOn", {}); obj("mystic", {found:false, frags:0, day:""}); obj("reports", []); obj("colorLog", []);
+  if(typeof st.mystic.frags!=="number"){ st.mystic.frags = 0; changed = true; }
+  if(typeof st.mystic.found!=="boolean"){ st.mystic.found = false; changed = true; }
+  if(typeof st.mystic.day!=="string"){ st.mystic.day = ""; changed = true; }
+  return changed;
+}
+if(ensureR5(S)) save();
+
+/* 家长反馈（第五轮）：答题记录里点「这题有问题」→ 记进 S.reports（最多 REPORT_MAX 条，新的在前）；
+   颜色题答错 → logColorMiss() 记进 S.colorLog（最多 COLORLOG_MAX 条），颜色题下一版加入。 */
+const REPORT_MAX = 100, COLORLOG_MAX = 200;
+const nowText = () => { const d = new Date(), p = n => String(n).padStart(2,"0"); return today()+" "+p(d.getHours())+":"+p(d.getMinutes()); };
+function reportQ(m){
+  if(!m || m.rep) return false;
+  S.reports.unshift({q:m.q, a:m.a, g:m.g, o:m.o||[], lv:m.lv||"", t:nowText()});
+  S.reports = S.reports.slice(0, REPORT_MAX); m.rep = true; save();
+  return true;
+}
+// qc / pc = {name:"红色", hex:"#e53935"}：题目要的颜色、孩子选的颜色
+function logColorMiss(qc, pc, extra){
+  S.colorLog.unshift(Object.assign({t:nowText(), q:qc, pick:pc}, extra||{}));
+  S.colorLog = S.colorLog.slice(0, COLORLOG_MAX); save();
+}
+
 /* ================= 奖励：经验、稀缺掉落、装备成长（界面稍后接入） =================
    家长要调的数字都在这一段最上面。
    结算画面目前还是旧的「点宝箱」，接上 applyDrops 之后才改用这里。
@@ -2882,6 +3001,16 @@ function levelReward(lv){
   const gear = rollGear(progressStage(), false, lv % 5 === 0 ? "purple" : null);
   addGear(gear);
   return [{type:"gear", gear, guarantee: lv % 5 === 0}];
+}
+/* 大关宝箱（第五轮）：一个大关 15 关都拿满 3 星（45 颗）就能开一次，必出紫色或更好的装备 */
+const WCHEST_STARS = NLV*3, WCHEST_MIN = "purple";
+const worldStars = w => WORLDS_V2[w].levels.reduce((n,_,l)=>n+starOf(w,l), 0);
+const wchestReady = w => worldStars(w)>=WCHEST_STARS && !S.wchest[WORLDS_V2[w].id];
+function openWorldChest(w){
+  if(!wchestReady(w)) return null;
+  const gear = rollGear(Math.max(progressStage(), (w+1)*NLV), true, {minQuality: WCHEST_MIN});
+  addGear(gear); S.wchest[WORLDS_V2[w].id] = true; save();
+  return gear;
 }
 // 加上经验，可能连升多级。返回 {levels, rewards}。
 function addExp(n){
