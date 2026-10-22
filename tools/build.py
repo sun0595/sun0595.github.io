@@ -66,7 +66,7 @@ const pick = arr => arr[Math.floor(Math.random()*arr.length)];
 const shuffle = a => { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]} return a; };
 '''
 TEST_HOOK = ("window.__t={showRunReward,startRun,openRunMenu,useItem,qTime,openBag,get B(){return B},get S(){return S},G,WP,LEVEL_PLAN,"
-             "WORLDS_V2,HEROES,IMG,ICON_SVG,GEAR_SLOTS,LEVEL_MODES,layoutMap,ART_ROADS,img,startLevel,nextQuestion,toMap,levelDef,matchGenFor,matchPoolOK,curLevel,renderMap,hitCap,"
+             "WORLDS_V2,HEROES,IMG,ICON_SVG,GEAR_SLOTS,MAP_SEAM,TRANS_ROADS,LEVEL_MODES,layoutMap,ART_ROADS,img,startLevel,nextQuestion,toMap,levelDef,matchGenFor,matchPoolOK,curLevel,renderMap,hitCap,"
              "pyQ,pyBlend,pyBlendHz,blendQ,PY,LLK_SETS,llkPairs,pyLegal,pySplit,pyMark,"
              "art,chargeTime,renderItems,closeHint,openLevel,lvBonus,fxHold(ms){ FX_HOLD = ms; },setDrops(f){ dropOverride = f; },setArt(k,url){ if(url) ART[k] = url; else delete ART[k]; },"
              "setDaily(n){ daily().n = n; save(); renderMap(); }};\n")
