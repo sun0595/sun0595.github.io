@@ -2084,16 +2084,19 @@ const WORLDS = [
       {m:"👹",n:"大魔王",hp:12,t:18,boss:true,g:mix(()=>G.compare(),()=>G.chain(),()=>G.pattern(),()=>G.borrowAny(),()=>G.carryAny(),W.twoStep,W.queuePos)}
     ]}
 ];
+/* 勇士（第五轮）：不再有数值技能（护盾、暴击、减速、回心……都去掉了，平衡交给装备和等级），改成「擅长一类题」：
+   选它时这类题多出一些（HERO_BOOST，出现率 +10%～15%），见 heroSpecial()。good = 擅长的题型类别（Q_CATS），小勇士什么都一样。
+   shot / fx / col 只是攻击特效和颜色。 */
 const HEROES = [
-  {e:"🧒",n:"小勇士",need:0, shot:"⚔️",fx:"💥",col:"#ffd23f",skill:"连对 3 题打出暴击"},
-  {e:"🥷",n:"忍者",need:8, shot:"✴️",fx:"🌀",col:"#a855f7",skill:"身手快：连对 2 题就能暴击",critAt:2},
-  {e:"🤖",n:"机器人",need:18,shot:"⚡",fx:"⚡",col:"#38bdf8",skill:"能量护盾：每关挡住第 1 次攻击",shield:1},
-  {e:"👨‍🚀",n:"宇航员",need:30,shot:"🚀",fx:"💫",col:"#60a5fa",skill:"时间减速：怪兽蓄力慢 30%",slow:1.3},
-  {e:"🦖",n:"霸王龙",need:45,shot:"🔥",fx:"🔥",col:"#f97316",skill:"烈焰暴击：暴击一次打掉 3 滴血",critDmg:3},
-  {e:"🐲",n:"神龙",need:65,shot:"🌈",fx:"🌈",col:"#ec4899",skill:"龙之恢复：每连对 5 题回 1 颗心",heal:5},
+  {e:"🧒",n:"小勇士",need:0, shot:"⚔️",fx:"💥",col:"#ffd23f",good:null},
+  {e:"🥷",n:"忍者",need:8, shot:"✴️",fx:"🌀",col:"#a855f7",good:"calc"},
+  {e:"🤖",n:"机器人",need:18,shot:"⚡",fx:"⚡",col:"#38bdf8",good:"cmp"},
+  {e:"👨‍🚀",n:"宇航员",need:30,shot:"🚀",fx:"💫",col:"#60a5fa",good:"shape"},
+  {e:"🦖",n:"霸王龙",need:45,shot:"🔥",fx:"🔥",col:"#f97316",good:"chain"},
+  {e:"🐲",n:"神龙",need:65,shot:"🌈",fx:"🌈",col:"#ec4899",good:"trap"},
   // gear: 获得过这个品质（或更高）的装备就解锁；set: 旧存档里集齐过贴纸的孩子照样保留
-  {e:"🦄",n:"独角兽",gear:"purple",set:"n",shot:"✨",fx:"🌟",col:"#f0abfc",skill:"幸运光环：每关第 1 次答错不扣心",lucky:1},
-  {e:"🤴",n:"装备国王",gear:"red",set:"l",shot:"👑",fx:"🎆",col:"#facc15",skill:"全能：护盾 + 连对 2 题暴击 + 时间减速",shield:1,critAt:2,slow:1.3}
+  {e:"🦄",n:"独角兽",gear:"purple",set:"n",shot:"✨",fx:"🌟",col:"#f0abfc",good:"word"},
+  {e:"🤴",n:"装备国王",gear:"red",set:"l",shot:"👑",fx:"🎆",col:"#facc15",good:"pic4"}
 ];
 const STK = {
   n:{name:"普通", list:["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🐔","🐧","🐤","🦉","🐝","🐞","🦋","🐢","🐙","🐬","🐳","🦖","🦕","🚗","🚓","🚒","🚑","🚜","🏎️","🚀","🛸","🚁","⛵","🚂","⚽"]},
@@ -2280,6 +2283,48 @@ function rotate(gen){
     return q;
   };
 }
+/* 题型类别（第五轮）：勇士擅长、家长开关都按这个分。qCat(q) 看题目对象认出类别。 */
+const Q_CATS = {calc:"计算", chain:"连加连减", cmp:"比大小", shape:"图形题", pic4:"看图说话", word:"应用题", trap:"易错题",
+  fact:"小知识", spot:"科普题", color:"颜色题", py:"拼音"};
+function qCat(q){
+  if(!q) return "calc";
+  if(q.kind==="py") return "py";
+  if(q.trap) return "trap";
+  if(q.kind==="fact" || q.kind==="spot" || q.kind==="color") return q.kind;
+  const k = String(q.key||"");
+  if(/^p4/.test(k)) return "pic4";
+  if(q.shape || /^sl/.test(k)) return "shape";
+  if(q.kind==="cmp") return "cmp";
+  if(q.intro || qForm(q)==="chain") return "chain";
+  if(q.kind==="word") return "word";
+  return "calc";
+}
+// 家长设置里能关掉的插入题（拼音题另有「关 / 偶尔 / 经常」）。小知识、科普、颜色题下一轮才有题，开关先留着。
+const Q_SWITCHES = [["word","插入应用题"],["shape","插入图形题"],["fact","插入小知识"],["pic4","插入看图说话"],["cmp","插入比大小"],["trap","插入易错题"],["spot","插入科普题"],["color","插入颜色题"]];
+const qOn = c => !S.qOn || S.qOn[c]!==false;
+// 擅长这类题时，现成题库里没有就直接出一道（按大关的数字范围）
+const GOOD_GEN = {
+  calc: w => w<2 ? G.add(10) : G.carryAny(), cmp: () => G.cmp10(), pic4: () => G.pic4(10), trap: w => G.trap(w<2 ? 10 : 20),
+  shape: w => w>=6 && Math.random()<.5 ? G.shapeLogic() : G.shapeEq(10),
+  chain: w => G.chain3(w<2 ? "10" : w===2 ? "20n" : "20"),
+  word: w => pick(wpPool(w))()
+};
+const HERO_BOOST = 0.125;   // 擅长的那类题出现率提高这么多（绝对值，约 +12.5%）
+/* 包一层出题器：先按家长开关把关掉的类别换掉（最多重抽 40 次，实在不行出一道这一大关的计算题），
+   再按勇士擅长的类别加量：这类题在这关原本占 s，就以 HERO_BOOST/(1−s) 的机会把别的题换成这一类，总共正好多出约 HERO_BOOST。 */
+function qFilter(gen, w){
+  const share = {};   // 这关每个类别原本的占比（第一次要用时抽样 400 道估出来）
+  const base = () => { let q = gen(); for(let k=0; k<40 && !qOn(qCat(q)); k++) q = gen(); return qOn(qCat(q)) ? q : GOOD_GEN.calc(w); };
+  return () => {
+    let q = base();
+    const c = hero().good;
+    if(!c || !qOn(c) || qCat(q)===c) return q;
+    if(share[c]==null){ let n = 0; for(let i=0;i<400;i++) if(qCat(base())===c) n++; share[c] = n/400; }
+    if(Math.random() >= Math.min(.9, HERO_BOOST/(1-share[c]))) return q;
+    for(let k=0; k<40; k++){ const q2 = base(); if(qCat(q2)===c) return q2; }
+    return GOOD_GEN[c] ? GOOD_GEN[c](w) : q;
+  };
+}
 /* 一关的全部信息。怪兽血量 = 10 + floor(全局关卡序号 / 10)，Boss 再 +5（星级档位另加，见 ui.js startLevel）。
    blend（拼读）关整关都出拼读题 blendQ（连闯里仍用 L.math 出计算题，见 ui.js startLevel）。 */
 function levelDef(w,l){
@@ -2312,7 +2357,9 @@ function levelDef(w,l){
   const isBig = q => q && (q.answer>20 || (q.parts||[]).some(x => typeof x==="number" && x>20));
   const easyMath = q => isBig(q) ? easyBig() : easySmall();
   const easy = q => q && q.kind==="word" ? (w<2 ? WP[pick(WP_SMALL)](10) : WP[pick(WP_EASY.filter(k=>WP[k]))]()) : q && q.kind==="py" ? (mode==="blend" ? blendQ(w) : pyQ(w)) : easyMath(q);
-  return {w, l, m:lv.emoji, n:lv.name, boss:!!lv.boss, mode, g, math, easy, hp:10 + Math.floor(i/10) + (lv.boss?5:0)};
+  // 家长开关和勇士擅长（拼读关整关拼读，不动）
+  if(mode!=="blend") g = qFilter(g, w);
+  return {w, l, m:lv.emoji, n:lv.name, boss:!!lv.boss, mode, g, math:qFilter(math, w), easy, hp:10 + Math.floor(i/10) + (lv.boss?5:0)};
 }
 /* 算术消除用的出题器：只要"算式 = ?"这种直接算的题（不要填空题），而且至少 6 个得数各有 2 道不同算式，
    这样 makeMatchBoard 永远不会走"补 20 以上加法"的保底。先试本关 mix 里得数最多的那个，不够就用整关 mix，
