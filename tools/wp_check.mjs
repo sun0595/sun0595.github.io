@@ -2,8 +2,10 @@
 //   - 答案在选项里、选项 4 个且不重复、没有负数、数字在设计范围内（钟表是 1～12 时的整点 / 半点）
 //   - speak 是纯文字、所有数都在 20 以内；steps 至少 3 步，讲解里没有直接写出「= 答案」
 //   - 没有 undefined / NaN 漏到题面或讲解里
+// 逆向思维算术题（G.inv）也在这里自测，见 invCheck：每个档 × 形式抽样 2000 次，算式代回去成立、答案在选项里、没有负数；
+// 再按关卡抽样，看每个世界逆向题的占比、第 1 世界前 3 关没有逆向题、消除关只出「算式 = ?」。
 // 单独跑：python3 tools/build.py --test && node tools/wp_check.mjs
-// smoke_test.mjs 也会 import 这里的 wpCheck(page) 一起跑。
+// smoke_test.mjs 也会 import 这里的 wpCheck(page) / invCheck(page) 一起跑。
 import { fileURLToPath } from 'url';
 import path from 'path';
 
@@ -77,6 +79,64 @@ export async function wpCheck(page, n = 2000) {
   }, { n, RANGE: WP_RANGE });
 }
 
+// 逆向题各档答案（填进 ? 的数）的范围
+export const INV_RANGE = { '10': [1, 10], '20': [1, 20], tens: [10, 100], hund: [100, 1000], d1: [1, 99], d2: [10, 99] };
+// 每个世界 battle 关里逆向题（? 不在最后）的占比要在这个范围
+export const INV_SHARE = [0.25, 0.55];
+
+export async function invCheck(page, n = 2000) {
+  return page.evaluate(({ n, RANGE, SHARE }) => {
+    const out = [], stats = {};
+    const strip = h => String(h).replace(/<[^>]+>/g, '');
+    const isInv = q => Array.isArray(q.parts) && q.parts.indexOf('?') >= 0 && q.parts.indexOf('?') < q.parts.length - 2;
+    for (const t of Object.keys(RANGE)) for (const f of ['a+?', '?+b', 'a-?', '?-b']) {
+      const errs = new Set(), ans = [];
+      for (let i = 0; i < n && errs.size < 6; i++) {
+        const q = __t.G.inv(t, f), bad = m => errs.add(m);
+        ans.push(q.answer);
+        const [l, op, r, eq, res] = q.parts.map(x => x === '?' ? q.answer : x);
+        if (eq !== '=' || (op === '+' ? l + r : l - r) !== res) bad('代回去不成立: ' + q.parts.join(' ') + ' ? = ' + q.answer);
+        if (q.parts.indexOf('?') !== { 'a+?': 2, '?+b': 0, 'a-?': 2, '?-b': 0 }[f]) bad('形式不对: ' + q.parts.join(' '));
+        if (!q.options || q.options.length !== 4 || new Set(q.options).size !== 4) bad('选项不是 4 个不重复的: ' + JSON.stringify(q.options));
+        if (!q.options.includes(q.answer)) bad('答案不在选项里: ' + q.answer + ' ' + JSON.stringify(q.options));
+        if (q.options.some(o => !Number.isInteger(o) || o < 0)) bad('选项有负数: ' + JSON.stringify(q.options));
+        if (q.parts.some(x => typeof x === 'number' && x < 0)) bad('题里有负数: ' + q.parts.join(' '));
+        if (q.answer < RANGE[t][0] || q.answer > RANGE[t][1] || [l, r, res].some(x => x > RANGE[t][1])) bad('超出这一档的范围: ' + q.parts.join(' ') + ' ? = ' + q.answer);
+        if (typeof q.speak !== 'string' || /[<>?]/.test(q.speak.replace(/？$/, ''))) bad('speak 不是纯文字: ' + q.speak);
+        if (!q.steps || q.steps.length !== 3) bad('讲解不是 3 步');
+        for (const s of q.steps || []) {
+          for (const m of strip(s.t).matchAll(/(\S)\s*=\s*(\d+)(?!\d)/g)) if (m[1] !== '?' && +m[2] === q.answer) bad('讲解直接写出了答案: ' + strip(s.t));  // 「? = c」是在复述题目
+          if (/undefined|NaN/.test(s.t + s.v)) bad('讲解里有 undefined / NaN');
+        }
+      }
+      for (const e of errs) out.push(`inv(${t}, ${f}): ${e}`);
+      stats[`inv(${t}, ${f})`] = { n, answers: `${Math.min(...ans)}～${Math.max(...ans)}` };
+    }
+    // 关卡占比：battle 关的 L.math 抽样；第 1 世界前 3 关不能有逆向题
+    const share = [];
+    __t.LEVEL_PLAN.forEach((W, w) => {
+      let inv = 0, all = 0;
+      W.levels.forEach((lv, l) => {
+        const d = __t.levelDef(w, l);
+        if (d.mode !== 'battle') return;
+        let k = 0; for (let i = 0; i < 300; i++) if (isInv(d.math())) k++;
+        if (w === 0 && l < 3 && k) out.push(`第 1 世界第 ${l + 1} 关不该有逆向题`);
+        inv += k; all += 300;
+      });
+      share.push(inv / all);
+      if (inv / all < SHARE[0] || inv / all > SHARE[1]) out.push(`${W.name} 逆向题占比 ${(inv / all * 100).toFixed(0)}% 不在 ${SHARE[0] * 100}～${SHARE[1] * 100}%`);
+      // 消除关只用「算式 = ?」
+      W.levels.forEach((lv, l) => {
+        if (__t.levelDef(w, l).mode !== 'match') return;
+        const g = __t.matchGenFor(w, l);
+        if (g) for (let i = 0; i < 200; i++) { const q = g(); if (isInv(q)) { out.push(`${W.name} 第 ${l + 1} 关（消除）出了逆向题 ${q.parts.join(' ')}`); break; } }
+      });
+    });
+    stats.share = __t.LEVEL_PLAN.map((W, w) => `${W.name} ${(share[w] * 100).toFixed(0)}%`).join('，');
+    return { problems: out, stats };
+  }, { n, RANGE: INV_RANGE, SHARE: INV_SHARE });
+}
+
 // 单独运行
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { chromium } = await import('playwright');
@@ -85,10 +145,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const p = await b.newPage();
   const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.goto('file://' + path.join(ROOT, 'build', 'test.html')); await p.waitForTimeout(500);
-  const r = await wpCheck(p);
+  const r = await wpCheck(p), ri = await invCheck(p);
   await b.close();
   for (const [k, v] of Object.entries(r.stats)) console.log(`${k.padEnd(15)} ${v.n} 次  变体 ${v.variants}  答案 ${v.answers}（${v.distinct} 种）`);
-  const bad = errs.map(e => 'JS error: ' + e).concat(r.problems);
+  for (const [k, v] of Object.entries(ri.stats)) if (k !== 'share') console.log(`${k.padEnd(15)} ${v.n} 次  答案 ${v.answers}`);
+  console.log('逆向题占比（battle 关）：' + ri.stats.share);
+  const bad = errs.map(e => 'JS error: ' + e).concat(r.problems, ri.problems);
   if (bad.length) { console.error('\nFAILED:\n- ' + bad.join('\n- ')); process.exit(1); }
-  console.log('wp_check: all word problem types OK');
+  console.log('wp_check: all word problem types and inverse questions OK');
 }
