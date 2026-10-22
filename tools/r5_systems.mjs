@@ -105,6 +105,20 @@ export async function r5Mystic(p, { view, problems, shot, tap }) {
   if (!/神秘勇士在等你们去寻找/.test(await p.textContent('#pbody'))) bad('神秘勇士页应写「神秘勇士在等你们去寻找……」');
   await tap('#qGo'); await p.waitForTimeout(300);
   await tap('#pbody .hcard[data-i="1"]'); await tap('#pbody .hcard[data-i="3"]'); await p.waitForTimeout(200); await shot('83-quest-pick');
+  // 中途返回不能重开（Fable 审查）：一出发就算今天探险过了；比大小题的选项下面有「大于 / 小于 / 等于」
+  await p.evaluate(() => __t.setQuestGen(() => __t.G.cmp10()));
+  await tap('#pGo'); await p.waitForTimeout(300); await shot('83-quest-cmp');
+  const mid = await p.evaluate(() => { const T = __t; return { day: T.S.mystic.day, saved: JSON.parse(localStorage.getItem('math-hero-v1')).mystic.day,
+    small: [...document.querySelectorAll('#pbody .ans small')].map(x => x.textContent).sort().join() }; });
+  await p.evaluate(() => __t.setQuestGen(null));
+  if (!['大于,小于,等于', '大于,小于', '大于,等于', '小于,等于'].includes(mid.small)) bad('探险里比大小题的选项应有「大于 / 小于 / 等于」小字: ' + mid.small);
+  await p.evaluate(() => document.getElementById('pgBack').click()); await p.waitForTimeout(200);
+  await p.evaluate(() => __t.openHeroes()); await tap('.hcard.mystic'); await p.waitForTimeout(200);
+  const again = await p.evaluate(() => ({ dis: document.getElementById('qGo').disabled, frags: __t.S.mystic.frags }));
+  if (!mid.day || mid.saved !== mid.day || !again.dis || again.frags !== 0) bad('开始探险后中途返回，当天不能再出发: ' + JSON.stringify({ mid, again }));
+  await p.evaluate(() => { document.getElementById('pgBack').click(); __t.S.mystic.day = ''; __t.openHeroes(); });
+  await tap('.hcard.mystic'); await p.waitForTimeout(200); await tap('#qGo'); await p.waitForTimeout(300);
+  await tap('#pbody .hcard[data-i="1"]'); await tap('#pbody .hcard[data-i="3"]'); await p.waitForTimeout(200);
   await p.evaluate(() => __t.setQuest(0.99));   // 成功但没找到 → 得 1 块碎片
   await tap('#pGo'); await p.waitForTimeout(300); await shot('83-quest-q');
   for (let i = 0; i < 10; i++) {
