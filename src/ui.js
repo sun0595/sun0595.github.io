@@ -410,6 +410,9 @@ function renderMap(focus, width){
     signs += '<div class="cloud" data-c="'+wi+'" style="top:'+cb.top+'px;height:'+cb.h+'px"></div>'
       + '<div class="wsign cl'+(worldOpen(wi)?"":" locked")+'" data-w="'+wi+'" style="top:'+(cb.top+cb.h/2)+'px"><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><span class="wsub2"><small>'+w.sub+'</small>'
       + (bossDone ? '<button class="btn white wrun" data-w="'+wi+'">'+img("🏅")+'连闯</button>' : '')+'</span></div>';
+    // 大关宝箱：云带右边，显示这个大关的星星进度 x/45；集满能开就闪，开过就是打开的箱子
+    const ws = worldStars(wi), wopen = !!S.wchest[w.id], wready = wchestReady(wi);
+    signs += '<button class="wchest'+(wready?" ready":"")+(wopen?" opened":"")+'" data-w="'+wi+'" style="top:'+(cb.top+cb.h/2)+'px" aria-label="大关宝箱">'+img(wopen?"🎉":"🎁")+'<b class="num">'+ws+'/'+WCHEST_STARS+'</b></button>';
   }
   for(let wi=0; wi<WORLDS_V2.length; wi++) WORLDS_V2[wi].levels.forEach((L,li)=>{
     const lo = levelOpen(wi,li), st = starOf(wi,li), m = mastery(wi,li), x = nodeX(wi,li), y = nodeY(wi,li), mode = L.boss ? "battle" : LEVEL_MODES[wi].modes[li];
@@ -471,6 +474,7 @@ function renderMap(focus, width){
   sc.addEventListener("scroll", ()=>{ mapScroll = sc.scrollTop; }, {passive:true});
   mp.querySelectorAll(".node").forEach(b=>b.addEventListener("click",()=>{ sfx.click(); startLevel(+b.dataset.w, +b.dataset.l); }));
   mp.querySelectorAll(".wrun").forEach(b=>b.onclick=()=>{ sfx.click(); openRunMenu(+b.dataset.w); });
+  mp.querySelectorAll(".wchest").forEach(b=>b.onclick=()=>{ sfx.click(); openWChest(+b.dataset.w); });
   $("goCur").onclick = ()=>{
     sfx.click(); centre(cw, cl, true);
     const n = mp.querySelector(".node.current"); if(n){ n.classList.remove("cur-flash"); void n.offsetWidth; n.classList.add("cur-flash"); }
@@ -503,6 +507,22 @@ function closePage(){
 $("modal").addEventListener("click", e=>{ if(e.target.id==="modal" && pageClosable) closePage(); });
 function bubble(text){ const b = $("bubble"); if(!b) return; b.innerHTML = emo(text); restart(b,"on"); say(text); }
 
+// 大关宝箱：没集满就说还差几颗星；集满了打开，必出紫色或更好的装备
+function openWChest(w){
+  const W = WORLDS_V2[w], ws = worldStars(w);
+  if(S.wchest[W.id]){ openPage({title:"大关宝箱", back:true, onClose:renderMap, body:'<div class="wcbig">'+img("🎉")+'</div><p>「'+W.name+'」的宝箱已经打开过啦！</p>'}); say("这个宝箱已经打开过啦"); return; }
+  if(!wchestReady(w)){
+    openPage({title:"大关宝箱", back:true, onClose:renderMap, body:'<div class="wcbig">'+img("🎁")+'</div><p>「'+W.name+'」15 关都拿到 3 颗星，<br>就能打开大关宝箱！</p>'
+      + '<div class="wcprog"><span class="xbar"><i style="width:'+pctOf(ws, WCHEST_STARS)+'%"></i></span><b class="num">'+ws+'/'+WCHEST_STARS+'</b>'+img("⭐")+'</div><p class="muted"><small>宝箱里一定是紫色或更好的装备</small></p>'});
+    say("还差"+(WCHEST_STARS-ws)+"颗星，就能打开大关宝箱"); return;
+  }
+  const g = openWorldChest(w); if(!g) return;
+  sfx.chest(); confetti(180);
+  openPage({title:"大关宝箱", ribbon:"gold", back:true, onClose:renderMap, body:'<p class="gsay">'+img("🎁")+' 「'+W.name+'」全部三星！</p>'+gearCard(g, {preview:true, up:true, cls:"pop", lv:true})
+    + '<div class="btnrow">'+wearBtn(g, "wcWear")+'</div>'});
+  say("打开了大关宝箱！得到"+g.name+"！");
+  if($("wcWear") && !$("wcWear").disabled) $("wcWear").onclick = tapOnce(()=>{ wearWithPop(g.id); save(); sfx.right(); $("wcWear").disabled = true; $("wcWear").className = "btn white gwear"; $("wcWear").textContent = "已穿戴"; });
+}
 // 等级页（地图头像下的 Lv 点开）：经验条、现在的等级加成、下一次加成、逃跑的惩罚
 function openLevel(){
   const lv = S.heroLv||1, b = lvBonus(lv), nx = nextLvBonus(lv);
@@ -548,6 +568,34 @@ function openHeroes(){
   render(true);
 }
 
+/* 成长看得见（第五轮）：勇士现在的攻击（普通一下打掉几滴血）和心上限（普通关），穿装备前后对比 */
+function heroPower(eq){
+  const gs = gearStats(eq || S.equipped), lb = lvBonus(S.heroLv||1);
+  return {atk: 1 + Math.floor(gs.atk/3) + lb.atk, hearts: 3 + lb.hearts, shield: gs.shield, lucky: gs.lucky, time: gs.time, crit: gs.critRate};
+}
+const battleStatHTML = () => { if(!B) return ""; return '<span class="bst" id="bStat">'+img("⚔️")+'<b class="num">'+(1+atkBonus()+B.lvAtk)+'</b>'+img("❤️")+'<b class="num">'+B.maxH+'</b></span>'; };
+// 穿上 / 换装备：弹出「⚔️ 攻击 3 → 5」这样的对比（变了的都列出来；都没变就只写攻击）
+const POWER_ROWS = [["atk","⚔️","攻击"],["hearts","❤️","心"],["shield","🛡️","每关挡住"],["lucky","🍀","答错不扣心"],["time","⏳","多给秒数"],["crit","🎯","暴击机会"]];
+function powerDiff(a, b){
+  const rows = POWER_ROWS.filter(([k])=>a[k]!==b[k]);
+  return (rows.length ? rows : POWER_ROWS.slice(0,1)).map(([k,e,n])=>'<p>'+img(e)+' '+n+' <b class="num">'+a[k]+'</b> → <b class="num'+(b[k]>a[k]?' up':b[k]<a[k]?' down':'')+'">'+b[k]+'</b></p>').join("");
+}
+function statPop(before){
+  const after = heroPower(), html = powerDiff(before, after);
+  let el = $("statPop"); if(!el){ el = document.createElement("div"); el.id = "statPop"; el.className = "statpop panel"; document.body.appendChild(el); }
+  el.innerHTML = emo(html); restart(el, "on");
+  say(strip(html).replace(/→/g,"变成").replace(/\s+/g,""));
+  clearTimeout(statPop.tm); statPop.tm = setTimeout(()=>el.classList.remove("on"), 2400);
+}
+// 穿上装备，并弹出前后对比
+function wearWithPop(id){ const before = heroPower(); equipGear(id); statPop(before); }
+// 词缀用孩子听得懂的话：「每题多打 1 下」「每关挡住 1 次攻击」……
+const AFX_KID = {
+  atk: v => v>=3 ? "每题多打 "+Math.floor(v/3)+" 下" : "攻击 +"+v+"（攒满 3 点每题多打 1 下）",
+  critRate: v => "多 "+v+"% 机会暴击", critDmg: v => "暴击多打 "+v+" 下", time: v => "每题多 "+v+" 秒",
+  shield: v => "每关挡住 "+v+" 次攻击", comboHeal: v => "连对 5 题回 "+v+" 颗心", lucky: v => "每关答错 "+v+" 次不扣心", slow: v => "怪兽蓄力慢 "+v+"%"};
+const gearKid = g => g.affixes.filter(a=>AFX_KID[a.id]).map(a=>AFX_KID[a.id](afxVal(g,a))).join("，");
+
 /* ================= gear (装备)：掉落卡、背包、主角穿戴预览 =================
    Data (GEAR_*, rollGear, gearStats, equipGear, openGearChest, S.bag/S.equipped/S.chests) lives in logic.js.
    The old sticker album / crafting is gone from the screen; S.stickers / S.shiny are kept untouched in the save. */
@@ -590,7 +638,7 @@ function gearCard(g, o){
   return '<div class="gcard q-'+g.quality+(o.cls?" "+o.cls:"")+'" style="--qc:'+q.col+';--qb:'+q.bg+'">'
     + '<div class="gmain"><span class="gicon">'+gearImg(g)+(o.up && isBetter(g) ? '<span class="gup" aria-label="比现在的好"><span class="chev"></span></span>' : '')+'</span>'
     + '<div class="ginfo"><b>'+g.name+'</b><small>'+q.title+' · '+(GEAR_SLOTS[g.slot]||{}).name+'</small>'
-    + '<div class="afxs">'+g.affixes.map(a=>GEAR_AFFIXES[a.id] ? afxChip(a.id, afxVal(g,a)) : '').join("")+'</div>'+(o.lv ? gearLvHTML(g) : '')+'</div>'
+    + '<div class="afxs">'+g.affixes.map(a=>GEAR_AFFIXES[a.id] ? afxChip(a.id, afxVal(g,a)) : '').join("")+'</div><small class="gkid">'+gearKid(g)+'</small>'+(o.lv ? gearLvHTML(g) : '')+'</div>'
     + (o.preview ? '<span class="gprev">'+avatarHTML(Object.assign({}, S.equipped, {[g.slot]:g}))+'</span>' : '')+'</div>'
     + (o.btn||"")+'</div>';
 }
@@ -645,7 +693,7 @@ function openBag(slot){
     P.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ sfx.click(); slot = b.dataset.s; sel = null; pg = 0; render(false); });
     P.querySelectorAll(".gt").forEach(b=>b.onclick=()=>{ sfx.click(); sel = b.dataset.id; render(false); });
     const on = (id,f) => { if($(id)) $(id).onclick = f; };
-    on("gOn", tapOnce(()=>{ equipGear(cur.id); applySpareExp(); save(); sel = cur.id; sfx.right(); say("穿上了"+cur.name+"！"); render(false); }));
+    on("gOn", tapOnce(()=>{ wearWithPop(cur.id); applySpareExp(); save(); sel = cur.id; sfx.right(); render(false); }));
     on("gOff", tapOnce(()=>{ unequipGear(slot); sel = cur.id; sfx.click(); render(false); }));
     on("gSalvage", tapOnce(()=>{ const r = salvageGear(cur.id); if(!r.ok) return; sfx.click(); sel = null; gone = r.exp; say("分解成"+r.exp+"点装备经验"); render(false); }));
     on("gAscend", tapOnce(()=>{ const r = ascendGear(cur.id); if(!r.ok) return; sfx.chest(); confetti(120); sel = cur.id; note = '进阶成功！变成 <b style="color:'+qCol(r.gear)+'">'+GEAR_QUALITY_MAP[r.gear.quality].name+'色</b> 啦'; say("进阶成功！"); render(false); }));
@@ -687,7 +735,7 @@ function openSynth(back){
       setBody('<p class="gsay">'+img("✨")+' 合成成功！</p>'+gearCard(r.gear, {preview:true, up:true, cls:"pop", lv:true})
         + '<div class="btnrow"><button class="btn white" id="sBack">回背包</button>'+wearBtn(r.gear, "sWear")+'</div>');
       $("sBack").onclick = ()=>{ sfx.click(); back(); };
-      if(!isWorn(r.gear)) $("sWear").onclick = tapOnce(()=>{ equipGear(r.gear.id); applySpareExp(); save(); sfx.right(); back(); });
+      if(!isWorn(r.gear)) $("sWear").onclick = tapOnce(()=>{ wearWithPop(r.gear.id); applySpareExp(); save(); sfx.right(); back(); });
     });
   };
   /* 一键合成：先说清楚「将用 N 件 x 色装备合成 M 件 y 色装备」（每一档一行），确认后一次合完，列出得到的装备 */
@@ -768,6 +816,7 @@ function openParent(tab){
       if(!confirmReset){ confirmReset = true; return render(false); }
       const keep = {voiceName:S.voiceName, rate:S.rate};
       S = Object.assign({}, DEFAULT, {stars:{},stats:{},mistakes:[],stickers:{},medals:{},tier:{},shiny:{},items:{heal:1,cut:1,swap:1},itemsV3:true,crown:false,world:0,lv:{stars:{},tier:{}},lvMigrated:true,mapWorld:0}, keep);
+      ensureR5(S);
       save(); mapScroll = null; closePage();
     });
     if($("voiceSel")) $("voiceSel").onchange = e=>{ S.voiceName = e.target.value; save(); say("小勇士，准备好了吗？我们出发吧！", true); };
@@ -805,7 +854,7 @@ function startLevel(w,l,run){
   $("bTitle").innerHTML = emo(run ? (runDef(run.mode).name+" "+(run.i+1)+"/"+run.seq.length)
     : Wd.name+" · "+(L.boss?"BOSS":"第"+(l+1)+"关")+(mode!=="battle"?" · "+MODE_NAME[mode]:"")+(diff?" · "+TIERS[diff].n+"挑战":""));
   const hb = $("heroBox"); hb.style.setProperty("--hcol", h.col); hb.classList.toggle("gold", goldAura());
-  $("heroSprite").className = "sprite"; $("heroSprite").innerHTML = avatarHTML(S.equipped); $("heroName").innerHTML = emo((S.crown?"👑":"")+h.n);
+  $("heroSprite").className = "sprite"; $("heroSprite").innerHTML = avatarHTML(S.equipped); $("heroName").innerHTML = emo((S.crown?"👑":"")+h.n)+battleStatHTML();
   $("shield").hidden = !B.shield; $("shield").className = "shield";
   const ms = $("monSprite"); ms.className = "sprite"; ms.innerHTML = monImg(w,l);
   $("monGrow").style.transform = ""; $("monBox").classList.remove("angry");
@@ -1478,6 +1527,9 @@ function dropRow(g, tag, id, canDrop){
 function rewardHTML(r){
   const res = r.res;
   let h = '<div class="rexp">'+img("📘", "rxi")+'<span class="rlv">Lv.<b class="num" id="rLv">'+r.lvBefore+'</b></span><span class="xbar"><i id="xFill" style="width:'+pctOf(r.expBefore, expNeed(r.lvBefore))+'%"></i></span><b class="num rgain">+'+res.exp+'</b></div>';
+  // 离下一级还差多少、升到下一级会加什么（升级了就是新等级的下一级）
+  const nx = nextLvBonus(S.heroLv||1), left = expNeed(S.heroLv||1) - (S.exp||0);
+  h += '<p class="rnext" id="rNextLv">离 <b class="num">Lv.'+((S.heroLv||1)+1)+'</b> 还差 <b class="num">'+left+'</b> 经验'+(nx && nx.lv===(S.heroLv||1)+1 ? '，升级加 '+bonusText(nx) : '')+'</p>';
   if(res.gearExp.length) h += '<div class="rgx">装备经验'+res.gearExp.map(x=>{ const g = gearById(x.id); return g ? '<span class="rgp q-'+g.quality+'" style="--qc:'+qCol(g)+'">'+gearImg(g)+'<b class="num">'+(x.levels.length?'Lv'+g.lv+'↑':'+'+x.gain)+'</b></span>' : ''; }).join("")+'</div>';
   const rows = [];
   res.rewards.forEach(rw=>rw.items.forEach(it=>{ if(it.gear) rows.push(dropRow(it.gear, "升级奖励", "lvg_"+it.gear.id, false)); }));
@@ -1520,7 +1572,7 @@ function wireDrops(){
   const P = $("pbody");
   P.querySelectorAll(".dwear").forEach(b=>b.onclick=tapOnce(()=>{
     const g = gearById(b.dataset.id); if(!g) return;
-    equipGear(g.id); sfx.right(); say("穿上啦！");
+    wearWithPop(g.id); sfx.right();
     P.querySelectorAll(".dwear").forEach(x=>{ const gx = gearById(x.dataset.id); if(gx && isWorn(gx)){ x.className = "btn white dwear"; x.disabled = true; x.textContent = "已穿戴"; } else if(gx){ x.disabled = false; x.className = "btn green dwear"; x.innerHTML = emo("👕穿上"); } });
     P.querySelectorAll(".ddrop").forEach(x=>{ x.disabled = isWorn(gearById(x.dataset.id)); });
     P.querySelectorAll(".gup").forEach(u=>u.remove());

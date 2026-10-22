@@ -26,3 +26,45 @@ export async function r5Systems(p, { view, problems, shot, tap }) {
   await p.evaluate(() => { __t.setDodge(null); __t.fxHold(0); __t.toMap(); });
   console.log('ok ', view.name, 'r5 dodge');
 }
+
+// ---- 2 成长看得见 + 大关宝箱 ----
+export async function r5Growth(p, { view, problems, shot, tap }) {
+  const bad = m => problems.push(`[${view.name}] r5: ${m}`);
+  // 战斗里勇士名牌旁：攻击和心上限
+  await p.evaluate(() => { __t.S.openAll = true; __t.toMap(); __t.startLevel(1, 5); });
+  await p.waitForTimeout(1600); await shot('81-growth-battle');
+  const bs = await p.evaluate(() => { const e = document.getElementById('bStat'); return e ? { txt: e.textContent, maxH: __t.B.maxH, atk: __t.heroPower().atk } : null; });
+  if (!bs || !bs.txt.includes(String(bs.atk)) || !bs.txt.includes(String(bs.maxH))) bad('战斗界面应显示攻击和心上限: ' + JSON.stringify(bs));
+  // 背包里穿上一件攻击 +6 的装备：弹出「攻击 a → b」，装备卡写「每题多打 2 下」
+  await p.evaluate(() => { __t.toMap(); for (const k of ['weapon', 'helmet', 'armor', 'shield']) __t.S.equipped[k] = null;
+    addGear({ id: 'r5_w', slot: 'weapon', quality: 'orange', name: '烈焰·长剑', e: '🗡️', lv: 1, exp: 0, affixes: [{ id: 'atk', val: 6 }, { id: 'shield', val: 1 }] }); __t.openBag('weapon'); });
+  await p.waitForTimeout(400);
+  const kid = await p.evaluate(() => (document.querySelector('.gcard .gkid') || {}).textContent || '');
+  if (!/每题多打 2 下/.test(kid) || !/每关挡住 1 次攻击/.test(kid)) bad('装备卡应写孩子听得懂的效果: ' + kid);
+  await tap('#gOn'); await p.waitForTimeout(300); await shot('81-equip-pop');
+  const pop = await p.evaluate(() => { const e = document.getElementById('statPop'); return e ? { on: e.classList.contains('on'), txt: e.textContent } : null; });
+  if (!pop || !pop.on || !/攻击 1 → 3/.test(pop.txt.replace(/\s+/g, ' ')) || !/每关挡住 0 → 1/.test(pop.txt.replace(/\s+/g, ' '))) bad('穿上装备应弹出前后对比: ' + JSON.stringify(pop));
+  await p.waitForTimeout(2500); await tap('#pgBack');
+  // 结算页：经验涨了多少、离下一级还差多少
+  await p.evaluate(() => { __t.S.heroLv = 2; __t.S.exp = 10; __t.startLevel(1, 5); });
+  for (let i = 0; i < 40; i++) { if (await p.isVisible('#modal')) break; const a = await p.evaluate(() => { const B = __t.B; if (!B || !B.q || B.busy) return null; if (B.hintOpen) __t.closeHint(); B.hp = 1; return String(B.q.answer); }); if (a) await tap(`.ans[data-v="${a}"]`).catch(() => {}); await p.waitForTimeout(400); }
+  await p.waitForTimeout(1800); await shot('81-win-next');
+  const wn = await p.evaluate(() => { const e = document.getElementById('rNextLv'); return e ? e.textContent : null; });
+  if (!wn || !/离 Lv\.\d+ 还差 \d+ 经验/.test(wn.replace(/\s+/g, ' '))) bad('结算页应写离下一级还差多少经验: ' + wn);
+  await p.evaluate(() => __t.toMap()).catch(() => {}); await p.evaluate(() => { document.getElementById('modal').hidden = true; __t.toMap(); });
+  // 大关宝箱：魔法森林 44/45 → 不能开；45/45 → 地图上闪，打开必出紫色或更好，只能开一次
+  await p.evaluate(() => { for (let l = 1; l <= 15; l++) __t.S.lv.stars['add-' + l] = 3; __t.S.lv.stars['add-15'] = 2; delete __t.S.wchest.add; __t.renderMap(); });
+  const before = await p.evaluate(() => ({ n: __t.worldStars(0), ready: __t.wchestReady(0), g: __t.openWorldChest(0), txt: document.querySelector('.wchest[data-w="0"]').textContent }));
+  if (before.n !== 44 || before.ready || before.g || !/44\/45/.test(before.txt)) bad('44 颗星时大关宝箱不能开: ' + JSON.stringify(before));
+  await p.evaluate(() => { __t.S.lv.stars['add-15'] = 3; __t.renderMap(); const c = document.querySelector('.wchest[data-w="0"]'), s = document.getElementById('lscroll'); s.scrollTop = c.offsetTop - s.clientHeight / 2; });
+  await p.waitForTimeout(300); await shot('81-wchest-map');
+  if (!(await p.evaluate(() => document.querySelector('.wchest[data-w="0"]').classList.contains('ready')))) bad('集满 45 颗星，地图上的大关宝箱应该亮起来');
+  await tap('.wchest[data-w="0"]'); await p.waitForTimeout(500); await shot('81-wchest-open');
+  const got = await p.evaluate(() => { const g = __t.S.bag[__t.S.bag.length - 1]; return { q: g && g.quality, opened: !!__t.S.wchest.add, again: __t.openWorldChest(0) }; });
+  if (!['purple', 'orange', 'red'].includes(got.q) || !got.opened || got.again) bad('大关宝箱必出紫装或更好、只能开一次: ' + JSON.stringify(got));
+  // 多开几次（换个大关、重置标记）看品质下限
+  const qs = await p.evaluate(() => { const out = new Set(); for (let i = 0; i < 300; i++) { delete __t.S.wchest.add; const g = __t.openWorldChest(0); out.add(g.quality); __t.S.bag.pop(); } __t.S.wchest.add = true; return [...out]; });
+  if (qs.some(q => !['purple', 'orange', 'red'].includes(q))) bad('大关宝箱出了紫色以下的装备: ' + qs);
+  await tap('#pgBack').catch(() => {});
+  console.log('ok ', view.name, 'r5 growth');
+}
