@@ -923,11 +923,13 @@ async function playAll(view) {
   const cWin = await candy(); if (cWin.length) problems.push(`[${view.name}] win page is not candy style: ${cWin.slice(0, 4)}`);
   await p.evaluate(() => { __t.setDrops(null); document.getElementById('modal').hidden = true; __t.toMap(); });
   // 战斗背景原画 bg_<世界id>：有就铺满战斗区（不再画场景装饰），没有就是原来的画出来的场景（这里借地图原画当测试图）
+  // 先记下真实的 bg_add（可能没有），测完放回去，后面的战斗截图仍用真实背景
+  const keepBg = await p.evaluate(() => __t.art('bg_add'));
   await p.evaluate(() => { __t.setArt('bg_add', __t.art('map_add')); }); await tapNode(0, 1); await p.waitForTimeout(1900); await shot('65-battle-bg-art');
   const bgA = await p.evaluate(() => ({ art: document.getElementById('arena').classList.contains('artbg'), deco: document.querySelectorAll('#arena .deco').length, url: getComputedStyle(document.getElementById('arena')).backgroundImage.startsWith('url("blob:') }));
   await p.evaluate(() => { __t.toMap(); __t.setArt('bg_add', null); }); await tapNode(0, 1); await p.waitForTimeout(600);
   const bgB = await p.evaluate(() => ({ art: document.getElementById('arena').classList.contains('artbg'), deco: document.querySelectorAll('#arena .deco').length }));
-  await p.evaluate(() => __t.toMap());
+  await p.evaluate(k => { __t.toMap(); __t.setArt('bg_add', k); }, keepBg);
   if (!bgA.art || bgA.deco || !bgA.url || bgB.art || !bgB.deco) problems.push(`[${view.name}] battle background art: bg_<world> should fill the arena, otherwise the drawn scene: ${JSON.stringify({ bgA, bgB })}`);
   // a broken picture must fall back to the 3D emoji instead of leaving a blank (monster, hero, map band); then restore
   const keep = await p.evaluate(() => Object.fromEntries(['map_add', 'hero_purple', 'mon_add_1', 'weapon_purple'].map(k => [k, __t.art(k)])));
