@@ -11,7 +11,7 @@
 //   python3 tools/build.py --test && node tools/smoke_test.mjs
 // Needs: npm i playwright  (and `npx playwright install chromium`, or set CHROMIUM_PATH)
 import { chromium } from 'playwright';
-import { wpCheck } from './wp_check.mjs';
+import { wpCheck, invCheck } from './wp_check.mjs';
 import { mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -341,7 +341,19 @@ async function playAll(view) {
     const wr = await wpCheck(p);
     for (const x of wr.problems) problems.push(`[wp_check] ${x}`);
     console.log('wp_check', Object.keys(wr.stats).length, 'types x 2000 samples', wr.problems.length ? 'BAD' : 'ok');
+    const ir = await invCheck(p);
+    for (const x of ir.problems) problems.push(`[inv_check] ${x}`);
+    console.log('inv_check', ir.stats.share, ir.problems.length ? 'BAD' : 'ok');
   }
+  // 逆向思维算术题：4 种形式各拍题面和最后一步讲解（10 / 20 档是圆点，整十和两位数是数轴）
+  for (const [t, f, name] of [['10', 'a-?', 'sub-mid'], ['20', '?-b', 'sub-first'], ['tens', 'a+?', 'add-mid'], ['d1', '?+b', 'add-first']]) {
+    await p.evaluate(([t, f]) => { __t.closeHint(); __t.B.L = Object.assign({}, __t.B.L, { g: () => __t.G.inv(t, f) }); __t.nextQuestion(); }, [t, f]);
+    await p.waitForTimeout(300); await shot(`14i-inv-${name}-q`);
+    await p.evaluate(() => __t.showHint()); await p.waitForTimeout(300);
+    while (await p.$('#stNext')) await tap('#stNext');
+    await p.waitForTimeout(250); await shot(`14i-inv-${name}-hint`);
+  }
+  await p.evaluate(() => __t.closeHint());
   const WP2 = [['picCover', 'part'], ['picCover', 'total'], ['lineUp', 'back'], ['compareRows', 'less'], ['money', 'jiao'], ['money', 'mix'],
     ['clock', 'read', true], ['clock', 'pick', true], ['sortCount', 'count'], ['sortCount', 'diff']];
   for (const [k, v, half] of WP2) {
