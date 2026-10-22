@@ -259,6 +259,14 @@ async function playAll(view) {
     await p.click('.gt[data-id="many_10"]', { force: true, timeout: 2000 }).catch(() => problems.push(`[${view.name}] the bag pages do not list the last armor`));
   }
   await tap('#pgBack'); await tap('#heroBtn'); await p.waitForTimeout(300); await shot('10-heroes');
+  // 换勇士：选项格和背板对齐（不出界）、每格阴影一样厚，选中的那格也一样
+  const hp = await p.evaluate(() => {
+    const pb = document.getElementById('pbody').getBoundingClientRect(), st = document.querySelector('.herostage').getBoundingClientRect();
+    const cs = [...document.querySelectorAll('.hcard')], rs = cs.map(c => c.getBoundingClientRect());
+    const sh = new Set(cs.map(c => getComputedStyle(c).boxShadow.split(/,\s*(?=rgb)/).filter(x => !/inset/.test(x)).join()));
+    return { out: rs.filter(r => r.left < pb.left - 0.5 || r.right > pb.right + 0.5).length, left: Math.round(rs[0].left - st.left), right: Math.round(st.right - rs[3].right), shadows: [...sh] };
+  });
+  if (hp.out || Math.abs(hp.left) > 1 || Math.abs(hp.right) > 1 || hp.shadows.length !== 1) problems.push(`[${view.name}] hero picker cards should line up with the panel above and share one shadow: ${JSON.stringify(hp)}`);
   await tap('#pgBack'); await tap('#parentBtn'); await p.waitForTimeout(300); await shot('11-parent');
   await tap('.tab[data-t="rep"]'); await shot('12-report'); await tap('#pgBack');
   await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.openAll = true; s.mapWorld = 2; localStorage.setItem(k, JSON.stringify(s)); }, V1);
@@ -632,7 +640,7 @@ async function playAll(view) {
   await p.evaluate(() => { __t.S.openAll = true; __t.renderMap(); });
   // gap = the smallest space between any two levels' balls (measured: centre distance minus both radii), must be ≥ 8px;
   // covered = "a<b": level a's number badge is overlapped by a later level b (drawn on top of it)
-  const roadCheck = w => p.evaluate(w => {
+  const roadCheck = w => p.evaluate(async w => {
     const el = l => document.querySelector(`.node[data-w="${w}"][data-l="${l}"]`);
     const ns = [...Array(15)].map((_, l) => el(l).getBoundingClientRect());
     const balls = [...Array(15)].map((_, l) => el(l).querySelector('.ball').getBoundingClientRect());
@@ -646,7 +654,15 @@ async function playAll(view) {
       if (inCircle(lv, b) || [...el(l).querySelectorAll('.lv, .mb')].some(x => hit(lv, x.getBoundingClientRect()))) covered.push((i + 1) + '<' + (l + 1));
     }
     const box = document.getElementById('lscroll').getBoundingClientRect();
-    return { band: document.querySelector(`.band[data-w="${w}"]`).classList.contains('art'), gap: Math.round(gap), covered, bossTop: ns[14].top <= Math.min(...ns.map(r => r.top)) + 1,
+    // every monster's centre must be on the painted road (ART_ROADS, mapped like the band's background: cover, centred)
+    const band = document.querySelector(`.band[data-w="${w}"]`), br = band.getBoundingClientRect(), id = __t.WORLDS_V2[w].id;
+    const im = new Image(); im.src = __t.art('map_' + id); await im.decode();
+    const k = Math.max(br.width / im.naturalWidth, br.height / im.naturalHeight), dw = im.naturalWidth * k, dh = im.naturalHeight * k;
+    const R = __t.ART_ROADS[id].map(([fx, fy]) => [br.left + fx * dw - (dw - br.width) / 2, br.top + fy * dh - (dh - br.height) / 2]);
+    const segD = (p, a, b) => { const vx = b[0] - a[0], vy = b[1] - a[1], t = Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / (vx * vx + vy * vy || 1))); return Math.hypot(p[0] - a[0] - t * vx, p[1] - a[1] - t * vy); };
+    const offRoad = balls.map((b, l) => { const c = [b.x + b.width / 2, b.y + b.height / 2]; let d = 1e9; for (let i = 1; i < R.length; i++) d = Math.min(d, segD(c, R[i - 1], R[i])); return d > 3 ? (l + 1) + ':' + Math.round(d) : null; }).filter(Boolean);
+    const framed = [...Array(15)].map((_, l) => getComputedStyle(el(l).querySelector('.ball'))).filter(cs => parseFloat(cs.borderTopWidth) > 0 || cs.backgroundImage !== 'none' || cs.borderRadius === '50%').length;
+    return { offRoad, framed, nim: im.naturalWidth, band: document.querySelector(`.band[data-w="${w}"]`).classList.contains('art'), gap: Math.round(gap), covered, bossTop: ns[14].top <= Math.min(...ns.map(r => r.top)) + 1,
       inside: ns.every(r => r.left >= box.left - 1 && r.right <= box.right + 1), art: [...Array(15)].map((_, l) => !!document.querySelector(`.node[data-w="${w}"][data-l="${l}"] img.art`)).filter(Boolean).length };
   }, w);
   const showBand = async (w, part) => { await p.evaluate(([w, part]) => { const b = document.querySelector(`.band[data-w="${w}"]`), s = document.getElementById('lscroll'); s.scrollTop = b.offsetTop + b.offsetHeight * part - s.clientHeight / 2; }, [w, part]); await p.waitForTimeout(300); };
@@ -656,19 +672,19 @@ async function playAll(view) {
   const mapBoss = await p.evaluate(() => ['sub', 'ten', 'ice', 'tens', 'hundreds', 'digit1', 'digit2'].map((id, i) => [id, document.querySelector(`.node[data-w="${i + 1}"][data-l="14"] img.art`)?.getAttribute('src') === __t.art('mon_' + id + '_15')]).filter(x => !x[1]).map(x => x[0]));
   if (mapBoss.length) problems.push(`[${view.name}] Boss nodes on the map should show their painted pictures: ${mapBoss}`);
   const snow = await roadCheck(5);
-  if (!snow.band || snow.gap < 8 || snow.covered.length || !snow.bossTop || !snow.inside) problems.push(`[${view.name}] 雪山 levels should follow the painted road, Boss on top, all on screen: ${JSON.stringify(snow)}`);
+  if (!snow.band || snow.gap < 8 || snow.covered.length || !snow.bossTop || !snow.inside || snow.offRoad.length || snow.framed) problems.push(`[${view.name}] 雪山 levels should follow the painted road, Boss on top, all on screen: ${JSON.stringify(snow)}`);
   // 洞穴、火山、冰雪城堡、草原、数字小镇、城堡六段也沿原画小路排，和雪山同样检查
   for (const [w, id, name, top] of [[1, 'sub', '洞穴', 0.3], [2, 'ten', '火山', 0.15], [3, 'ice', '冰雪城堡', 0.3], [4, 'tens', '草原', 0.3], [6, 'digit1', '数字小镇', 0.25], [7, 'digit2', '城堡', 0.35]]) {
     await showBand(w, 0.62); await shot('41-art-map-' + id);
     await showBand(w, top); await shot('41b-art-map-' + id + '-top');
     const r = await roadCheck(w);
-    if (!r.band || r.gap < 8 || r.covered.length || !r.bossTop || !r.inside) problems.push(`[${view.name}] ${name} levels should follow the painted road, Boss on top, all on screen: ${JSON.stringify(r)}`);
+    if (!r.band || r.gap < 8 || r.covered.length || !r.bossTop || !r.inside || r.offRoad.length || r.framed) problems.push(`[${view.name}] ${name} levels should follow the painted road, Boss on top, all on screen: ${JSON.stringify(r)}`);
   }
   await showBand(0, 0.62); await shot('40-art-map-forest-all');
   await showBand(0, 0.3); await shot('40b-art-map-forest-all-top');
   const forest = await roadCheck(0);
   if (forest.art !== 15) problems.push(`[${view.name}] 加法森林 should show all 15 monster pictures: ${JSON.stringify(forest)}`);
-  if (forest.gap < 8 || forest.covered.length || !forest.bossTop || !forest.inside) problems.push(`[${view.name}] 加法森林 levels should not overlap, Boss on top, all on screen: ${JSON.stringify(forest)}`);
+  if (forest.gap < 8 || forest.covered.length || !forest.bossTop || !forest.inside || forest.offRoad.length || forest.framed) problems.push(`[${view.name}] 加法森林 levels should not overlap, Boss on top, all on screen: ${JSON.stringify(forest)}`);
   // 8 个世界的地图段都是原画；每段整段截一张全景（视口临时拉高到一整段，宽度不变，节点位置也不变）
   const noArt = await p.evaluate(() => [...document.querySelectorAll('.band')].filter(b => !b.classList.contains('art')).map(b => b.dataset.w));
   if (noArt.length) problems.push(`[${view.name}] every world should use its map art, these do not: ${noArt}`);
@@ -682,11 +698,52 @@ async function playAll(view) {
   }
   await p.setViewportSize(vp); await p.waitForTimeout(300);
   await p.evaluate(() => { __t.S.openAll = false; __t.renderMap(); });
+  // 糖果风（家长 10-22）：按钮、面板、标签、道具按钮都是深棕粗描边 + 单层底部阴影，没有仿三维的内高光；图标用原画
+  const candy = () => p.evaluate(() => {
+    const bad = [];
+    for (const el of document.querySelectorAll('.btn, .ibtn, .panel, .tab, .item, .ans, .hcard, .note')) {
+      if (!el.checkVisibility()) continue;
+      const cs = getComputedStyle(el), sh = cs.boxShadow;
+      if (cs.borderTopColor !== 'rgb(58, 42, 30)' || parseFloat(cs.borderTopWidth) < 2) bad.push(el.className + ' border ' + cs.borderTopColor + ' ' + cs.borderTopWidth);
+      else if (/inset 0px -?[1-9]/.test(sh) || /rgba\(255, 255, 255, 0\.[4-7]\d*\) 0px [1-9]px 0px 0px inset/.test(sh)) bad.push(el.className + ' glossy ' + sh);
+    }
+    return bad;
+  });
+  const icons = () => p.evaluate(() => ({ n: document.querySelectorAll('img.icon').length, sound: document.querySelectorAll('#map .ei.snd svg').length }));
+  await p.evaluate(() => { __t.S.sound = true; __t.renderMap(true); }); await p.waitForTimeout(300);
+  await shot('60-candy-menu');
+  const cMenu = await candy(), iMenu = await icons();
+  if (cMenu.length) problems.push(`[${view.name}] main menu is not candy style: ${cMenu.slice(0, 4)}`);
+  if (iMenu.n < 4 || iMenu.sound !== 1) problems.push(`[${view.name}] main menu should use the painted icons (star, bag, sound with waves, settings, pin): ${JSON.stringify(iMenu)}`);
+  await tap('#heroBtn'); await p.waitForTimeout(400); await shot('61-candy-heroes');
+  const cHero = await candy(); if (cHero.length) problems.push(`[${view.name}] hero picker is not candy style: ${cHero.slice(0, 4)}`);
+  await tap('#pgBack'); await tap('#bagBtn'); await p.waitForTimeout(400); await shot('62-candy-bag');
+  const cBag = await candy(); if (cBag.length) problems.push(`[${view.name}] bag is not candy style: ${cBag.slice(0, 4)}`);
+  await tap('#pgBack'); await p.evaluate(() => { __t.S.sound = false; }); await p.waitForTimeout(200);
+  await tapNode(0, 1); await p.waitForTimeout(1900);
+  // one heart lost (empty-heart picture), all three items in stock
+  await p.evaluate(() => { const B = __t.B; __t.S.items.heal = 2; __t.S.items.time = 2; __t.S.items.ice = 2; B.lucky = 0; B.shield = 0; B.hearts = B.maxH - 2; __t.renderItems(); });
+  await p.evaluate(() => __t.useItem('heal')); await p.waitForTimeout(1400);
+  await shot('63-candy-battle');
+  const cBat = await candy(), iBat = await p.evaluate(() => ({ items: document.querySelectorAll('#items img.icon').length, hearts: document.querySelectorAll('#hearts img.icon').length, empty: document.querySelectorAll('#hearts .lost img.icon').length, back: !!document.querySelector('#bBack img.icon') }));
+  if (cBat.length) problems.push(`[${view.name}] battle is not candy style: ${cBat.slice(0, 4)}`);
+  if (iBat.items !== 3 || !iBat.hearts || !iBat.back) problems.push(`[${view.name}] battle should use the painted heart / potion / hourglass / ice / map icons: ${JSON.stringify(iBat)}`);
+  await p.evaluate(() => __t.setDrops(() => ({ exp: 15, gear: rollGear(10, false, { slot: 'weapon', quality: 'purple' }), item: 'ice', stone: 1, gearExp: 10 })));
+  await winLevel(); await p.waitForTimeout(2000); await shot('64-candy-win');
+  const cWin = await candy(); if (cWin.length) problems.push(`[${view.name}] win page is not candy style: ${cWin.slice(0, 4)}`);
+  await p.evaluate(() => { __t.setDrops(null); document.getElementById('modal').hidden = true; __t.toMap(); });
+  // 战斗背景原画 bg_<世界id>：有就铺满战斗区（不再画场景装饰），没有就是原来的画出来的场景（这里借地图原画当测试图）
+  await p.evaluate(() => { __t.setArt('bg_add', __t.art('map_add')); }); await tapNode(0, 1); await p.waitForTimeout(1900); await shot('65-battle-bg-art');
+  const bgA = await p.evaluate(() => ({ art: document.getElementById('arena').classList.contains('artbg'), deco: document.querySelectorAll('#arena .deco').length, url: getComputedStyle(document.getElementById('arena')).backgroundImage.startsWith('url("blob:') }));
+  await p.evaluate(() => { __t.toMap(); __t.setArt('bg_add', null); }); await tapNode(0, 1); await p.waitForTimeout(600);
+  const bgB = await p.evaluate(() => ({ art: document.getElementById('arena').classList.contains('artbg'), deco: document.querySelectorAll('#arena .deco').length }));
+  await p.evaluate(() => __t.toMap());
+  if (!bgA.art || bgA.deco || !bgA.url || bgB.art || !bgB.deco) problems.push(`[${view.name}] battle background art: bg_<world> should fill the arena, otherwise the drawn scene: ${JSON.stringify({ bgA, bgB })}`);
   // a broken picture must fall back to the 3D emoji instead of leaving a blank (monster, hero, map band); then restore
   const keep = await p.evaluate(() => Object.fromEntries(['map_add', 'hero_purple', 'mon_add_1', 'weapon_purple'].map(k => [k, __t.art(k)])));
   await p.evaluate(() => { for (const k of ['map_add', 'hero_purple', 'mon_add_1', 'weapon_purple']) __t.setArt(k, 'data:image/png;base64,AAAA'); __t.toMap(); });
   await tapNode(0, 0); await p.waitForTimeout(1900); await shot('29c-art-broken');
-  const brk = await p.evaluate(() => ({ art: document.querySelectorAll('#heroSprite img.art, #heroSprite .hand, #monSprite img.art').length, mon: !!document.querySelector('#monSprite img.ei'), hero: !!document.querySelector('#heroSprite img.ei'), nodeArt: !!document.querySelector('.node[data-w="0"][data-l="0"] img.art'), band: document.querySelector('.band[data-w="0"]').style.backgroundImage.includes('svg') }));
+  const brk = await p.evaluate(() => ({ art: document.querySelectorAll('#heroSprite img.art, #heroSprite .hand, #monSprite img.art').length, mon: !!document.querySelector('#monSprite img.ei'), hero: !!document.querySelector('#heroSprite img.ei'), nodeArt: !!document.querySelector('.node[data-w="0"][data-l="0"] img.art:not(.icon)'), band: document.querySelector('.band[data-w="0"]').style.backgroundImage.includes('svg') }));
   if (brk.art || !brk.mon || !brk.hero || brk.nodeArt || !brk.band) problems.push(`[${view.name}] broken art should fall back to the 3D emoji / painted map: ${JSON.stringify(brk)}`);
   await p.evaluate(keep => { for (const k in keep) __t.setArt(k, keep[k]); for (const k of ['weapon', 'helmet', 'armor', 'shield']) __t.S.equipped[k] = null; __t.toMap(); }, keep);
   // a world whose map art is missing keeps the drawn island
