@@ -161,6 +161,20 @@ svg.ei.cs{overflow:visible}
 .wchest.ready{background:#ffe08a;animation:pulse 1s infinite}
 .wchest.opened{opacity:.75}
 .hgood{color:#2563eb}
+/* 知识题（第五轮）：题图 + 一句话；选项可以是图片（下面写名字）或色块 */
+.kq{display:flex;align-items:center;justify-content:center;gap:10px;font:400 clamp(20px,5.6vw,26px)/1.35 var(--f-ui);text-align:left}
+.kq .kpic{flex:none;line-height:0}
+.kq .kpic .ei.art{width:auto}
+.kq .kt b{color:var(--red-d);font-weight:400}
+.kt{font:400 clamp(18px,5vw,22px)/1.35 var(--f-ui)}
+.mixq{font:800 30px var(--f-num)}
+.kopt{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:0;line-height:1.1}
+.ktxt{font:400 clamp(20px,5.8vw,26px)/1.2 var(--f-ui)}
+.ktxt .num{font-family:var(--f-num);font-weight:800}
+.kopt small{font:400 14px var(--f-ui);color:var(--ink2)}
+.kopt.spot{height:70px;justify-content:center}
+.kopt .ei.art{width:auto}
+.cblock{display:block;width:64%;height:42px;border-radius:12px;border:var(--c-lw) solid var(--c-line);margin:0 auto}
 /* 神秘勇士：剪影 + 金色光效；没找到时是暗一点的剪影 */
 .heroes.h9{grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
 .mys{display:inline-block;line-height:0}

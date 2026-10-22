@@ -14,6 +14,7 @@ import { chromium } from 'playwright';
 import { wpCheck, invCheck, qbankCheck, r5Check } from './wp_check.mjs';
 import { mkdirSync } from 'fs';
 import { r5Systems, r5Growth, r5Heroes, r5Mystic, r5Parent, r5Migrate } from './r5_systems.mjs';
+import { r5Knowledge } from './r5_knowledge.mjs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -296,10 +297,14 @@ async function playAll(view) {
   // 分解 tapped twice quickly on the same spot: only one piece goes, what is worn stays on
   const n0 = await p.evaluate(() => ({ n: __t.S.bag.length, worn: Object.values(__t.S.equipped).map(g => g && g.id).join() }));
   await p.waitForTimeout(400);
+  const cardH = await p.evaluate(() => document.querySelector('#pbody .gcard').offsetHeight);
   const sb = await p.locator('#gSalvage').boundingBox();
   await p.touchscreen.tap(sb.x + sb.width / 2, sb.y + sb.height / 2); await p.waitForTimeout(80);
   await p.touchscreen.tap(sb.x + sb.width / 2, sb.y + sb.height / 2); await p.waitForTimeout(300); await shot('09d-bag-salvage');
   const sal = await p.evaluate(() => ({ n: __t.S.bag.length, gone: !__t.S.bag.some(x => x.id === 'asc1'), worn: Object.values(__t.S.equipped).map(g => g && g.id).join(), note: (document.getElementById('gGone') || {}).textContent, btns: document.querySelectorAll('.gwear').length }));
+  // 分解后的卡片和原来一样高，下面的格子不往上跳（393 上第二下曾点到下面的装备，又打开了一张带按钮的卡）
+  const goneH = await p.evaluate(() => (document.getElementById('gGone') || {}).offsetHeight || 0);
+  if (Math.abs(goneH - cardH) > 2) problems.push(`[${view.name}] the 已分解 card should keep the gear card's height (${cardH}px), got ${goneH}px`);
   if (sal.n !== n0.n - 1 || !sal.gone || !/35/.test(sal.note || '') || sal.btns) problems.push(`[${view.name}] 分解 a pink piece should remove it, give 35 gear experience and leave a card with no buttons: ${JSON.stringify(sal)}`);
   if (sal.worn !== n0.worn) problems.push(`[${view.name}] a double tap on 分解 must not change the worn gear`);
   await p.evaluate(() => { for (let i = 1; i <= 3; i++) addGear({ id: 'syn' + i, slot: 'shield', quality: 'white', name: '测试·盾' + i, e: '🛡️', lv: 1, exp: 0, affixes: [{ id: 'shield', val: 1 }] }); });
@@ -504,8 +509,9 @@ async function playAll(view) {
   const runBag = await p.evaluate(() => __t.S.bag.length);
   await tap('.card[data-i="0"]'); await p.waitForTimeout(700); await shot('15b-run-card');
   if (await p.evaluate(() => __t.S.bag.length) !== runBag + 1) problems.push(`[${view.name}] run treasure card did not give gear`);
+  // 颜色题答错不扣心：这里关掉颜色题，免得第一题刚好是颜色题
   // 当天第 16 次通关前起进入「狂暴 ×2」：怪兽每次攻击扣 2 颗心、每题 10 秒
-  await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.mapWorld = 0; s.equipped = { weapon: null, helmet: null, armor: null, shield: null }; localStorage.setItem(k, JSON.stringify(s)); }, V1);
+  await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.mapWorld = 0; s.equipped = { weapon: null, helmet: null, armor: null, shield: null }; s.qOn = Object.assign(s.qOn || {}, { color: false }); localStorage.setItem(k, JSON.stringify(s)); }, V1);
   await p.reload(); await p.waitForTimeout(500);
   await p.evaluate(() => __t.setDaily(15)); await p.waitForTimeout(200); await shot('17-map-rage');
   if ((await p.textContent('#dayTag')).trim() !== '狂暴中') problems.push(`[${view.name}] map day tag should say 狂暴中`);
@@ -1150,6 +1156,7 @@ async function r5Run(view) {
   await r5Heroes(p, o);
   await r5Mystic(p, o);
   await r5Parent(p, o);
+  await r5Knowledge(p, o);
   await r5Migrate(p, o, V1);
   await ctx.close();
 }
