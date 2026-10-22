@@ -1416,7 +1416,7 @@ function matchGenFor(w,l){
   }
   return null;
 }
-const ITEMS = {heal:{e:"💖",tip:"💖 加一颗心"}, time:{e:"⏳",tip:"⏳ 多 10 秒时间"}, ice:{e:"🧊",tip:"🧊 冻住怪兽 10 秒"}};
+const ITEMS = {heal:{e:"💖",tip:"💖 加一颗心"}, time:{e:"⏳",tip:"⏳ 多 8 秒时间"}, ice:{e:"🧊",tip:"🧊 冻住怪兽 6 秒"}};
 // 获得过的最高品质记在 S.bestQ（品质 key，"" = 还没有）；金色光环 = 获得过橙色装备（旧存档集齐稀有贴纸的也保留）
 const qRank = k => ["white","blue","pink","purple","orange","red"].indexOf(k);
 const hasBest = k => qRank(S.bestQ||"") >= qRank(k);
@@ -1873,7 +1873,7 @@ const HERO_EXP_BASE_NEED = 50;  // 1 级升 2 级
 const HERO_EXP_NEED_STEP = 25;  // 每高一级，升级经验 +25
 const DROP_SLOTS = ["weapon", "helmet", "armor", "shield"];
 const DROP_CHANCE_BY_WORLD = [0.20, 0.21, 0.23, 0.24, 0.26, 0.27, 0.29, 0.30];
-const ITEM_DROP_RATE = 0.15;
+const ITEM_DROP_RATE = 0.25;   // 道具在战斗里更有用了（冰冻、加时、加心），掉得也多一点
 const ITEM_CAP = 5;
 const ITEM_OVERFLOW_EXP = 10;   // 道具满了，换成这么多装备经验
 const ITEM_KEYS = ["heal", "time", "ice"];
@@ -1932,6 +1932,24 @@ function gainExp(info){
 }
 function expNeed(lv){
   return HERO_EXP_BASE_NEED + HERO_EXP_NEED_STEP * ((lv || 1) - 1);
+}
+/* 等级加成：每升 LV_ATK_EVERY 级基础攻击 +1，每升 LV_HEART_EVERY 级心上限 +1（最多 +LV_HEART_MAX，心太多一排放不下）。
+   Lv1 没有加成；攻击加在答题打怪的每一下（消除 / 连连看不加，和装备攻击一样），心加在普通关和 Boss（连闯固定 5 心不变）。 */
+const LV_ATK_EVERY = 2;
+const LV_HEART_EVERY = 3;
+const LV_HEART_MAX = 2;
+function lvBonus(lv){
+  const n = Math.max(0, (lv || 1) - 1);
+  return {atk: Math.floor(n / LV_ATK_EVERY), hearts: Math.min(LV_HEART_MAX, Math.floor(n / LV_HEART_EVERY))};
+}
+// 下一次加成在第几级、加什么（都满了返回 null）
+function nextLvBonus(lv){
+  const now = lvBonus(lv);
+  for(let l = (lv || 1) + 1; l < (lv || 1) + 50; l++){
+    const b = lvBonus(l), atk = b.atk - now.atk, hearts = b.hearts - now.hearts;
+    if(atk || hearts) return {lv:l, atk, hearts};
+  }
+  return null;
 }
 // 升到这一级时直接发装备（5 的倍数保底紫及以上）。不增加宝箱。
 function levelReward(lv){
