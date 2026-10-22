@@ -338,12 +338,97 @@ const G = {
 };
 const mix = (...fns) => () => pick(fns)();
 
+/* ================= 逆向思维算术题 G.inv(档, 形式) =================
+   形式：a+?（x + ? = s）、?+b（? + y = s）、a-?（s − ? = c）、?-b（? − y = c，求被减数）。
+   档：10（10 以内）、20（20 以内，多半是凑十/破十）、tens（整十，100 以内）、hund（整百，1000 以内）、
+   d1（两位数和一位数）、d2（两位数和两位数，不进位）。
+   讲解分三步，教「反过来想」：加法的反面是减法，减法的反面是加法；最后一步只写到「算式 = ?」，再提醒验算。
+   10 / 20 档用圆点，大数用数轴（只标出题目里的数，未知数标 ?）。 */
+const INV_TIERS = {
+  "10":  () => { const s = ri(2,10), x = ri(1,s-1); return [x, s-x]; },
+  "20":  () => { const s = ri(11,20);
+                 if(s>=12 && Math.random()<.3){ const x = ri(11,s-1); return Math.random()<.5 ? [x, s-x] : [s-x, x]; }
+                 const x = ri(Math.max(2,s-9), 9); return [x, s-x]; },
+  tens:  () => { const a = ri(1,8), b = ri(1,10-a); return [a*10, b*10]; },
+  hund:  () => { const a = ri(1,8), b = ri(1,10-a); return [a*100, b*100]; },
+  d1:    () => { const x = ri(10,89), y = ri(1,Math.min(9,99-x)); return Math.random()<.25 ? [y, x] : [x, y]; },
+  d2:    () => { const t1 = ri(1,8), t2 = ri(1,9-t1), o1 = ri(0,9), o2 = ri(0,9-o1); return [t1*10+o1, t2*10+o2]; }
+};
+const INV_FORMS = ["a+?","?+b","a-?","?-b"];
+// 数轴：0～max，每 tick 一格；从 from 跳到 to（弧线上写 lab）。fromT / toT 是两端的标签（未知数写 ?）
+function numLine(max, tick, from, to, lab, fromT, toT){
+  const W = 300, pad = 16, X = v => (pad + (W-2*pad)*v/max).toFixed(1), y = 52;
+  let s = '<svg viewBox="0 0 '+W+' 94" width="100%" style="max-width:340px;display:block;margin:4px auto 0">';
+  s += '<line x1="'+pad+'" y1="'+y+'" x2="'+(W-pad)+'" y2="'+y+'" style="stroke:var(--c-line);stroke-width:3;stroke-linecap:round"/>';
+  for(let v=0; v<=max; v+=tick) s += '<line x1="'+X(v)+'" y1="'+(y-5)+'" x2="'+X(v)+'" y2="'+(y+5)+'" style="stroke:var(--c-line);stroke-width:2"/>';
+  const txt = (v, t, col, dy) => '<text x="'+X(v)+'" y="'+(y+21+(dy||0))+'" text-anchor="middle" style="font:800 13px var(--f-num);fill:'+col+'">'+t+'</text>';
+  // 两端的 0 和 max 只在不挤着题目里的数时才写
+  const free = v => Math.abs(X(v)-X(from)) >= 30 && Math.abs(X(v)-X(to)) >= 30;
+  if(free(0)) s += txt(0, 0, "var(--ink2)");
+  if(free(max)) s += txt(max, max, "var(--ink2)");
+  const mid = (+X(from) + +X(to))/2, up = Math.max(14, y - 10 - Math.abs(X(to)-X(from))/3);
+  s += '<path d="M'+X(from)+' '+(y-6)+' Q'+mid.toFixed(1)+' '+up.toFixed(1)+' '+X(to)+' '+(y-6)+'" style="fill:none;stroke:var(--red);stroke-width:3;stroke-dasharray:'+(lab.includes("?")?"6 4":"none")+'"/>';
+  s += '<circle cx="'+X(to)+'" cy="'+y+'" r="5" style="fill:var(--red);stroke:var(--c-line);stroke-width:2"/><circle cx="'+X(from)+'" cy="'+y+'" r="5" style="fill:#fff;stroke:var(--c-line);stroke-width:2"/>';
+  s += '<text x="'+mid.toFixed(1)+'" y="'+Math.max(12,(y-6+up)/2-4).toFixed(1)+'" text-anchor="middle" style="font:800 15px var(--f-num);fill:var(--red-d)">'+lab+'</text>';
+  // 两个点挨得近（如 47 → 53），后一个标签往下错开一行
+  const close = Math.abs(X(to)-X(from)) < 30;
+  return s + txt(from, fromT, "var(--blue-d)") + txt(to, toT, "var(--blue-d)", close ? 16 : 0) + '</svg>';
+}
+G.inv = function(tier, form){
+  tier = INV_TIERS[tier] ? tier : "10"; form = INV_FORMS.includes(form) ? form : pick(INV_FORMS);
+  const [x, y] = INV_TIERS[tier](), s = x+y;
+  const big = !(tier==="10" || tier==="20"), max = tier==="hund" ? 1000 : 100, tick = tier==="hund" ? 100 : 10;
+  const one = tier==="tens" ? 10 : tier==="hund" ? 100 : 1, z = zhNum;
+  const F = t => "<b style='white-space:nowrap'>"+t+"</b>";
+  let parts, speak, ans, traps, st;
+  if(form==="a+?"){        // x + ? = s
+    parts = [x,"+","?","=",s]; speak = z(x)+"加几等于"+z(s)+"？"; ans = y; traps = [s+x, s, x];
+    const v = big ? numLine(max,tick,x,s,"+?",x,s) : dots([{n:x,c:"a"},{n:y,c:"e"}]);
+    st = [
+      {t:F(x+" + ? = "+s)+"："+x+" 再添上几，才能变成 "+s+"？"+(big?"":"（虚线圈是要添的）"), v},
+      {t:"反过来想：加法的反面是减法。要添的 = 一共的 "+s+" 去掉原来的 "+x+"。", v},
+      {t:"算一算 "+F(s+" − "+x+" = ?")+"，再验算："+x+" 加上它是不是 "+s+"。", v}
+    ];
+  } else if(form==="?+b"){ // ? + y = s
+    parts = ["?","+",y,"=",s]; speak = "几加"+z(y)+"等于"+z(s)+"？"; ans = x; traps = [s+y, s, y];
+    const v = big ? numLine(max,tick,x,s,"+"+y,"?",s) : dots([{n:x,c:"e"},{n:y,c:"b"}]);
+    st = [
+      {t:F("? + "+y+" = "+s)+"：一个数加上 "+y+" 变成 "+s+"，这个数是几？"+(big?"":"（虚线圈是要找的）"), v},
+      {t:"反过来想：加法的反面是减法。从 "+s+" 里去掉加上的 "+y+"，就回到这个数。", v},
+      {t:"算一算 "+F(s+" − "+y+" = ?")+"，再验算：它加 "+y+" 是不是 "+s+"。", v}
+    ];
+  } else if(form==="a-?"){ // s − ? = x
+    parts = [s,"−","?","=",x]; speak = z(s)+"减几等于"+z(x)+"？"; ans = y; traps = [s+x, x, s];
+    const v = big ? numLine(max,tick,s,x,"−?",s,x) : dots([{n:x,c:"a"},{n:y,c:"x"}]);
+    st = [
+      {t:F(s+" − ? = "+x)+"：从 "+s+" 里拿走一些，还剩 "+x+"。"+(big?"":"（划掉的是拿走的）"), v},
+      {t:"反过来想：拿走的和剩下的合起来是 "+s+"，所以拿走的 = "+s+" 去掉剩下的 "+x+"。", v},
+      {t:"算一算 "+F(s+" − "+x+" = ?")+"，再验算："+s+" 减它是不是 "+x+"。", v}
+    ];
+  } else {                 // ? − y = x
+    parts = ["?","−",y,"=",x]; speak = "几减"+z(y)+"等于"+z(x)+"？"; ans = s; traps = [Math.abs(x-y), x, y];
+    const v = big ? numLine(max,tick,s,x,"−"+y,"?",x) : dots([{n:x,c:"a"},{n:y,c:"x"}]);
+    st = [
+      {t:F("? − "+y+" = "+x)+"：原来有一些，拿走 "+y+" 以后还剩 "+x+"。原来有几？"+(big?"":"（划掉的是拿走的）"), v},
+      {t:"反过来想：减法的反面是加法！原来的 = 剩下的 "+x+" + 拿走的 "+y+"。", v},
+      {t:"算一算 "+F(x+" + "+y+" = ?")+"，再验算：它减 "+y+" 是不是 "+x+"。", v}
+    ];
+  }
+  traps.push(ans+one, ans-one);
+  const hi = tier==="10" ? 20 : tier==="20" ? 40 : tier==="hund" ? 2000 : 200;
+  return mk(parts, speak, ans, null, {options:kidOpts(ans, traps, 0, hi), steps:st, inv:form, small: s>=100, key:"inv"+parts.join("")});
+};
+
 /* ================= 120 关难度计划（纯数据，还没接入 WORLDS） =================
    8 个世界，各 15 关，第 15 关是 Boss。
    mix 每一项是 {g, args?}。接入时：G[item.g](...(item.args||[]))，再用 mix(...) 组合。
+   inv 是逆向思维题（G.inv，见上）：t = 档，forms = 出哪几种形式，从第 from 关起出现，
+   占比从 lo 线性升到第 14 关的 hi（Boss 关也按 hi）。本关 mix 里已有的填空题（missAdd / missSub / make10）算在占比里，
+   不够的才用 G.inv 补，见 invRate()。消除玩法只用「算式 = ?」，不受影响（matchGenFor 用 plainQ 过滤）。
    比大小、连加连减、找规律仍用 G.compare / G.chain / G.pattern，这张表先不排。 */
 const LEVEL_PLAN = [
-  {world:1, id:"add", name:"加法森林", sub:"10 以内加法", levels:[
+  {world:1, id:"add", name:"加法森林", sub:"10 以内加法", inv:{t:"10", forms:["a+?","?+b"], from:4, lo:.1, hi:.25},
+   levels:[
     {n:1, mix:[{g:"add",args:[5]}]},
     {n:2, mix:[{g:"add",args:[5]}]},
     {n:3, mix:[{g:"add",args:[5]}]},
@@ -360,7 +445,8 @@ const LEVEL_PLAN = [
     {n:14, mix:[{g:"add",args:[10]},{g:"missAdd",args:[10]},{g:"make10"}]},
     {n:15, boss:true, mix:[{g:"add",args:[5]},{g:"add",args:[10]},{g:"missAdd",args:[10]},{g:"make10"}]}
   ]},
-  {world:2, id:"sub", name:"减法洞穴", sub:"10 以内减法", levels:[
+  {world:2, id:"sub", name:"减法洞穴", sub:"10 以内减法", inv:{t:"10", forms:["a+?","?+b","a-?","?-b"], from:1, lo:.2, hi:.3},
+   levels:[
     {n:1, mix:[{g:"sub",args:[5]}]},
     {n:2, mix:[{g:"sub",args:[5]}]},
     {n:3, mix:[{g:"sub",args:[5]}]},
@@ -377,7 +463,8 @@ const LEVEL_PLAN = [
     {n:14, mix:[{g:"sub",args:[10]},{g:"missSub",args:[10]},{g:"add",args:[10]}]},
     {n:15, boss:true, mix:[{g:"sub",args:[5]},{g:"sub",args:[10]},{g:"missSub",args:[10]},{g:"add",args:[10]},{g:"missAdd",args:[10]}]}
   ]},
-  {world:3, id:"ten", name:"凑十火山", sub:"20 以内进位加法", levels:[
+  {world:3, id:"ten", name:"凑十火山", sub:"20 以内进位加法", inv:{t:"20", forms:["a+?","?+b","a-?","?-b"], from:1, lo:.15, hi:.3},
+   levels:[
     {n:1, mix:[{g:"make10"}]},
     {n:2, mix:[{g:"make10"}]},
     {n:3, mix:[{g:"carry",args:[[9]]}]},
@@ -394,7 +481,8 @@ const LEVEL_PLAN = [
     {n:14, mix:[{g:"carry",args:[[9]]},{g:"carry",args:[[8,7]]},{g:"carryAny"}]},
     {n:15, boss:true, mix:[{g:"make10"},{g:"carry",args:[[9]]},{g:"carry",args:[[8,7]]},{g:"carry",args:[[6,5]]},{g:"carryAny"}]}
   ]},
-  {world:4, id:"ice", name:"冰雪城堡", sub:"20 以内退位减法", levels:[
+  {world:4, id:"ice", name:"冰雪城堡", sub:"20 以内退位减法", inv:{t:"20", forms:["a-?","?-b","a+?","?+b"], from:1, lo:.3, hi:.4},
+   levels:[
     {n:1, mix:[{g:"teenNoBorrow"}]},
     {n:2, mix:[{g:"teenNoBorrow"}]},
     {n:3, mix:[{g:"teenNoBorrow"}]},
@@ -411,7 +499,8 @@ const LEVEL_PLAN = [
     {n:14, mix:[{g:"borrow",args:[[9]]},{g:"borrowAny"},{g:"carryAny"}]},
     {n:15, boss:true, mix:[{g:"teenNoBorrow"},{g:"borrow",args:[[9]]},{g:"borrow",args:[[8,7]]},{g:"borrowAny"},{g:"carryAny"}]}
   ]},
-  {world:5, id:"tens", name:"整十草原", sub:"整十数加减", levels:[
+  {world:5, id:"tens", name:"整十草原", sub:"整十数加减", inv:{t:"tens", forms:["a+?","?+b","a-?","?-b"], from:1, lo:.3, hi:.4},
+   levels:[
     {n:1, mix:[{g:"addTen"}]},
     {n:2, mix:[{g:"addTen"}]},
     {n:3, mix:[{g:"addTen"}]},
@@ -428,7 +517,8 @@ const LEVEL_PLAN = [
     {n:14, mix:[{g:"addTen"},{g:"subTen"},{g:"make10"}]},
     {n:15, boss:true, mix:[{g:"addTen"},{g:"subTen"},{g:"add",args:[10]},{g:"sub",args:[10]},{g:"carryAny"}]}
   ]},
-  {world:6, id:"hundreds", name:"整百雪山", sub:"整百数加减", levels:[
+  {world:6, id:"hundreds", name:"整百雪山", sub:"整百数加减", inv:{t:"hund", forms:["a+?","?+b","a-?","?-b"], from:1, lo:.3, hi:.4},
+   levels:[
     {n:1, mix:[{g:"addHundred"}]},
     {n:2, mix:[{g:"addHundred"}]},
     {n:3, mix:[{g:"addHundred"}]},
@@ -445,7 +535,8 @@ const LEVEL_PLAN = [
     {n:14, mix:[{g:"addHundred"},{g:"subHundred"},{g:"addTen"},{g:"subTen"}]},
     {n:15, boss:true, mix:[{g:"addHundred"},{g:"subHundred"},{g:"addTen"},{g:"subTen"},{g:"add",args:[10]},{g:"sub",args:[10]}]}
   ]},
-  {world:7, id:"digit1", name:"数字小镇", sub:"两位数与一位数", levels:[
+  {world:7, id:"digit1", name:"数字小镇", sub:"两位数与一位数", inv:{t:"d1", forms:["a+?","?+b","a-?","?-b"], from:1, lo:.3, hi:.4},
+   levels:[
     {n:1, mix:[{g:"add1NoCarry"}]},
     {n:2, mix:[{g:"add1NoCarry"}]},
     {n:3, mix:[{g:"add1NoCarry"}]},
@@ -462,7 +553,8 @@ const LEVEL_PLAN = [
     {n:14, mix:[{g:"add1NoCarry"},{g:"sub1NoBorrow"},{g:"add1Carry"},{g:"sub1Borrow"}]},
     {n:15, boss:true, mix:[{g:"add1NoCarry"},{g:"sub1NoBorrow"},{g:"add1Carry"},{g:"sub1Borrow"},{g:"addTen"},{g:"subTen"}]}
   ]},
-  {world:8, id:"digit2", name:"竖式城堡", sub:"两位数加减两位数", levels:[
+  {world:8, id:"digit2", name:"竖式城堡", sub:"两位数加减两位数", inv:{t:"d2", forms:["a+?","?+b","a-?","?-b"], from:1, lo:.3, hi:.4},
+   levels:[
     {n:1, mix:[{g:"add2NoCarry"}]},
     {n:2, mix:[{g:"add2NoCarry"}]},
     {n:3, mix:[{g:"add2NoCarry"}]},
@@ -1632,12 +1724,22 @@ const wpPool = w => (w>=4 ? WP_MORE : WP_EASY).filter(k=>WP[k]).map(k=>()=>WP[k]
   .concat(WP_NEW.filter(([k,h,a,b])=>WP[k] && w>=a && (b==null || w<b)).map(([k,h])=>()=>WP[k](h)));
 const WP_RATE = 0.12;
 const planFn = it => () => G[it.g](...(it.args||[]));
+const INV_G = new Set(["missAdd","missSub","make10"]);
+// 这一关额外用 G.inv 出题的比例：让（mix 里原有的填空题 + G.inv）合起来达到目标占比
+function invRate(w,l){
+  const iv = LEVEL_PLAN[w].inv, n = l+1;
+  if(!iv || n<iv.from) return 0;
+  const t = iv.lo + (iv.hi-iv.lo)*Math.min(1, (n-iv.from)/Math.max(1,14-iv.from));
+  const mixs = LEVEL_PLAN[w].levels[l].mix, p0 = mixs.filter(it=>INV_G.has(it.g)).length/mixs.length;
+  return p0>=t ? 0 : (t-p0)/(1-p0);
+}
 /* 一关的全部信息。怪兽血量 = 10 + floor(全局关卡序号 / 10)，Boss 再 +5（星级档位另加，见 ui.js startLevel）。
    blend（拼读）关整关都出拼读题 blendQ（连闯里仍用 L.math 出计算题，见 ui.js startLevel）。 */
 function levelDef(w,l){
   const W2 = WORLDS_V2[w], lv = W2.levels[l], plan = LEVEL_PLAN[w].levels[l];
   const mode = lv.boss ? "battle" : (LEVEL_MODES[w].modes[l] || "battle");
-  const math = mix(...plan.mix.map(planFn));
+  const base = mix(...plan.mix.map(planFn)), inv = invRate(w,l), iv = LEVEL_PLAN[w].inv;
+  const math = inv>0 ? () => Math.random()<inv ? G.inv(iv.t, pick(iv.forms)) : base() : base;
   let g = math;
   if(mode==="blend") g = blendQ;
   else if(mode==="battle" && w>=2){ const pool = wpPool(w); g = () => Math.random()<WP_RATE ? pick(pool)() : math(); }
