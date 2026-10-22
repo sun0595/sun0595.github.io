@@ -375,7 +375,17 @@ async function playAll(view) {
     return [...document.querySelectorAll('#pbody .toggle')].map(t => { const r = t.getBoundingClientRect(), l = t.querySelector('.tl').getBoundingClientRect(), c = (t.querySelector('.sw') || t.querySelector('.seg3')).getBoundingClientRect();
       return { txt: t.querySelector('.tl').textContent, dy: Math.round(Math.abs((l.top + l.bottom) / 2 - (c.top + c.bottom) / 2) * 10) / 10, padL: Math.round(l.left - r.left), padR: Math.round(r.right - c.right), right: Math.round(c.right), inside: r.left >= pb.left - 1 && r.right <= pb.right + 1 }; }); });
   const tglBad = tgl.filter(t => t.dy > 1.5 || Math.abs(t.padL - t.padR) > 1 || t.right !== tgl[0].right || !t.inside);
-  if (tgl.length < 5 || tglBad.length) problems.push(`[${view.name}] settings rows: text and switch should be vertically centred, same left / right margin, switches right-aligned, inside the panel: ${JSON.stringify(tglBad.length ? tglBad : tgl)}`);
+  // （第五轮：插入拼音题挪到「题型」页签，设置页签剩 4 行）
+  if (tgl.length < 4 || tglBad.length) problems.push(`[${view.name}] settings rows: text and switch should be vertically centred, same left / right margin, switches right-aligned, inside the panel: ${JSON.stringify(tglBad.length ? tglBad : tgl)}`);
+  // 「题型」页签：拼音题一行 + 两列 8 个开关，同样要对齐（每一列的开关右边对齐）
+  await tap('.tab[data-t="qs"]'); await p.waitForTimeout(200);
+  const qt = await p.evaluate(() => { const pb = document.getElementById('pbody').getBoundingClientRect();
+    return [...document.querySelectorAll('#pbody .toggle')].map(t => { const r = t.getBoundingClientRect(), l = t.querySelector('.tl').getBoundingClientRect(), c = (t.querySelector('.sw') || t.querySelector('.seg3')).getBoundingClientRect();
+      return { txt: t.querySelector('.tl').textContent, col: t.closest('.two') ? (r.left < pb.left + pb.width / 2 ? 'L' : 'R') : '-', dy: Math.round(Math.abs((l.top + l.bottom) / 2 - (c.top + c.bottom) / 2) * 10) / 10, padL: Math.round(l.left - r.left), padR: Math.round(r.right - c.right), right: Math.round(c.right), inside: r.left >= pb.left - 1 && r.right <= pb.right + 1 }; }); });
+  const colRight = {}; for (const t of qt) if (colRight[t.col] == null) colRight[t.col] = t.right;
+  const qtBad = qt.filter(t => t.dy > 1.5 || Math.abs(t.padL - t.padR) > 1 || t.right !== colRight[t.col] || !t.inside);
+  if (qt.length !== 9 || qtBad.length) problems.push(`[${view.name}] 题型 rows should be aligned like the settings rows: ${JSON.stringify(qtBad.length ? qtBad : qt)}`);
+  await tap('.tab[data-t="set"]'); await p.waitForTimeout(200);
   if (!await p.evaluate(() => /部分美术由 AI 生成/.test(document.getElementById('pbody').textContent))) problems.push(`[${view.name}] the parent page should say 「部分美术由 AI 生成」 at the bottom`);
   await tap('.tab[data-t="rep"]'); await shot('12-report'); await tap('#pgBack');
   await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.openAll = true; s.mapWorld = 2; localStorage.setItem(k, JSON.stringify(s)); }, V1);
