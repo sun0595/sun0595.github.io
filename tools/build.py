@@ -67,7 +67,8 @@ const shuffle = a => { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.ran
 '''
 TEST_HOOK = ("window.__t={showRunReward,startRun,openRunMenu,useItem,qTime,openBag,get B(){return B},get S(){return S},G,WP,WP_NEW,wpPool,LEVEL_PLAN,invRate,"
              "WORLDS_V2,HEROES,IMG,ICON_SVG,GEAR_SLOTS,MAP_SEAM,TRANS_ROADS,TRANS_SEAM,TRANS_LV,HERO_HANDS,qForm,synthPlan,autoSynth,LEVEL_MODES,layoutMap,ART_ROADS,img,startLevel,nextQuestion,toMap,levelDef,matchGenFor,matchPoolOK,curLevel,renderMap,hitCap,"
-             "pyQ,pyBlend,pyBlendHz,blendQ,PY,LLK_SETS,llkPairs,pyLegal,pySplit,pyMark,"
+             "pyQ,pyBlend,pyBlendHz,blendQ,PY,LLK_SETS,llkPairs,pyLegal,pySplit,pyMark,pyBasic,pyInit,pyFin,pyCat,canInit,canFin,BLEND_FINS,PY_TYPES,"
+             "wordOpts,kidOpts,numOptions,linkPick,invTier,INV_TIERS,INV_FORMS,"
              "art,chargeTime,renderItems,closeHint,showHint,openLevel,lvBonus,fxHold(ms){ FX_HOLD = ms; },setDrops(f){ dropOverride = f; },setArt(k,url){ if(url) ART[k] = url; else delete ART[k]; },"
              "setDaily(n){ daily().n = n; save(); renderMap(); }};\n")
 
