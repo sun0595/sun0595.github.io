@@ -13,7 +13,7 @@
 import { chromium } from 'playwright';
 import { wpCheck, invCheck, qbankCheck, r5Check } from './wp_check.mjs';
 import { mkdirSync } from 'fs';
-import { r5Systems, r5Growth } from './r5_systems.mjs';
+import { r5Systems, r5Growth, r5Heroes } from './r5_systems.mjs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -366,7 +366,7 @@ async function playAll(view) {
   else {
     await tap(`.hcard[data-i="${li}"]`); await p.waitForTimeout(300); await shot('10b-hero-locked');
     const lk = await p.evaluate(i => { const st = document.querySelector('.herostage'), h = __t.HEROES[i], t = st.textContent;
-      return { qqq: /？？？/.test(t), name: t.includes(h.n), skill: t.includes(h.skill), sil: !!st.querySelector('.sil .ei'), silArt: !!st.querySelector('.sil img.art'), filter: getComputedStyle(st.querySelector('.sil .ei')).filter, need: !!st.querySelector('.lockline') }; }, li);
+      return { qqq: /？？？/.test(t), name: t.includes(h.n), skill: /擅长/.test(t), sil: !!st.querySelector('.sil .ei'), silArt: !!st.querySelector('.sil img.art'), filter: getComputedStyle(st.querySelector('.sil .ei')).filter, need: !!st.querySelector('.lockline') }; }, li);
     if (!lk.qqq || lk.name || lk.skill || !lk.sil || !lk.silArt || !/brightness\(0\)/.test(lk.filter) || !lk.need) problems.push(`[${view.name}] a locked hero should only show a silhouette, 「？？？」 and how to unlock it: ${JSON.stringify(lk)}`);
   }
   await tap('#pgBack'); await tap('#parentBtn'); await p.waitForTimeout(300); await shot('11-parent');
@@ -1130,6 +1130,7 @@ async function r5Run(view) {
   const o = { view, problems, shot: name => shotCheck(p, view, SHOTS, name), tap: sel => p.click(sel, { force: true }) };
   await r5Systems(p, o);
   await r5Growth(p, o);
+  await r5Heroes(p, o);
   await ctx.close();
 }
 const VIEWS = [{ name: '375', viewport: { width: 375, height: 667 }, dpr: 2, safe: { top: 0, bottom: 0 } }, { name: '393', viewport: { width: 393, height: 852 }, dpr: 3, safe: { top: 59, bottom: 34 } }];

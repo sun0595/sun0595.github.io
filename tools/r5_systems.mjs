@@ -68,3 +68,26 @@ export async function r5Growth(p, { view, problems, shot, tap }) {
   await tap('#pgBack').catch(() => {});
   console.log('ok ', view.name, 'r5 growth');
 }
+
+// ---- 3 勇士擅长题型：选它时那一类题出现率多 10%～15%（绝对值）；勇士页写「擅长：xxx（这类题多一些）」 ----
+export async function r5Heroes(p, { view, problems, shot, tap }) {
+  const bad = m => problems.push(`[${view.name}] r5: ${m}`);
+  const r = await p.evaluate(() => {
+    const T = __t; for (const w of T.WORLDS_V2) for (let l = 1; l <= 15; l++) T.S.lv.stars[w.id + '-' + l] = 3; T.S.bestQ = 'red';
+    const LV = [[1, 4], [2, 8], [4, 5], [6, 8], [7, 14]], N = 3000, out = [];
+    const share = (i, w, l, c) => { T.S.hero = i; const d = T.levelDef(w, l); let n = 0; for (let k = 0; k < N; k++) if (T.qCat(d.g()) === c) n++; return n / N; };
+    T.HEROES.forEach((h, i) => { if (!h.good) return;
+      const ds = LV.filter(([w, l]) => T.levelDef(w, l).mode === 'battle').map(([w, l]) => { const a = share(0, w, l, h.good), b = share(i, w, l, h.good); return b - a; });
+      out.push({ n: h.n, good: h.good, avg: ds.reduce((a, b) => a + b, 0) / ds.length, min: Math.min(...ds), max: Math.max(...ds) }); });
+    const nums = T.HEROES.filter(h => ['shield', 'critAt', 'slow', 'critDmg', 'heal', 'lucky'].some(k => k in h)).map(h => h.n);
+    T.S.hero = 0; return { out, nums };
+  });
+  for (const x of r.out) if (x.avg < 0.10 || x.avg > 0.15 || x.min < 0.08 || x.max > 0.17) bad(`${x.n} 擅长「${x.good}」的题应多出 10%～15%: ${JSON.stringify(x)}`);
+  if (r.nums.length) bad('勇士还留着数值技能: ' + r.nums);
+  console.log('   hero boost', r.out.map(x => x.n + ' +' + Math.round(x.avg * 1000) / 10 + '%').join(' '));
+  await p.evaluate(() => { __t.S.hero = 3; __t.toMap(); }); await tap('#heroBtn'); await p.waitForTimeout(400); await shot('82-hero-good');
+  const txt = await p.evaluate(() => document.querySelector('.herostage').textContent);
+  if (!/擅长：图形题（这类题多一些）/.test(txt)) bad('勇士页应写「擅长：图形题（这类题多一些）」: ' + txt);
+  await tap('#pgBack'); await p.evaluate(() => { __t.S.hero = 0; });
+  console.log('ok ', view.name, 'r5 heroes');
+}

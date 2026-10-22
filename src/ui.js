@@ -545,12 +545,14 @@ const HERO_HANDS = [{}, {}, {fr:.17, fl:.84, fy:.73}, {fr:.20, fl:.82, fy:.74}, 
 const heroArtFor = (i, eq) => i===0 ? ((eq && eq.armor && art("hero_"+eq.armor.quality)) || art("hero_base")) : art(HERO_ART[i]);
 // 勇士选择页的头像（没解锁的在选择页里涂成剪影）
 const heroPic = i => { const u = heroArtFor(i, null); return u ? artTag(u, "ei art", img(HEROES[i].e)) : img(HEROES[i].e); };
+// 勇士页：擅长什么题
+const heroGoodText = h => h.good ? '擅长：<span class="hgood">'+Q_CATS[h.good]+'</span><br><small>（这类题多一些）</small>' : '什么题都一样拿手';
 function openHeroes(){
   let view = S.hero;
   const render = first => {
     const h = HEROES[view], un = heroUnlocked(view);
     // 没解锁的勇士：只给剪影、「？？？」和解锁条件，名字、技能都不露（家长 10-22）
-    const body = (un ? '<div class="herostage" style="--hcol:'+h.col+'">'+heroPic(view)+'<div><b>'+h.n+'</b><p>'+img(h.shot)+' '+h.skill+'</p></div></div>'
+    const body = (un ? '<div class="herostage" style="--hcol:'+h.col+'">'+heroPic(view)+'<div><b>'+h.n+'</b><p>'+img(h.shot)+' '+heroGoodText(h)+'</p></div></div>'
         : '<div class="herostage locked"><span class="sil">'+heroPic(view)+'</span><div><b class="qqq">？？？</b>'
           + '<p class="lockline">'+img("🔒")+' '+(h.gear ? gearNeed(h.gear) : '需要 '+h.need+' 颗 '+img("⭐"))+'</p></div></div>')
       + '<div class="heroes">'+HEROES.map((x,i)=>'<button class="hcard'+(i===S.hero?" sel":"")+(heroUnlocked(i)?"":" lock")+(i===view?" view":"")+'" data-i="'+i+'">'+heroPic(i)+(heroUnlocked(i)?"":'<span class="lk">'+img("🔒")+'</span>')+'</button>').join("")+'</div>'
@@ -559,7 +561,7 @@ function openHeroes(){
     if(first) openPage({title:"选择勇士", back:true, onClose:renderMap, body}); else setBody(body);
     $("pbody").querySelectorAll(".hcard").forEach(b=>b.onclick=()=>{
       view = +b.dataset.i;
-      if(heroUnlocked(view)){ S.hero = view; save(); sfx.right(); say(HEROES[view].n+"，"+HEROES[view].skill); }
+      if(heroUnlocked(view)){ S.hero = view; save(); sfx.right(); say(HEROES[view].n+"，"+strip(heroGoodText(HEROES[view]))); }
       else { sfx.click(); say(HEROES[view].gear ? "拿到"+GEAR_QUALITY_MAP[HEROES[view].gear].name+"色装备，就能解锁这个勇士" : "再拿"+(HEROES[view].need-totalStars())+"颗星，就能解锁这个勇士"); }
       render(false);
     });
@@ -843,7 +845,7 @@ function startLevel(w,l,run){
   // 消除 / 连连看：怪兽血量固定（BOARD_HP），连击打得快就能提前打倒；慢慢配完最后一对也一定赢
   const hp = BOARD_HP[mode] || L.hp + 2*diff;
   B = {w,l,W:Wd,L,h,mode,board:null,sel:null,diff,run:run||null,hp,maxHp:hp,rage,dmg:RAGE[rage].dmg,maxH,hearts:run?run.hearts:maxH,combo:0,q:null,busy:true,charge:0,qt:0,over:false,recent:[],enraged:false,hintOpen:false,step:0,lastTick:0,wrongThisQ:false,
-       gs, shield:(h.shield||0)+gs.shield, lucky:(h.lucky||0)+gs.lucky, fleeUntil:0, lvAtk:lb.atk, urged:false};
+       gs, shield:gs.shield, lucky:gs.lucky, fleeUntil:0, lvAtk:lb.atk, urged:false};
   const cur = B, bt = $("battle");
   setArenaBg(Wd.id);
   bt.classList.toggle("boss", !!L.boss); bt.classList.remove("enraged");
@@ -944,7 +946,7 @@ function qTime(){
   const t = RAGE[B.rage].t;
   const base = BOARD_TIME[B.mode] ? Math.round(BOARD_TIME[B.mode]*t/Q_TIME)
     : B.q && B.q.kind==="word" ? Math.max(WORD_MIN, Math.round(WORD_TIME*t/Q_TIME)) : t;
-  const slow = Math.min(SLOW_CAP, Math.round(((B.h.slow||1)-1)*100) + B.gs.slow);
+  const slow = Math.min(SLOW_CAP, B.gs.slow);
   return (base + B.gs.time) * (1 + slow/100);
 }
 /* 战斗手感（家长试玩反馈：要像成熟手游）。数字都在这里调：
@@ -1280,8 +1282,8 @@ function heroAttack(board){   // board = {dmg, crit} for 消除 / 连连看
   const cur = B, h = B.h;
   const gs = B.gs;
   if(!board) B.lastDodge = false;
-  const crit = board ? !!board.crit : (B.combo >= (h.critAt||3) || Math.random()*100 < Math.min(CRIT_CAP, gs.critRate));
-  const dmg = board ? board.dmg : Math.min(B.hp, hitCap(), (crit ? (h.critDmg||2)+(goldAura()?1:0)+gs.critDmg+atkBonus() : 1+atkBonus()) + B.lvAtk);
+  const crit = board ? !!board.crit : (B.combo >= 3 || Math.random()*100 < Math.min(CRIT_CAP, gs.critRate));
+  const dmg = board ? board.dmg : Math.min(B.hp, hitCap(), (crit ? 2+(goldAura()?1:0)+gs.critDmg+atkBonus() : 1+atkBonus()) + B.lvAtk);
   const wpn = S.equipped && S.equipped.weapon, hs = $("heroSprite");
   // 冲到怪兽面前：距离 = 勇士右边到怪兽左边（留一点重叠，像真的打到）
   const hr = hs.getBoundingClientRect(), mr = $("monSprite").getBoundingClientRect();
@@ -1305,11 +1307,11 @@ function heroAttack(board){   // board = {dmg, crit} for 消除 / 连连看
     else if(crit) burst(8,[h.fx,"✨"]);
     const stop = hitStop((crit ? HITSTOP_CRIT : HITSTOP_MS) + (heavy ? HITSTOP_BOSS : 0));
     B.hp = Math.max(0, B.hp - dmg); drawHP();
-    // 神龙 heals 1 every h.heal combo; gear 💖 heals gs.comboHeal every 5 combo; both add up
-    const heal = (h.heal && B.combo>0 && B.combo%h.heal===0 ? 1 : 0) + (gs.comboHeal && B.combo>0 && B.combo%5===0 ? gs.comboHeal : 0);
+    // gear 💖 heals gs.comboHeal every 5 combo
+    const heal = gs.comboHeal && B.combo>0 && B.combo%5===0 ? gs.comboHeal : 0;
     if(heal && B.hearts<B.maxH){
       B.hearts = Math.min(B.maxH, B.hearts+heal); drawHearts(false,true); renderItems(); sfx.heal();
-      setTimeout(()=>toast(h.heal?"🐲":"💖", (h.heal?"龙之恢复":"连对回心")+" +"+heal+" 颗心"), 200);
+      setTimeout(()=>toast("💖", "连对回心 +"+heal+" 颗心"), 200);
     }
     if(B.hp<=0) return win();
     if(board) return;
