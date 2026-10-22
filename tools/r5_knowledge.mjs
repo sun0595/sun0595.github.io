@@ -94,11 +94,12 @@ export async function r5Knowledge(p, { view, problems, shot, tap }) {
   }
   // 颜色题答错：写进颜色题记录（题目颜色、孩子选的颜色），不扣心
   await p.evaluate(() => { __t.S.colorLog = []; __t.closeHint(); __t.nextQuestion(__t.G.color(99, 'shade')); }); await p.waitForTimeout(250);
-  const before = await p.evaluate(() => ({ h: __t.B.hearts, a: __t.B.q.answer, wrong: __t.B.q.options.find(o => o !== __t.B.q.answer) }));
+  const before = await p.evaluate(() => ({ h: __t.B.hearts, m: __t.S.mistakes.length, a: __t.B.q.answer, wrong: __t.B.q.options.find(o => o !== __t.B.q.answer) }));
   await tap(`#answers .ans[data-v="${before.wrong}"]`); await p.waitForTimeout(700);
-  const after = await p.evaluate(() => ({ h: __t.B.hearts, log: __t.S.colorLog[0], n: __t.S.colorLog.length, busy: __t.B.busy }));
+  const after = await p.evaluate(() => ({ h: __t.B.hearts, m: __t.S.mistakes.length, log: __t.S.colorLog[0], n: __t.S.colorLog.length, busy: __t.B.busy }));
   const COL = await p.evaluate(() => __t.COLORS);
   if (after.n !== 1 || after.log.q.name !== COL[before.a][0] || after.log.pick.name !== COL[before.wrong][0] || !after.log.t) bad('颜色题答错应记下题目颜色、孩子选的颜色和时间: ' + JSON.stringify(after.log));
+  if (after.m !== before.m) bad('颜色题答错不该进错题本（只记颜色题记录）');
   if (after.h !== before.h || after.busy) bad('颜色题答错不该扣心、要能接着选: ' + JSON.stringify({ before, after }));
   await p.evaluate(() => __t.closeHint()); await tap(`#answers .ans[data-v="${before.a}"]`); await p.waitForTimeout(900);
   await p.evaluate(() => __t.toMap()); await tap('#parentBtn'); await p.waitForTimeout(250); await tap('.tab[data-t="color"]'); await p.waitForTimeout(200); await shot('85-color-log-real');
