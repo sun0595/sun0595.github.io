@@ -41,6 +41,17 @@ export async function wpCheck(page, n = 2000) {
           if (!re.test(q.answer)) bad('钟表答案超出范围: ' + q.answer);
           for (const o of q.options || []) if (!/^(1[0-2]|[1-9]):(00|30)$/.test(o)) bad('钟表选项不对: ' + o);
           if (typeof q.optHtml === 'function' && !/<svg/.test(q.optHtml(q.answer))) bad('选钟面的选项没画出钟面');
+          // 量表盘上两根针的角度：分针 = 分钟 × 6°，时针 = (小时 % 12 + 分钟 / 60) × 30°；半点时时针必须在两个数正中间
+          const faces = typeof q.optHtml === 'function' ? q.options.map(o => [o, q.optHtml(o)]) : [[q.answer, q.pic], ...q.steps.filter(s => /class="hh"/.test(s.v)).map(s => [q.answer, s.v])];
+          for (const [t, svg] of faces) {
+            const [hh, mm] = String(t).split(':').map(Number);
+            const deg = cls => { const m = svg.match(new RegExp('class="' + cls + '"[^>]*x2="([\\d.]+)" y2="([\\d.]+)"')); return m ? (Math.atan2(+m[1] - 50, 50 - +m[2]) * 180 / Math.PI + 360) % 360 : null; };
+            const near = (a, b) => a != null && Math.min(Math.abs(a - b), 360 - Math.abs(a - b)) < 1.5;
+            const hd = deg('hh'), md = deg('mh'), want = ((hh % 12) + mm / 60) * 30;
+            if (!near(hd, want)) bad(`${t} 的时针角度 ${hd && hd.toFixed(1)}° 应该是 ${want}°`);
+            if (!near(md, mm * 6)) bad(`${t} 的分针角度 ${md && md.toFixed(1)}° 应该是 ${mm * 6}°`);
+            if (mm === 30 && !(near(hd, (hh % 12) * 30 + 15))) bad(`${t} 半点时时针没在 ${hh} 和 ${hh % 12 + 1} 正中间`);
+          }
         } else {
           if (typeof q.answer !== 'number' || !Number.isInteger(q.answer)) bad('答案不是整数: ' + q.answer);
           if (q.answer < lo || q.answer > hi) bad(`答案 ${q.answer} 超出设计范围 ${lo}～${hi}`);
