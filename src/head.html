@@ -143,8 +143,8 @@ svg.ei.cs{overflow:visible}
 .lmap{position:relative;width:100%;overflow:hidden}
 .band{position:absolute;left:0;right:0;background-size:100% 100%;background-repeat:no-repeat}
 .band.art{background-size:cover;background-position:center;background-repeat:no-repeat}
-/* 世界接缝：这段顶部 --seam 高的一截渐变成透明，和上面那段（或过渡图 .trans）叠化 */
-.band.fade{-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 var(--seam));mask-image:linear-gradient(to bottom,transparent 0,#000 var(--seam))}
+/* 世界接缝：两段原画之间一条不透明的云带（图由 cloudURL() 按宽度画），盖住两段的边和小路接口；关卡在云带上面 */
+.cloud{position:absolute;left:0;right:0;z-index:1;background-repeat:no-repeat;background-size:100% 100%;pointer-events:none;filter:drop-shadow(0 6px 0 rgba(58,42,30,.22))}
 .band .deco{position:absolute;opacity:.95;filter:drop-shadow(0 6px 6px rgba(0,0,0,.25));z-index:1;pointer-events:none}
 .cliff{position:absolute;left:0;right:0;bottom:-50px;height:120px;z-index:1;background-size:100% 100%;pointer-events:none;filter:drop-shadow(0 8px 6px rgba(0,0,0,.25))}
 .wsign{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:3;display:flex;flex-direction:column;align-items:center;gap:4px;white-space:nowrap}
@@ -153,7 +153,7 @@ svg.ei.cs{overflow:visible}
 .wsub2{display:flex;align-items:center;gap:8px}
 .wsign small{font-size:13px;color:#fff;background:var(--c-dark);padding:2px 10px;border-radius:10px}
 .wsign.locked{filter:grayscale(.7);opacity:.85}
-.wsign.ov{bottom:auto;transform:translate(-50%,calc(-100% - 22px))}
+.wsign.cl{bottom:auto;transform:translate(-50%,-50%);gap:6px}
 .wrun{min-height:36px;padding:2px 12px 2px 6px;font-size:15px;gap:2px;border-radius:14px}
 .wrun .ei{font-size:24px}
 .wcur{flex:none;min-height:34px;padding:2px 10px 2px 4px;gap:2px;font-size:15px;border-radius:14px}
@@ -499,6 +499,7 @@ svg.ei.cs{overflow:visible}
 .pp.f{background:#93c5fd}.pp.b{background:#86efac}.pp.m{background:#fde047}
 .pp.me{background:#f97316;color:#fff;font:400 13px var(--f-ui);box-shadow:0 0 0 3px #fff,0 0 0 5px #f97316}
 .pp.hl{animation:pulse .8s infinite}
+.pp.x{background:#fff;border:2px dashed #9aa0b8}
 .front{font-size:13px;color:var(--ink2);align-self:center;margin-right:2px}
 .log{display:flex;align-items:center;margin:8px 0;flex-wrap:wrap;row-gap:6px}
 .log .wood{height:24px;width:40px;background:#c98b4a;border:2px solid #7a4a1d;border-radius:6px}

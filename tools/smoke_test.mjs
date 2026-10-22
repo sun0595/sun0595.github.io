@@ -852,12 +852,8 @@ async function playAll(view) {
     const bcs = getComputedStyle(band), [dw, dh] = bcs.backgroundSize.split(' ').map(parseFloat), [px, py] = [parseFloat(bcs.backgroundPositionX), parseFloat(bcs.backgroundPositionY)];
     const R = __t.ART_ROADS[id].map(([fx, fy]) => [br.left + px + fx * dw, br.top + py + fy * dh]);
     const segD = (p, a, b) => { const vx = b[0] - a[0], vy = b[1] - a[1], t = Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / (vx * vx + vy * vy || 1))); return Math.hypot(p[0] - a[0] - t * vx, p[1] - a[1] - t * vy); };
-    // 下面有过渡图的世界：第 1、2 关站在过渡图的小路上（TRANS_LV，按过渡图背景的大小和位置换算），不在这段原画的路上
-    const tr = document.querySelector(`.band.trans[data-t="${w - 1}"]`), tcs = tr && getComputedStyle(tr), trk = tr && __t.WORLDS_V2[w - 1].id + '_' + __t.WORLDS_V2[w].id;
-    const onTr = l => { const [bw, bh] = tcs.backgroundSize.split(' ').map(parseFloat), r = tr.getBoundingClientRect(), [fx, fy] = __t.TRANS_LV[trk][l]; return [r.left + parseFloat(tcs.backgroundPositionX) + fx * bw, r.top + parseFloat(tcs.backgroundPositionY) + fy * bh]; };
     const offRoad = balls.map((b, l) => { const c = [b.x + b.width / 2, b.y + b.height / 2]; let d = 1e9;
-      if (tr && __t.TRANS_LV[trk] && l < __t.TRANS_LV[trk].length) { const t = onTr(l); d = Math.hypot(c[0] - t[0], c[1] - t[1]); }
-      else for (let i = 1; i < R.length; i++) d = Math.min(d, segD(c, R[i - 1], R[i]));
+      for (let i = 1; i < R.length; i++) d = Math.min(d, segD(c, R[i - 1], R[i]));
       return d > 3 ? (l + 1) + ':' + Math.round(d) : null; }).filter(Boolean);
     const framed = [...Array(15)].map((_, l) => getComputedStyle(el(l).querySelector('.ball'))).filter(cs => parseFloat(cs.borderTopWidth) > 0 || cs.backgroundImage !== 'none' || cs.borderRadius === '50%').length;
     return { offRoad, framed, nim: im.naturalWidth, band: document.querySelector(`.band[data-w="${w}"]`).classList.contains('art'), gap: Math.round(gap), covered, bossTop: ns[14].top <= Math.min(...ns.map(r => r.top)) + 1,
@@ -895,60 +891,48 @@ async function playAll(view) {
     await p.screenshot({ path: path.join(SHOTS, `42-map-full-${w + 1}-${ids[w]}.png`), clip: box });
   }
   await p.setViewportSize(vp); await p.waitForTimeout(300);
-  // 世界接缝（家长 10-22）：上下相邻的两层（地图段或过渡图 trans_*）重叠 120–200px，下面那层顶部渐变透明（叠化）；
-  // 小路在接缝处对齐：下面那层小路的出口（Boss / 过渡图顶部）和上面那层小路的入口（地图段在接缝处 / 过渡图底部）x 相差不超过 MAP_EDGE 左右
+  // 世界接缝（家长第五轮）：两段原画之间是一条不透明的云带，不再半透明叠化，也不再插过渡图 trans_*：
+  // 相邻两段原画不重叠、都不带渐变遮罩；云带盖住上下两段的边（各 ≥ 20px）；世界牌完全落在云带里；云带不透明（截图里云带中间一行全是云色）
+  // 云带 w 在世界 w 的底下：上面盖住世界 w 那段的底边，下面盖住世界 w-1 那段的顶边
   const seamCheck = () => p.evaluate(() => {
-    const n = __t.WORLDS_V2.length, S = __t.MAP_SEAM, layers = [];
-    const band = w => { const b = document.querySelector(`.band[data-w="${w}"]`), cs = getComputedStyle(b), [dw, dh] = cs.backgroundSize.split(' ').map(parseFloat), px = parseFloat(cs.backgroundPositionX), rd = __t.ART_ROADS[__t.WORLDS_V2[w].id];
-      const y = b.offsetHeight - (w > 0 && document.querySelector(`.band.trans[data-t="${w - 1}"]`) ? __t.TRANS_SEAM : S); let inX = null;
-      for (let i = 1; i < rd.length && inX === null; i++) if (rd[i][1] * dh <= y) { const a = rd[i - 1], c = rd[i], t = (a[1] * dh - y) / ((a[1] - c[1]) * dh || 1); inX = px + (a[0] + (c[0] - a[0]) * t) * dw; }
-      return { name: 'w' + (w + 1), top: b.offsetTop, h: b.offsetHeight, inX, outX: px + rd[rd.length - 1][0] * dw, fade: (cs.maskImage || cs.webkitMaskImage || 'none') !== 'none' }; };
+    const n = __t.WORLDS_V2.length, out = [], R = e => e.getBoundingClientRect();
+    const mask = b => (getComputedStyle(b).maskImage || getComputedStyle(b).webkitMaskImage || 'none') !== 'none';
     for (let w = 0; w < n; w++) {
-      layers.push(band(w));
-      const t = document.querySelector(`.band.trans[data-t="${w}"]`);
-      if (t) { const r = __t.TRANS_ROADS[__t.WORLDS_V2[w].id + '_' + __t.WORLDS_V2[w + 1].id] || [0.5, 0.5], cs = getComputedStyle(t);
-        layers.push({ name: 't' + (w + 1), top: t.offsetTop, h: t.offsetHeight, inX: r[0] * t.offsetWidth, outX: r[1] * t.offsetWidth, fade: (cs.maskImage || cs.webkitMaskImage || 'none') !== 'none', full: Math.abs(t.offsetWidth - t.parentElement.offsetWidth) < 1 }); }
+      const up = document.querySelector(`.band[data-w="${w}"]`), lo = w ? document.querySelector(`.band[data-w="${w - 1}"]`) : null, c = document.querySelector(`.cloud[data-c="${w}"]`), sg = document.querySelector(`.wsign[data-w="${w}"]`);
+      if (!c) { out.push({ at: w ? w + '/' + (w + 1) : 'start/1', cloud: false }); continue; }
+      const cr = R(c), sr = R(sg), ur = R(up), lr = lo && R(lo);
+      out.push({ at: w ? w + '/' + (w + 1) : 'start/1', cloud: true, overlap: lr ? Math.round(ur.bottom - lr.top) : null, mask: mask(up) || (!!lo && mask(lo)),
+        coverUp: Math.round(ur.bottom - cr.top), coverLo: lr ? Math.round(cr.bottom - lr.top) : null,
+        signIn: sr.top >= cr.top && sr.bottom <= cr.bottom && sr.left >= cr.left && sr.right <= cr.right,
+        lv1Above: R(document.querySelector(`.node[data-w="${w}"][data-l="0"] .ball`)).bottom <= cr.top + 4, h: Math.round(cr.height) });
     }
-    return layers.slice(1).map((up, i) => { const lo = layers[i]; return { at: lo.name + '/' + up.name, dx: Math.round(up.inX - lo.outX), overlap: up.top + up.h - lo.top, fade: lo.fade, full: up.full !== false }; });
+    return out;
   });
   const seams = await seamCheck();
-  const badSeam = seams.filter(x => x.overlap < 120 || x.overlap > 200 || !x.fade || !x.full || Math.abs(x.dx) > 75);
-  if (badSeam.length) problems.push(`[${view.name}] world seams should overlap 120–200px with a fade and line the roads up (|dx| ≤ 75px): ${JSON.stringify(badSeam)}`);
-  const nTrans = await p.evaluate(() => document.querySelectorAll('.band.trans').length);
-  if (nTrans !== 7) problems.push(`[${view.name}] all 7 transition pictures (trans_*) should be on the map, found ${nTrans}`);
-  console.log('   seams', seams.map(x => x.at + ':' + x.dx).join(' '));
-  const seamAt = async (top, name) => { await p.evaluate(t => { const s = document.getElementById('lscroll'); s.scrollTop = t - s.clientHeight / 2; }, top); await p.waitForTimeout(300); await shot(name); };
-  for (const [t, name] of [[0, '43-map-trans-1-2'], [1, '43-map-trans-2-3'], [5, '43-map-trans-6-7']]) {
-    const tt = await p.evaluate(t => { const e = document.querySelector(`.band.trans[data-t="${t}"]`); return e ? [e.offsetTop, e.offsetHeight] : null; }, t);
-    if (tt) { await seamAt(tt[0] + tt[1] - 40, name + '-low'); await seamAt(tt[0] + 40, name + '-high'); }
+  const badSeam = seams.filter(x => !x.cloud || (x.overlap !== null && x.overlap > 0) || x.mask || x.coverUp < 20 || (x.coverLo !== null && x.coverLo < 20) || !x.signIn || !x.lv1Above || x.h < 0.15 * p.viewportSize().height || x.h > 0.3 * p.viewportSize().height);
+  if (badSeam.length) problems.push(`[${view.name}] world seams should be an opaque cloud band (no overlapping / faded pictures, sign inside the cloud, level 1 above it): ${JSON.stringify(badSeam)}`);
+  if (await p.evaluate(() => document.querySelectorAll('.band.trans, .band.fade').length)) problems.push(`[${view.name}] transition pictures / cross-fades should be gone from the map`);
+  const seamAt = async (w, name) => { await p.evaluate(w => { const c = document.querySelector(`.cloud[data-c="${w}"]`), s = document.getElementById('lscroll'); s.scrollTop = c.offsetTop + c.offsetHeight / 2 - s.clientHeight / 2; }, w); await p.waitForTimeout(300); await shot(name); };
+  // 云带不透明：在截图里取云带正中、世界牌上下两行（避开世界牌），每个像素都要接近白色或云底的淡蓝
+  const cloudSolid = w => p.evaluate(async w => {
+    const c = document.querySelector(`.cloud[data-c="${w}"]`), cr = c.getBoundingClientRect(), sr = document.querySelector(`.wsign[data-w="${w}"]`).getBoundingClientRect();
+    return [Math.round(cr.top + 30 + 4), Math.round(cr.bottom - 30 - 4)].filter(y => y < sr.top - 2 || y > sr.bottom + 2);
+  }, w);
+  const rowColors = async ys => { const png = (await p.screenshot()).toString('base64');
+    return p.evaluate(async ([b64, ys]) => { const im = new Image(); im.src = 'data:image/png;base64,' + b64; await im.decode(); const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+      const g = c.getContext('2d'); g.drawImage(im, 0, 0); const k = im.width / innerWidth, box = document.getElementById('lscroll').getBoundingClientRect(); let bad = 0;
+      for (const y of ys) for (let x = Math.ceil(box.left + 6); x < box.right - 6; x += 2) { const d = g.getImageData(Math.round(x * k), Math.round(y * k), 1, 1).data; if (d[0] < 200 || d[1] < 220 || d[2] < 235) bad++; }
+      return bad; }, [png, ys]); };
+  for (let w = 0; w < seams.length; w++) {
+    const name = w ? `44-map-cloud-${w}-${w + 1}` : '44-map-cloud-start-1'; await seamAt(w, name);
+    const bad = await rowColors(await cloudSolid(w));
+    if (bad > 0) problems.push(`[${view.name}] ${name}: the cloud band should be opaque (no map picture showing through), ${bad} non-cloud pixels`);
   }
-  // 大关衔接（家长第三轮：衔接处一整屏空白）：过渡段约半屏，上面站着下一个世界的第 1、2 关；每个衔接处居中截图，
-  // 截图里不能有超过 300px 高的纯色 / 空白区域（逐行看颜色差），整张地图上相邻两关的距离也不超过 300px
-  const transInfo = await p.evaluate(() => [...document.querySelectorAll('.band.trans')].map(e => { const t = +e.dataset.t, top = e.offsetTop, h = e.offsetHeight;
-    const on = [...document.querySelectorAll(`.node[data-w="${t + 1}"]`)].filter(n => n.offsetTop > top && n.offsetTop < top + h).length;
-    return { t, top, h, on, bg: getComputedStyle(e).backgroundImage.startsWith('url("blob:') }; }));
-  const transBad = transInfo.filter(x => x.h > 0.75 * p.viewportSize().height || x.on < 1 || !x.bg);
-  if (transBad.length) problems.push(`[${view.name}] each world transition should be about half a screen, show its picture and carry levels of the next world: ${JSON.stringify(transBad)}`);
+  console.log('   seams', seams.map(x => x.at + ':' + x.coverUp + '/' + x.coverLo).join(' '));
   const gaps = await p.evaluate(() => { const ys = []; for (let w = 0; w < __t.WORLDS_V2.length; w++) for (let l = 0; l < 15; l++) ys.push([w + 1 + '-' + (l + 1), document.querySelector(`.node[data-w="${w}"][data-l="${l}"]`).offsetTop]);
-    return ys.slice(1).map((y, i) => [y[0], ys[i][1] - y[1]]).filter(([, d]) => Math.abs(d) > 350); });
-  if (gaps.length) problems.push(`[${view.name}] the map should have no stretch over 350px without a level (the world sign sits in the biggest gaps): ${JSON.stringify(gaps)}`);
-  const flatRun = async () => { const png = (await p.screenshot({ clip: await p.evaluate(() => { const r = document.getElementById('lscroll').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; }) })).toString('base64');
-    return p.evaluate(async b64 => { const im = new Image(); im.src = 'data:image/png;base64,' + b64; await im.decode(); const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
-      const g = c.getContext('2d'); g.drawImage(im, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data, k = im.width / document.getElementById('lscroll').clientWidth; let run = 0, best = 0;
-      for (let y = 0; y < c.height; y++) { let s = 0, s2 = 0, n = 0; for (let x = 0; x < c.width; x += 3) { const i = (y * c.width + x) * 4, v = (d[i] + d[i + 1] + d[i + 2]) / 3; s += v; s2 += v * v; n++; }
-        const sd = Math.sqrt(Math.max(0, s2 / n - (s / n) ** 2)); run = sd < 8 ? run + 1 : 0; best = Math.max(best, run); }
-      return Math.round(best / k); }, png); };
-  for (const x of transInfo) {
-    const name = `44-map-seam-${x.t + 1}-${x.t + 2}`; await seamAt(x.top + x.h / 2, name);
-    const fr = await flatRun(); if (fr > 300) problems.push(`[${view.name}] ${name}: a plain / empty area ${fr}px tall at the world seam`);
-  }
-  // 没有过渡图的接缝：两段地图直接叠化（拿掉 trans_add_sub 试一下，再放回去）
-  const keepTr = await p.evaluate(() => __t.art('trans_add_sub'));
-  await p.evaluate(() => { __t.setArt('trans_add_sub', null); __t.renderMap(); });
-  const plain = (await seamCheck()).find(x => x.at === 'w1/w2');
-  if (!plain || await p.evaluate(() => !!document.querySelector('.band.trans[data-t="0"]')) || plain.overlap < 120 || plain.overlap > 200 || !plain.fade || Math.abs(plain.dx) > 40) problems.push(`[${view.name}] without a transition picture two worlds should fade straight into each other, roads lined up: ${JSON.stringify(plain)}`);
-  await seamAt(await p.evaluate(() => document.querySelector('.band[data-w="0"]').offsetTop + 80), '43b-map-seam-plain');
-  await p.evaluate(k => { __t.setArt('trans_add_sub', k); __t.renderMap(); }, keepTr);
+    // 同一世界里相邻两关 ≤ 350px；跨世界（上一个 Boss → 下一个第 1 关）中间隔着云带，放宽到 460px
+    return ys.slice(1).map((y, i) => [y[0], ys[i][1] - y[1]]).filter(([k, d]) => Math.abs(d) > (/-1$/.test(k) ? 460 : 350)); });
+  if (gaps.length) problems.push(`[${view.name}] the map should have no stretch over 350px without a level (460px across a cloud band): ${JSON.stringify(gaps)}`);
   await p.evaluate(() => { __t.S.openAll = false; __t.renderMap(); });
   // 糖果风（家长 10-22）：按钮、面板、标签、道具按钮都是深棕粗描边 + 单层底部阴影，没有仿三维的内高光；图标用原画
   const candy = () => p.evaluate(() => {
