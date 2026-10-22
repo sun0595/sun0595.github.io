@@ -144,6 +144,9 @@ async function playAll(view) {
   if (!(cen.inView && cen.off < 40)) problems.push(`[${view.name}] map should open centred on the current level: ${JSON.stringify(cen)}`);
   await scrollToBand(1); await shot('02-map-world2');
   await tapNode(0, 1); await p.waitForTimeout(1700); await shot('03-battle');
+  // 道具按钮（试玩报告：防误触）：每个至少 48×48，相邻两个之间至少 16px
+  const itb = await p.evaluate(() => [...document.querySelectorAll('#items .item')].map(b => b.getBoundingClientRect()).map((r, i, a) => ({ w: Math.round(r.width), h: Math.round(r.height), gap: i ? Math.round(r.left - a[i - 1].right) : null })));
+  if (itb.length !== 3 || itb.some(x => x.w < 48 || x.h < 48 || (x.gap !== null && x.gap < 16))) problems.push(`[${view.name}] the three item buttons should be at least 48×48 with ≥16px between them: ${JSON.stringify(itb)}`);
   const dt = await p.evaluate(() => document.getElementById('dropTag').textContent.replace(/\s+/g, ''));
   if (dt !== '头盔20%') problems.push(`[${view.name}] 加法森林 第 2 关 should show its possible drop 「🪖 头盔 20%」, got "${dt}"`);
   // 计时条只有一条（家长 10-22）：在怪兽血条正下方，题目卡里没有计时条；主角站着时在呼吸（.hwrap 待机动画，武器盾牌在里面一起动）
@@ -195,6 +198,17 @@ async function playAll(view) {
   const box1 = await arenaBox();
   if (!tu.open || tu.off > 40 || !tu.paused) problems.push(`[${view.name}] after a wrong answer the tutor should pop up in the middle and pause the charge: ${JSON.stringify(tu)}`);
   if (box1 !== box0) problems.push(`[${view.name}] the battle area must keep its size while the tutor is open: ${box0} → ${box1}`);
+  // 小老师（试玩报告）：卡片右上角有 ✕，点遮罩任意处（卡片外面）都能关，「我懂了！」在呼吸
+  const tc = await p.evaluate(() => { const b = document.getElementById('tClose'), r = b && b.getBoundingClientRect(), h = document.getElementById('hint').getBoundingClientRect(), d = document.getElementById('stDone');
+    return { btn: !!b && r.width >= 40 && r.height >= 40 && r.right >= h.right - 4 && r.top <= h.top + 4, anim: d ? getComputedStyle(d).animationName : 'no 我懂了' }; });
+  await tap('#tClose'); await p.waitForTimeout(250);
+  const closeX = await p.evaluate(() => document.getElementById('tutor').hidden && !__t.B.hintOpen);
+  await p.evaluate(() => __t.showHint()); await p.waitForTimeout(400); await shot('05b-hint-close-btn');
+  const tmask = await p.evaluate(() => { const t = document.getElementById('tutor').getBoundingClientRect(), h = document.getElementById('hint').getBoundingClientRect(); return { x: Math.round(t.left + 6), y: Math.round((t.top + h.top) / 2) }; });
+  await p.mouse.click(tmask.x, tmask.y); await p.waitForTimeout(250);
+  const closeMask = await p.evaluate(() => document.getElementById('tutor').hidden && !__t.B.hintOpen);
+  if (!tc.btn || tc.anim !== 'okBreathe' || !closeX || !closeMask) problems.push(`[${view.name}] the tutor card needs a ✕ at its top-right, closes on any tap outside the card, and 「我懂了！」 breathes: ${JSON.stringify({ tc, closeX, closeMask })}`);
+  await p.evaluate(() => __t.showHint()); await p.waitForTimeout(300);
   await tap('#stDone'); await p.waitForTimeout(300);
   if (await p.evaluate(() => !document.getElementById('tutor').hidden || __t.B.hintOpen || !document.querySelectorAll('.ans:not(:disabled)').length)) problems.push(`[${view.name}] 「我懂了！」 should close the tutor and leave the answers to tap`);
   // 奖励（家长 10-21）：胜利直接涨经验，不再开宝箱；掉落稀缺（这里用 setDrops 指定这一局掉什么）
@@ -252,6 +266,10 @@ async function playAll(view) {
   // bag: old chests open all at once; levels and exp bars; 进阶, 分解, 合成
   const chests = await p.evaluate(() => __t.S.chests);
   await tap('#bagBtn'); await p.waitForTimeout(500); await shot('08-bag');
+  // 进阶石旁的 ?：点开说怎么得到进阶石
+  await tap('#stoneTip'); await p.waitForTimeout(300); await shot('08b-bag-stone-tip');
+  const stip = await p.evaluate(() => document.getElementById('bubble').textContent);
+  if (!/打 Boss 有一半机会掉进阶石/.test(stip)) problems.push(`[${view.name}] the ? next to the stones should say 「打 Boss 有一半机会掉进阶石」: "${stip}"`);
   if (!(chests > 0)) problems.push(`[${view.name}] old sticker save was not converted into chests (${chests})`);
   else if ((await p.textContent('#chestN').catch(() => '')).replace(/\D/g, '') !== String(chests)) problems.push(`[${view.name}] bag does not show the ${chests} chests`);
   if (!(await p.isVisible('.glv'))) problems.push(`[${view.name}] bag should show the gear level and exp bar`);
@@ -301,6 +319,16 @@ async function playAll(view) {
   // 一键合成（家长第三轮）：先弹出「将用 N 件 x 色装备合成 M 件 y 色装备」，确认后逐级合完，穿着的不动，列出得到的装备
   await p.evaluate(() => { for (let i = 0; i < 7; i++) addGear({ id: 'aw' + i, slot: 'weapon', quality: 'white', name: '测试·剑' + i, e: '🗡️', lv: 1, exp: 0, affixes: [{ id: 'atk', val: 1 }] });
     for (let i = 0; i < 2; i++) addGear({ id: 'ab' + i, slot: 'helmet', quality: 'blue', name: '测试·盔' + i, e: '🪖', lv: 1, exp: 0, affixes: [{ id: 'atk', val: 1 }] }); });
+  // 穿着的同品质装备也在合成页里：灰色、标「穿戴中」、不能选，点它提示先回背包脱下
+  const wq = await p.evaluate(() => { const g = Object.values(__t.S.equipped).find(Boolean); return g && { q: g.quality, id: g.id }; });
+  if (!wq) problems.push(`[${view.name}] the test save should be wearing something before 合成`);
+  else {
+    await tap(`.qtab[data-q="${wq.q}"]`); await p.waitForTimeout(200);
+    for (let i = 0; i < 5 && !(await p.isVisible(`.gt[data-id="${wq.id}"]`)) && await p.isVisible('#gNext') && await p.isEnabled('#gNext'); i++) { await tap('#gNext'); await p.waitForTimeout(150); }
+    await tap(`.gt[data-id="${wq.id}"]`).catch(() => {}); await p.waitForTimeout(300); await shot('09h2-bag-synth-worn');
+    const ws = await p.evaluate(id => { const t = document.querySelector(`.gt[data-id="${id}"]`); return { tile: !!t, cls: t ? t.className : '', grey: t ? getComputedStyle(t).filter : '', tag: t ? getComputedStyle(t, '::after').content : '', picked: !!document.querySelector('.gt.picked'), bubble: document.getElementById('bubble').textContent }; }, wq.id);
+    if (!ws.tile || !/\bworn\b/.test(ws.cls) || !/grayscale/.test(ws.grey) || !/穿戴中/.test(ws.tag) || ws.picked || !/先回背包脱下再来合成/.test(ws.bubble)) problems.push(`[${view.name}] worn gear of that colour should show greyed out with 「穿戴中」 in 合成, and a tap says 先回背包脱下再来合成: ${JSON.stringify(ws)}`);
+  }
   await tap('.qtab[data-q="white"]'); await p.waitForTimeout(200); await shot('09i-bag-autosynth-before');
   const as0 = await p.evaluate(() => ({ plan: __t.synthPlan(), worn: Object.values(__t.S.equipped).filter(Boolean).map(g => g.id).sort().join(), bag: __t.S.bag.length }));
   await tap('#sAuto'); await p.waitForTimeout(300); await shot('09j-bag-autosynth-confirm');
@@ -406,6 +434,18 @@ async function playAll(view) {
     return [...new Set(out)].slice(0, 12);
   });
   for (const x of fit) problems.push(`[${view.name}] word problem layout: ${x}`);
+  // 长题目在窄屏上不折成很多行（试玩报告）：三步连式（整百、两位数）一行放下，应用题的文字不超过 3 行半
+  const longQ = await p.evaluate(async () => { const bad = [], lines = el => new Set([...el.children].filter(c => c.tagName === 'SPAN').map(c => { const r = c.getBoundingClientRect(); return Math.round((r.top + r.bottom) / 2 / 10); })).size;   // 一行里的数和 ? 方框垂直居中对齐
+    for (let i = 0; i < 24; i++) { __t.closeHint(); const q = __t.G.chain3(['hund', 'd2', 'd1c', 'tens'][i % 4], i % 2 === 0); __t.nextQuestion(q); await new Promise(r => setTimeout(r, 30));
+      const qt = document.getElementById('qText'); if (lines(qt) > 1 || qt.scrollWidth > qt.clientWidth + 1) bad.push(q.parts.join(' ')); }
+    for (const k of ['twoStep', 'compareTrap', 'queuePos', 'gaps', 'ageConst', 'exchange', 'busStops', 'between']) for (let i = 0; i < 4; i++) {
+      __t.closeHint(); const q = __t.WP[k](); __t.nextQuestion(q); await new Promise(r => setTimeout(r, 30));
+      const qt = document.getElementById('qText'), hb = document.getElementById('hintBtn'), lh = parseFloat(getComputedStyle(qt).lineHeight), h = hb.getBoundingClientRect().top - qt.getBoundingClientRect().top;
+      if (h / lh > 3.5) bad.push(k + ' ' + Math.round(h / lh * 10) / 10 + ' 行'); }
+    return bad; });
+  if (longQ.length) problems.push(`[${view.name}] long questions should not wrap into many lines at this width: ${JSON.stringify(longQ.slice(0, 6))}`);
+  await p.evaluate(() => { __t.closeHint(); __t.nextQuestion(__t.G.chain3('hund', true)); }); await p.waitForTimeout(300); await shot('14f-long-chain');
+  await p.evaluate(() => { __t.closeHint(); __t.nextQuestion(__t.WP.twoStep()); }); await p.waitForTimeout(300); await shot('14g-long-word');
   await leaveBattle(); await p.evaluate(() => __t.showRunReward({ run: { mode: 'epic' }, firstMedal: true })); await p.waitForTimeout(400); await shot('15-run-reward');
   const runBag = await p.evaluate(() => __t.S.bag.length);
   await tap('.card[data-i="0"]'); await p.waitForTimeout(700); await shot('15b-run-card');
@@ -520,14 +560,19 @@ async function playAll(view) {
   if (fl1.h !== fl0.h - fl0.d || fl1.over || !fl1.battle || fl1.modal) problems.push(`[${view.name}] a failed flee should cost ${fl0.d} heart(s) and keep fighting: ${JSON.stringify({ fl0, fl1 })}`);
   // 逃跑失败后 5 秒内地图按钮变灰、显示倒数，点了也不会再问「要逃跑吗」
   await shot('34b2-flee-cooldown');
-  const cool = await p.evaluate(() => { document.getElementById('bBack').click(); return { dis: document.getElementById('bBack').disabled, left: document.getElementById('bBack').dataset.left, rest: (__t.B.fleeUntil - performance.now()) / 1000 }; });
+  // 冷却时连点地图按钮：只提示一次「几秒后才能再逃跑」（试玩报告：不要每点一下都响一次）
+  const cool = await p.evaluate(async () => { const bb = document.getElementById('bBack'), to = document.getElementById('toast'); let n = 0;
+    const mo = new MutationObserver(() => { if (/才能再逃跑/.test(to.textContent)) n++; }); mo.observe(to, { childList: true, subtree: true });
+    bb.click(); bb.click(); bb.click(); await new Promise(r => setTimeout(r, 150)); mo.disconnect();
+    return { dis: bb.classList.contains('cool'), toasts: n, left: bb.dataset.left, rest: (__t.B.fleeUntil - performance.now()) / 1000 }; });
   await p.waitForTimeout(200);
+  if (cool.toasts !== 1) problems.push(`[${view.name}] tapping 🗺️ three times during the flee cooldown should show the 「几秒后才能再逃跑」 hint exactly once: ${JSON.stringify(cool)}`);
   if (!cool.dis || !/^[1-5]$/.test(cool.left || '') || !(cool.rest > 2 && cool.rest <= 5) || await p.isVisible('#modal')) problems.push(`[${view.name}] after a failed flee the 🗺️ button should be grey with a countdown for 5 s and not ask again: ${JSON.stringify(cool)}`);
   // still grey 0.5 s before the end, back right after it
   await p.waitForTimeout(Math.max(0, (cool.rest - 0.7) * 1000));
-  if (!(await p.evaluate(() => document.getElementById('bBack').disabled))) problems.push(`[${view.name}] the flee button came back before 5 s`);
+  if (!(await p.evaluate(() => document.getElementById('bBack').classList.contains('cool')))) problems.push(`[${view.name}] the flee button came back before 5 s`);
   await p.waitForTimeout(1000);
-  if (await p.evaluate(() => document.getElementById('bBack').disabled)) problems.push(`[${view.name}] the flee button should come back after 5 s`);
+  if (await p.evaluate(() => document.getElementById('bBack').classList.contains('cool'))) problems.push(`[${view.name}] the flee button should come back after 5 s`);
   await tap('#bBack'); await p.waitForTimeout(300);
   await p.evaluate(() => { window.__rnd = Math.random; Math.random = () => 0; });
   await tap('#fGo'); await p.waitForTimeout(300); await shot('34c-flee-ok');
