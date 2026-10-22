@@ -643,7 +643,7 @@ function openBag(slot){
     const cur = gone!==null ? null : all.find(g=>g.id===sel) || all[0] || null;
     const synthOK = Q_ORDER.some(q=>canSynth(q));
     let body = '<div class="bagtop"><span class="bagav">'+avatarHTML(S.equipped)+'</span><div class="bagside">'+statsHTML()
-      + '<div class="bagbtns"><span class="pill tag stones" id="stoneN">'+img("💎")+'<span class="num">×'+(S.stones||0)+'</span></span>'
+      + '<div class="bagbtns"><span class="pill tag stones" id="stoneN">'+img("💎")+'<span class="num">×'+(S.stones||0)+'</span><button class="stip" id="stoneTip" aria-label="进阶石怎么得">?</button></span>'
       + '<button class="btn white bagsm" id="synthBtn">'+img("✨")+'合成'+(synthOK?'<span class="badge pulse">!</span>':'')+'</button>'
       + (S.chests>0 ? '<button class="btn bagsm" id="chestAll">'+img("🎁")+'一键全开<b class="num" id="chestN">×'+S.chests+'</b></button>' : '')+'</div></div></div>'
       + '<div class="tabs">'+SLOT_KEYS.map(k=>'<button class="tab'+(k===slot?" on":"")+'" data-s="'+k+'">'+img(GEAR_SLOTS[k].e)+GEAR_SLOTS[k].name+'</button>').join("")+'</div>';
@@ -672,6 +672,7 @@ function openBag(slot){
     on("gPrev", ()=>{ pg--; render(false); });
     on("gNext", ()=>{ pg++; render(false); });
     on("synthBtn", ()=>{ sfx.click(); openSynth(()=>render(false)); });
+    on("stoneTip", ()=>{ sfx.click(); bubble(img("💎")+" 打 Boss 有一半机会掉进阶石"); });
     on("chestAll", ()=>{ sfx.chest(); const got = openAllChests(); confetti(160); showChestHaul(got, ()=>render(false)); });
   };
   render(true);
@@ -681,18 +682,21 @@ function openSynth(back){
   let q = Q_ORDER.find(x=>canSynth(x)) || "white", picked = [], pg = 0;
   const PER = 12;
   const render = () => {
-    const pool = bagOf(q), ok = picked.length===3;
+    // 穿着的同品质装备也列出来（灰色、标「穿戴中」，排在最后），点它提示先回背包脱下
+    const worn = wornList().filter(g=>g.quality===q), pool = bagOf(q).concat(worn), ok = picked.length===3;
     const pages = Math.max(1, Math.ceil(pool.length/PER)); pg = Math.min(pg, pages-1);
     const plan = synthPlan();
     let body = '<div class="synhead"><p class="gsay">'+img("✨")+' 3 件同色 → 1 件更好的</p><button class="btn purple bagsm" id="sAuto"'+(plan.length?'':' disabled')+'>'+img("⚡")+'一键合成</button></div>'
       + '<div class="qtabs">'+Q_ORDER.slice(0,5).map(k=>'<button class="qtab q-'+k+(k===q?" on":"")+'" data-q="'+k+'" style="--qc:'+GEAR_QUALITY_MAP[k].col+'">'+GEAR_QUALITY_MAP[k].name+'<b class="num">'+bagOf(k).length+'</b></button>').join("")+'</div>'
-      + (pool.length ? '<div class="ggrid">'+pool.slice(pg*PER, pg*PER+PER).map(g=>gearTile(g, picked.includes(g.id)?"sel picked":"", 'data-id="'+g.id+'" data-lv="Lv'+(g.lv||1)+'"')).join("")+'</div>'+pagerHTML(pg, pages)
+      + (pool.length ? '<div class="ggrid">'+pool.slice(pg*PER, pg*PER+PER).map(g=>gearTile(g, isWorn(g) ? "worn locked" : picked.includes(g.id)?"sel picked":"", 'data-id="'+g.id+'" data-lv="Lv'+(g.lv||1)+'"')).join("")+'</div>'+pagerHTML(pg, pages)
                      : '<div class="gnone">'+img("🎒")+'<span>没有'+GEAR_QUALITY_MAP[q].name+'色的空闲装备</span></div>')
       + '<div class="btnrow synrow"><button class="btn white" id="sBack">回背包</button><button class="btn green" id="sGo"'+(ok?'':' disabled')+'>合成 <b class="num">'+picked.length+'/3</b> → '+GEAR_QUALITY_MAP[nextQuality(q)].name+'</button></div>';
     setBody(body);
     const P = $("pbody");
     P.querySelectorAll(".qtab").forEach(b=>b.onclick=()=>{ sfx.click(); q = b.dataset.q; picked = []; pg = 0; render(); });
-    P.querySelectorAll(".gt").forEach(b=>b.onclick=()=>{ const id = b.dataset.id; sfx.click(); picked = picked.includes(id) ? picked.filter(x=>x!==id) : picked.length<3 ? picked.concat(id) : picked; render(); });
+    P.querySelectorAll(".gt").forEach(b=>b.onclick=()=>{ const id = b.dataset.id; sfx.click();
+      if(b.classList.contains("locked")){ bubble("先回背包脱下再来合成"); return; }
+      picked = picked.includes(id) ? picked.filter(x=>x!==id) : picked.length<3 ? picked.concat(id) : picked; render(); });
     if($("gPrev")) $("gPrev").onclick = ()=>{ pg--; render(); };
     if($("gNext")) $("gNext").onclick = ()=>{ pg++; render(); };
     $("sBack").onclick = ()=>{ sfx.click(); back(); };
@@ -865,6 +869,16 @@ function banner(html, ms){
   setTimeout(()=>{ if($("banner").firstChild===el) $("banner").innerHTML = ""; }, ms+50);
 }
 function setCombo(t, tier, warn){ const c = $("combo"); c.innerHTML = emo(t); c.className = "combo"+(tier?" c"+tier:"")+(warn?" warn":""); restart(c,"pop"); }
+/* 题目在窄屏（375）上不折成很多行（试玩报告）：算式不换行，放不下就一步步缩小字号（最小 20px）；
+   应用题的文字超过 3 行就缩小字号、收紧行距（最小 15px） */
+function fitQ(qt, isWord, oneLine){
+  qt.style.fontSize = ""; qt.style.lineHeight = ""; qt.classList.toggle("fit", !isWord && oneLine);
+  if(!qt.clientWidth) return;
+  let fs = parseFloat(getComputedStyle(qt).fontSize);
+  if(!isWord){ if(oneLine) while(qt.scrollWidth > qt.clientWidth + 1 && fs > 20){ fs -= 2; qt.style.fontSize = fs+"px"; } return; }
+  const hb = $("hintBtn"), textH = () => (hb ? hb.getBoundingClientRect().top : qt.getBoundingClientRect().bottom) - qt.getBoundingClientRect().top;
+  while(textH() > fs*1.65*3.3 && fs > 15){ fs -= 1; qt.style.fontSize = fs+"px"; qt.style.lineHeight = fs > 16 ? "1.55" : "1.45"; }
+}
 function toast(e, text){
   $("toast").innerHTML = '<div>'+img(e)+'<span>'+emo(text)+'</span></div>';
   const el = $("toast").firstChild; setTimeout(()=>{ if($("toast").firstChild===el) $("toast").innerHTML = ""; }, 1350);
@@ -960,7 +974,8 @@ function loop(t){
 // 逃跑失败后的冷却：地图按钮变灰、显示还剩几秒
 function fleeTick(){
   const bb = $("bBack"), left = B && !B.over ? Math.ceil((B.fleeUntil - performance.now())/1000) : 0, lock = left>0;
-  if(bb.disabled!==lock){ bb.disabled = lock; bb.classList.toggle("cool", lock); }
+  // 冷却时按钮只是变灰（不 disabled），这样能接住点击：一次冷却里只提示一次、不出声（见 $("bBack").onclick）
+  if(bb.classList.contains("cool")!==lock){ bb.classList.toggle("cool", lock); bb.setAttribute("aria-disabled", lock); }
   const txt = lock ? String(left) : "";
   if(bb.dataset.left!==txt) bb.dataset.left = txt;
 }
@@ -1060,6 +1075,7 @@ function nextQuestion(given){
   }).join(""));
   // 应用题随时可以请小老师；别的题答错一次后右上角出现 💡，点开再看一遍提示
   if(!isWord && (q.hint || q.steps)) $("qText").insertAdjacentHTML("beforeend", '<button class="ibtn qhint" id="qHint" aria-label="看提示" hidden>'+img("💡")+'</button>');
+  fitQ(qt, isWord, !q.html);
   ["hintBtn","qHint"].forEach(id=>{ if($(id)) $(id).onclick = e=>{ e.stopPropagation(); if(B && B.q===q && !B.busy && !B.over) showHint(); }; });
   const ans = $("answers");
   ans.className = "answers"+(q.options.length===3?" three":"");
@@ -1077,6 +1093,7 @@ function showHint(){
   B.hintOpen = true; B.step = 0;
   if(q.steps) renderStep(true);
   else { $("hint").innerHTML = emoQ(q.hint)+'<div class="stepnav"><button class="btn" id="stDone">我懂了！</button></div>'; $("stDone").onclick = closeHint; say(strip(q.hint)); }
+  addHintClose();
   $("tutor").hidden = false; restart($("hint"),"on");
   drawCharge();
 }
@@ -1087,7 +1104,11 @@ function closeHint(){
   say(B.q && B.q.kind==="word" ? "好，选出答案吧！" : "再试一次！");
   drawCharge();
 }
-$("tutor").addEventListener("click", e=>{ if(e.target.id==="tutor") closeHint(); });
+// 关掉辅导：右上角 ✕、「我懂了！」，或点卡片外面的遮罩（遮罩的整片留白都算）
+function addHintClose(){ $("hint").insertAdjacentHTML("afterbegin", '<button class="ibtn round tclose" id="tClose" aria-label="关闭">'+closeIcon()+'</button>'); $("tClose").onclick = e=>{ e.stopPropagation(); sfx.click(); closeHint(); }; }
+const closeIcon = () => '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M6 6 L18 18 M18 6 L6 18" stroke="var(--c-line)" stroke-width="4" stroke-linecap="round"/></svg>';
+// 只看点到的是不是遮罩本身（卡片外的整片留白都是遮罩）：卡片里的按钮会重画卡片，点完按钮就不在页面上了，不能用 closest 判断
+$("tutor").addEventListener("click", e=>{ if(e.target===$("tutor")) closeHint(); });
 function renderStep(speak){
   const q = B.q, n = q.steps.length, s = q.steps[B.step];
   const nav = '<button class="ibtn round" id="stPrev"'+(B.step?'':' disabled')+' aria-label="上一步">'+chev()+'</button><button class="ibtn round" id="stSay" aria-label="再说一遍">'+img("🔊")+'</button>'
@@ -1098,6 +1119,7 @@ function renderStep(speak){
   if($("stNext")) $("stNext").onclick = ()=>go(1);
   if($("stSay")) $("stSay").onclick = ()=>say(strip(s.t), true);
   if($("stDone")) $("stDone").onclick = closeHint;
+  addHintClose();
   if(speak) say(strip(s.t));
 }
 function answer(btn){
@@ -1709,7 +1731,10 @@ function fireworks(ms){
 /* 逃跑（家长 10-21）：战斗中点左上角地图按钮先确认；FLEE_RATE 的机会跑掉（扣身上装备经验，fleePenalty），
    跑不掉怪兽打一下（按狂暴档扣心）再接着打。App 切到后台、锁屏都不算逃跑（这里只听这个按钮）。 */
 $("bBack").onclick = ()=>{
-  if(B && !B.over && B.fleeUntil > performance.now()) return;   // 逃跑失败后的冷却（按钮是灰的）
+  if(B && !B.over && B.fleeUntil > performance.now()){   // 逃跑失败后的冷却（按钮是灰的）：连点只提示一次，不放音效
+    if(!B.fleeWarned){ B.fleeWarned = true; toast("⏳", Math.ceil((B.fleeUntil - performance.now())/1000)+" 秒后才能再逃跑"); }
+    return;
+  }
   sfx.click();
   if(!B || B.over) return toMap();
   openPage({title:"要逃跑吗？", ribbon:"blue", back:true, body:'<div class="fleeart">'+img("🏃")+'</div><p>真的要逃跑吗？<br>逃跑会扣除装备经验'+(wornList().length?'（每件 <b class="num">-'+FLEE_EXP_LOSS+'</b>）':'')+'<br><small>逃不掉会挨打，'+FLEE_LOCK_SEC+' 秒内不能再逃</small></p>'
@@ -1720,7 +1745,7 @@ $("bBack").onclick = ()=>{
     const r = tryFlee(B.rage);
     if(!r.ok){
       closePage(); toast("💥","逃跑失败！"); say("逃跑失败！");
-      B.fleeUntil = performance.now() + FLEE_LOCK_SEC*1000; fleeTick();
+      B.fleeUntil = performance.now() + FLEE_LOCK_SEC*1000; B.fleeWarned = false; fleeTick();
       monsterAttack("flee");
       return;
     }
