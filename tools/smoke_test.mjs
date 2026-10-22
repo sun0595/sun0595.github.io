@@ -307,10 +307,11 @@ async function playAll(view) {
   else {
     await tap(`.hcard[data-i="${li}"]`); await p.waitForTimeout(300); await shot('10b-hero-locked');
     const lk = await p.evaluate(i => { const st = document.querySelector('.herostage'), h = __t.HEROES[i], t = st.textContent;
-      return { qqq: /？？？/.test(t), name: t.includes(h.n), skill: t.includes(h.skill), sil: !!st.querySelector('.sil .ei'), filter: getComputedStyle(st.querySelector('.sil .ei')).filter, need: !!st.querySelector('.lockline') }; }, li);
-    if (!lk.qqq || lk.name || lk.skill || !lk.sil || !/brightness\(0\)/.test(lk.filter) || !lk.need) problems.push(`[${view.name}] a locked hero should only show a silhouette, 「？？？」 and how to unlock it: ${JSON.stringify(lk)}`);
+      return { qqq: /？？？/.test(t), name: t.includes(h.n), skill: t.includes(h.skill), sil: !!st.querySelector('.sil .ei'), silArt: !!st.querySelector('.sil img.art'), filter: getComputedStyle(st.querySelector('.sil .ei')).filter, need: !!st.querySelector('.lockline') }; }, li);
+    if (!lk.qqq || lk.name || lk.skill || !lk.sil || !lk.silArt || !/brightness\(0\)/.test(lk.filter) || !lk.need) problems.push(`[${view.name}] a locked hero should only show a silhouette, 「？？？」 and how to unlock it: ${JSON.stringify(lk)}`);
   }
   await tap('#pgBack'); await tap('#parentBtn'); await p.waitForTimeout(300); await shot('11-parent');
+  if (!await p.evaluate(() => /部分美术由 AI 生成/.test(document.getElementById('pbody').textContent))) problems.push(`[${view.name}] the parent page should say 「部分美术由 AI 生成」 at the bottom`);
   await tap('.tab[data-t="rep"]'); await shot('12-report'); await tap('#pgBack');
   await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.openAll = true; s.mapWorld = 2; localStorage.setItem(k, JSON.stringify(s)); }, V1);
   await p.reload(); await p.waitForTimeout(500);
@@ -829,6 +830,21 @@ async function playAll(view) {
   await p.evaluate(() => { __t.setArt('map_tens', ''); __t.renderMap(); });
   if (await p.evaluate(() => document.querySelector('.band[data-w="4"]').classList.contains('art') || !document.querySelector('.band[data-w="4"] .cliff'))) problems.push(`[${view.name}] worlds without map art should keep the drawn island`);
   await p.evaluate(k => { __t.setArt('map_tens', k); __t.renderMap(); }, keepTens);
+  // 勇士原画：每个勇士的战斗图（hero2_*；小勇士按盔甲品质）。人形勇士（小勇士、忍者、宇航员、国王）手里有武器盾牌原画，其余不叠
+  await p.evaluate(() => { __t.toMap(); for (const w of __t.WORLDS_V2) for (let l = 1; l <= 15; l++) __t.S.lv.stars[w.id + '-' + l] = 3; __t.S.bestQ = 'red'; __t.S.timer = false;
+    equipGear({ id: 'hw', slot: 'weapon', quality: 'orange', name: '测试·剑', e: '🗡️', affixes: [] }); equipGear({ id: 'hs', slot: 'shield', quality: 'blue', name: '测试·盾', e: '🛡️', affixes: [] }); });
+  const HERO_FILES = ['', 'hero2_ninja', 'hero2_robot', 'hero2_astronaut', 'hero2_trex', 'hero2_dragon', 'hero2_unicorn', 'hero2_king'], HANDS = [1, 1, 0, 1, 0, 0, 0, 1];
+  for (let i = 0; i < 8; i++) {
+    await p.evaluate(i => { __t.S.hero = i; __t.renderMap(); __t.startLevel(0, 1); }, i); await p.waitForTimeout(1700);
+    await shot('70-hero-' + i + '-' + (HERO_FILES[i] || 'hero_base').replace('hero2_', ''));
+    const hv = await p.evaluate(f => { const im = document.querySelector('#heroSprite .av > img.art'), face = document.querySelector('#heroBtn img.art');
+      return { hero: __t.S.hero, art: !!im && (!f || im.getAttribute('src') === __t.art(f)), hands: document.querySelectorAll('#heroSprite .hand').length }; }, HERO_FILES[i]);
+    if (hv.hero !== i || !hv.art || hv.hands !== (HANDS[i] ? 2 : 0)) problems.push(`[${view.name}] hero ${i} should fight as its painted picture${HANDS[i] ? ' holding the weapon and shield' : ' without held gear'}: ${JSON.stringify(hv)}`);
+    await leaveBattle(); await p.waitForTimeout(200);
+    const mv = await p.evaluate(f => { const im = document.querySelector('#heroBtn img.art'); return !!im && (!f || im.getAttribute('src') === __t.art(f)); }, HERO_FILES[i]);
+    if (!mv) problems.push(`[${view.name}] the map avatar should show hero ${i}'s picture`);
+  }
+  await p.evaluate(() => { __t.S.hero = 0; __t.S.timer = true; __t.renderMap(); });
   if (await p.evaluate(k => localStorage.getItem(k), BETA) !== null) problems.push(`[${view.name}] 正式版 wrote the 试玩版 save "${BETA}"`);
   await ctx.close();
 }
