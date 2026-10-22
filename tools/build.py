@@ -65,10 +65,10 @@ const ri = (a,b) => a + Math.floor(Math.random()*(b-a+1));
 const pick = arr => arr[Math.floor(Math.random()*arr.length)];
 const shuffle = a => { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]} return a; };
 '''
-TEST_HOOK = ("window.__t={showRunReward,startRun,openRunMenu,useItem,qTime,openBag,get B(){return B},get S(){return S},G,WP,WP_NEW,wpPool,LEVEL_PLAN,"
+TEST_HOOK = ("window.__t={showRunReward,startRun,openRunMenu,useItem,qTime,openBag,get B(){return B},get S(){return S},G,WP,WP_NEW,wpPool,LEVEL_PLAN,invRate,"
              "WORLDS_V2,HEROES,IMG,ICON_SVG,GEAR_SLOTS,MAP_SEAM,TRANS_ROADS,LEVEL_MODES,layoutMap,ART_ROADS,img,startLevel,nextQuestion,toMap,levelDef,matchGenFor,matchPoolOK,curLevel,renderMap,hitCap,"
              "pyQ,pyBlend,pyBlendHz,blendQ,PY,LLK_SETS,llkPairs,pyLegal,pySplit,pyMark,"
-             "art,chargeTime,renderItems,closeHint,openLevel,lvBonus,fxHold(ms){ FX_HOLD = ms; },setDrops(f){ dropOverride = f; },setArt(k,url){ if(url) ART[k] = url; else delete ART[k]; },"
+             "art,chargeTime,renderItems,closeHint,showHint,openLevel,lvBonus,fxHold(ms){ FX_HOLD = ms; },setDrops(f){ dropOverride = f; },setArt(k,url){ if(url) ART[k] = url; else delete ART[k]; },"
              "setDaily(n){ daily().n = n; save(); renderMap(); }};\n")
 
 EMOJI_RANGES = [(0x1F000, 0x1FAFF), (0x2600, 0x27BF), (0x2300, 0x23FF), (0x2B00, 0x2BFF), (0x2190, 0x21FF),
