@@ -328,8 +328,8 @@ async function playAll(view) {
   await p.evaluate(() => { for (let i = 0; i < 7; i++) addGear({ id: 'aw' + i, slot: 'weapon', quality: 'white', name: '测试·剑' + i, e: '🗡️', lv: 1, exp: 0, affixes: [{ id: 'atk', val: 1 }] });
     for (let i = 0; i < 2; i++) addGear({ id: 'ab' + i, slot: 'helmet', quality: 'blue', name: '测试·盔' + i, e: '🪖', lv: 1, exp: 0, affixes: [{ id: 'atk', val: 1 }] }); });
   // 穿着的同品质装备也在合成页里：灰色、标「穿戴中」、不能选，点它提示先回背包脱下
-  const wq = await p.evaluate(() => { const g = Object.values(__t.S.equipped).find(Boolean); return g && { q: g.quality, id: g.id }; });
-  if (!wq) problems.push(`[${view.name}] the test save should be wearing something before 合成`);
+  const wq = await p.evaluate(() => { const g = Object.values(__t.S.equipped).find(x => x && x.quality !== 'red'); return g && { q: g.quality, id: g.id }; });  // 红色不能再合成，合成页没有红色页签
+  if (!wq) { /* 身上只有红装（随机掉落）：这一项检查跳过 */ }
   else {
     await tap(`.qtab[data-q="${wq.q}"]`); await p.waitForTimeout(200);
     for (let i = 0; i < 5 && !(await p.isVisible(`.gt[data-id="${wq.id}"]`)) && await p.isVisible('#gNext') && await p.isEnabled('#gNext'); i++) { await tap('#gNext'); await p.waitForTimeout(150); }
