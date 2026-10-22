@@ -65,8 +65,8 @@ const ri = (a,b) => a + Math.floor(Math.random()*(b-a+1));
 const pick = arr => arr[Math.floor(Math.random()*arr.length)];
 const shuffle = a => { for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]} return a; };
 '''
-TEST_HOOK = ("window.__t={showRunReward,startRun,openRunMenu,useItem,qTime,openBag,get B(){return B},get S(){return S},G,WP,WP_NEW,wpPool,LEVEL_PLAN,invRate,"
-             "WORLDS_V2,HEROES,IMG,ICON_SVG,GEAR_SLOTS,MAP_SEAM,TRANS_ROADS,TRANS_SEAM,TRANS_LV,HERO_HANDS,qForm,synthPlan,autoSynth,LEVEL_MODES,layoutMap,ART_ROADS,img,startLevel,nextQuestion,toMap,levelDef,matchGenFor,matchPoolOK,curLevel,renderMap,hitCap,"
+TEST_HOOK = ("window.__t={showRunReward,WP_TRAP,WP_TRAP_KEYS,SMALL_P,ROUND5,startRun,openRunMenu,useItem,qTime,openBag,get B(){return B},get S(){return S},G,WP,WP_NEW,wpPool,LEVEL_PLAN,invRate,"
+             "WORLDS_V2,HEROES,IMG,ICON_SVG,GEAR_SLOTS,CLOUD_H,CLOUD_OV,HERO_HANDS,qForm,synthPlan,autoSynth,LEVEL_MODES,layoutMap,ART_ROADS,img,startLevel,nextQuestion,toMap,levelDef,matchGenFor,matchPoolOK,curLevel,renderMap,hitCap,"
              "pyQ,pyBlend,pyBlendHz,blendQ,PY,LLK_SETS,llkPairs,pyLegal,pySplit,pyMark,pyBasic,pyInit,pyFin,pyCat,canInit,canFin,BLEND_FINS,PY_TYPES,"
              "wordOpts,kidOpts,numOptions,linkPick,invTier,INV_TIERS,INV_FORMS,"
              "art,chargeTime,renderItems,closeHint,showHint,openLevel,lvBonus,fxHold(ms){ FX_HOLD = ms; },setDrops(f){ dropOverride = f; },setArt(k,url){ if(url) ART[k] = url; else delete ART[k]; },"
@@ -137,6 +137,8 @@ BETA_TITLE = "（试玩版）"
 ART_DIR = os.path.join(ROOT, "src", "art")
 ART_WARN = 5 * 1024 * 1024
 ART_MIME = {".webp": "image/webp", ".png": "image/png"}
+# 留在 src/art 里但不再用的原画，不内嵌（过渡图 trans_*：大关之间改用云带分隔）
+ART_UNUSED = ("trans_",)
 
 def pic_size(data, ext):
     """(width, height) read from the PNG / WebP header (the map needs it to place levels on the painted road)"""
@@ -158,7 +160,7 @@ def art_table():
     if os.path.isdir(ART_DIR):
         for f in sorted(os.listdir(ART_DIR)):
             name, ext = os.path.splitext(f)
-            if ext.lower() not in ART_MIME:
+            if ext.lower() not in ART_MIME or name.startswith(ART_UNUSED):
                 continue
             if not re.fullmatch(r"[a-z0-9_]+", name):
                 sys.exit("ERROR: art file name must be lower-case letters, digits and _ (e.g. mon_add_3.webp): %s" % f)

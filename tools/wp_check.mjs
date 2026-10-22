@@ -162,7 +162,7 @@ export async function invCheck(page, n = 2000) {
       const seq = []; for (let i = 0; i < 300; i++) seq.push(__t.qForm(d.g()));
       for (let i = 2; i < seq.length; i++) if (seq[i] === seq[i - 1] && seq[i] === seq[i - 2]) { out.push(`${W.name} 第 ${l + 1} 关连出 3 道「${seq[i]}」`); break; }
       if (!seq.includes('add') || !seq.includes('sub')) out.push(`${W.name} 第 ${l + 1} 关应该加法、减法都有: ${[...new Set(seq)]}`);
-      const hasC = lv.mix.some(it => it.g === 'chain3');
+      const hasC = (lv.small || []).concat(lv.mix).some(it => it.g === 'chain3');
       if (hasC && !seq.includes('chain')) out.push(`${W.name} 第 ${l + 1} 关计划里有连式，却没出连式`);
       if (!hasC && seq.includes('chain')) out.push(`${W.name} 第 ${l + 1} 关计划里没有连式，不该出连式`);
       if (l < 2 && hasC) out.push(`${W.name} 第 ${l + 1} 关只出单纯加减，不该有连式`);
@@ -326,6 +326,107 @@ export async function qbankCheck(page, n = 2000) {
   }, { n, POS: POS_RANGE });
 }
 
+// 第五轮新题型自测（家长第五轮）：每类抽样 2000 次——答案在选项里、选项不重复、没有负数、范围对、选项打乱（正确答案出现在每个位置）；
+// 一图四式的正确算式和叙述顺序一致；图形题代回去成立；易错应用题每个模板都检查，讲解里要有 ⚠️ 指出常见错误。
+// 再按关卡抽样：各大关得数 > 20 的比例 ≤ 30%，各大关的 battle 关里新题型都出现；消除关的数都在 20 以内。
+export async function r5Check(page, n = 2000) {
+  return page.evaluate(({ n }) => {
+    const T = __t, out = [], stats = {};
+    const strip = h => String(h).replace(/<[^>]+>/g, '');
+    const nums = h => (strip(h).match(/-?\d+/g) || []).map(Number);
+    const evalF = f => { const m = String(f).match(/^(\d+)([+−])(\d+)$/); return m ? (m[2] === '+' ? +m[1] + +m[3] : +m[1] - +m[3]) : NaN; };
+    const run = (name, gen, check) => {
+      const errs = new Set(), pos = new Set(), ans = new Set(); let k = 0;
+      for (let i = 0; i < n; i++) {
+        const q = gen(), bad = m => errs.add(m);
+        if (!q.options || !q.options.some(o => String(o) === String(q.answer))) bad('答案不在选项里: ' + q.answer + ' ' + JSON.stringify(q.options));
+        if (new Set((q.options || []).map(String)).size !== (q.options || []).length) bad('选项重复: ' + JSON.stringify(q.options));
+        pos.add(q.options.map(String).indexOf(String(q.answer))); ans.add(String(q.answer));
+        for (const o of q.options) if (typeof o === 'number' && o < 0) bad('选项是负数: ' + o);
+        if (typeof q.speak !== 'string' || !q.speak || /[<>]/.test(q.speak)) bad('speak 不是纯文字: ' + q.speak);
+        if (nums(q.speak).some(x => x < 0 || x > 20)) bad('speak 里的数超出 0～20: ' + q.speak);
+        const all = [q.html, q.speak, q.rec, q.hint, ...(q.steps || []).flatMap(s => [s.t, s.v])].join('|');
+        if (/undefined|NaN/.test(all)) bad('有 undefined / NaN: ' + strip(q.html || q.speak));
+        if (!q.key) bad('没有 key');
+        if (!(q.hint || (q.steps && q.steps.length >= 3))) bad('没有讲解');
+        for (const s of q.steps || []) for (const m of strip(s.t).matchAll(/=\s*(\d+)(?![\d])/g)) if (m[1] === String(q.answer)) bad('讲解直接写出了答案: ' + strip(s.t));
+        check(q, bad); k++;
+        if (errs.size > 5) break;
+      }
+      const want = name.startsWith('cmp10') ? 3 : 4;
+      if (pos.size < want) errs.add(`选项没打乱：正确答案只出现在第 ${[...pos].map(x => x + 1)} 个位置`);
+      for (const e of errs) out.push(`${name}: ${e}`);
+      stats[name] = { n: k, distinct: ans.size, pos: pos.size };
+    };
+    run('cmp10', () => T.G.cmp10(), (q, bad) => {
+      const p = q.parts, i = p.indexOf('?'), L = p.slice(0, i), r = p[i + 1];
+      const v = L.length === 1 ? L[0] : L[1] === '+' ? L[0] + L[2] : L[0] - L[2];
+      if ([...L.filter(x => typeof x === 'number'), r, v].some(x => x < 0 || x > 10)) bad('超出 10 以内: ' + p.join(' '));
+      if (q.answer !== (v > r ? '>' : v < r ? '<' : '=')) bad('答案不对: ' + p.join(' ') + ' → ' + q.answer);
+    });
+    const eqShare = (() => { let e = 0; for (let i = 0; i < 2000; i++) if (T.G.cmp10().answer === '=') e++; return e / 2000; })();
+    if (eqShare < 0.2) out.push(`cmp10: 等于的题太少 ${Math.round(eqShare * 100)}%`);
+    for (const v of ['join', 'part', 'leave']) run('pic4:' + v, () => T.G.pic4(10, v), (q, bad) => {
+      const said = nums(q.speak), ok = evalF(q.answer);
+      if (q.kind !== 'word') bad('不是看图应用题');
+      if (q.options.some(o => !(evalF(o) >= 0))) bad('选项算式不对或得负数: ' + q.options);
+      if (said.some(x => x > 10) || ok > 10) bad('得数超出 10 以内: ' + q.speak);
+      // 正确算式：第一个数 = 叙述里先说的数，第二个数 = 后说的数
+      const [a, , b] = String(q.answer).match(/^(\d+)([+−])(\d+)$/).slice(1).map(x => isNaN(x) ? x : +x);
+      if (a !== said[0] || b !== said[1]) bad(`算式顺序和叙述不一致: 「${q.speak}」 → ${q.answer}`);
+      const want = /一共有几/.test(q.speak) ? said[0] + said[1] : said[0] - said[1];
+      if (ok !== want) bad(`算式算出来不对: ${q.answer} ≠ ${want}`);
+      if (q.options.filter(o => evalF(o) === ok).length < 1) bad('没有对的算式');
+      if (!/<img|🐸|🐦|🐰|🦆/.test(q.html)) bad('没有图');
+    });
+    run('shapeEq', () => T.G.shapeEq(10), (q, bad) => {
+      const k = (q.rec.match(/[○□△]/g) || []).length - 1, s = +q.rec.match(/= (\d+)/)[1];
+      if (q.answer * k !== s || q.answer < 1 || q.answer > 10 || s > 10) bad('图形等式不成立 / 超范围: ' + q.rec + ' → ' + q.answer);
+      if ((q.html.match(/<svg/g) || []).length < 3) bad('图形没用 SVG 画');
+    });
+    for (const v of ['A', 'B', 'C']) run('shapeLogic:' + v, () => T.G.shapeLogic(v), (q, bad) => {
+      // 把每行等式代回去：解出每个图形，再看答案
+      const rows = q.rec.split('，').slice(0, -1).map(r => r.split('=')), val = {};
+      for (let pass = 0; pass < 4; pass++) for (const [l, r] of rows) {
+        const t = l.split('+'), unk = [...new Set(t.filter(x => val[x] == null))];
+        if (unk.length === 1) { const known = t.filter(x => val[x] != null).reduce((a, x) => a + val[x], 0), cnt = t.filter(x => x === unk[0]).length; val[unk[0]] = (+r - known) / cnt; }
+      }
+      const ask = q.rec.split('，').pop()[0];
+      if (val[ask] !== q.answer) bad(`代回去不对: ${q.rec} → ${q.answer}（算出 ${val[ask]}）`);
+      if (Object.values(val).some(x => x < 0 || x > 10 || !Number.isInteger(x)) || rows.some(([, r]) => +r > 10)) bad('数超出 10 以内: ' + q.rec);
+    });
+    for (const key of T.WP_TRAP_KEYS) for (const M of [10, 20]) run(`trap:${key}(${M})`, () => T.G.trap(M, key), (q, bad) => {
+      if (q.trap !== key) bad('模板不对 / 生成失败');
+      if (!(Number.isInteger(q.answer) && q.answer >= 0 && q.answer <= M)) bad(`答案 ${q.answer} 超出 0～${M}`);
+      if (nums(q.speak).some(x => x > M)) bad(`题里的数超出 ${M}: ` + q.speak);
+      if (!(q.steps || []).some(s => /⚠️/.test(s.t))) bad('讲解没有指出常见错误（⚠️）');
+      if (!(q.steps || []).some(s => /class="(ppl|bm|frames|log|xrow)"/.test(s.v))) bad('讲解没有图（排队圆圈 / 线段图 / 圆点）');
+    });
+    stats.trapKinds = T.WP_TRAP_KEYS.length;
+    if (T.WP_TRAP_KEYS.length < 30) out.push(`易错应用题模板只有 ${T.WP_TRAP_KEYS.length} 种（要 30 种以上）`);
+    // ---- 按关卡：各大关题型配比、得数 > 20 的比例、新题型都出现、消除关 20 以内 ----
+    const typeOf = q => q.trap ? '易错应用题' : q.kind === 'cmp' ? (/^cmp10/.test(q.key) ? '比大小(10内)' : '比大小') : /^p4/.test(q.key || '') ? '一图四式' : q.shape ? '图形题' : /^sl/.test(q.key || '') ? '图形推理'
+      : q.kind === 'word' ? (q.intro ? '连式逆向' : '应用题') : q.kind === 'py' ? '拼音' : ({ chain: '连加连减/混合', inv: '逆向填空', add: '加法', sub: '减法' })[T.qForm(q)] || T.qForm(q);
+    const table = [];
+    T.LEVEL_PLAN.forEach((W, w) => {
+      const cnt = {}; let tot = 0, big = 0;
+      W.levels.forEach((lv, l) => {
+        const d = T.levelDef(w, l); if (d.mode === 'blend' || d.mode === 'link') return;
+        const g = d.mode === 'match' ? T.matchGenFor(w, l) : d.g;
+        for (let i = 0; i < 400; i++) { const q = g(); const t = typeOf(q); cnt[t] = (cnt[t] || 0) + 1; tot++; if (typeof q.answer === 'number' && q.answer > 20) big++;
+          if (d.mode === 'match' && (q.answer > 20 || q.parts.some(x => typeof x === 'number' && x > 20))) { out.push(`${W.name} 第 ${l + 1} 关消除出了 20 以上的数: ${q.parts.join(' ')}`); break; } }
+      });
+      const share = big / tot;
+      if (share > 0.3) out.push(`${W.name} 得数超过 20 的题占 ${Math.round(share * 100)}%（要 ≤ 30%）`);
+      const need = ['连加连减/混合', '比大小(10内)', '一图四式', '图形题', '易错应用题'].concat(w >= 6 ? ['图形推理'] : []);
+      for (const t of need) if (!cnt[t]) out.push(`${W.name} 没有出「${t}」`);
+      table.push({ world: W.name, big: Math.round(share * 100) + '%', mix: Object.entries(cnt).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + ' ' + Math.round(v / tot * 100) + '%').join('、') });
+    });
+    stats.table = table;
+    return { problems: out, stats };
+  }, { n });
+}
+
 // 单独运行
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { chromium } = await import('playwright');
@@ -334,14 +435,17 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const p = await b.newPage();
   const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.goto('file://' + path.join(ROOT, 'build', 'test.html')); await p.waitForTimeout(500);
-  const r = await wpCheck(p), ri = await invCheck(p), rq = await qbankCheck(p);
+  const r = await wpCheck(p), ri = await invCheck(p), rq = await qbankCheck(p), r5 = await r5Check(p);
   await b.close();
   for (const [k, v] of Object.entries(r.stats)) console.log(`${k.padEnd(15)} ${v.n} 次  变体 ${v.variants}  答案 ${v.answers}（${v.distinct} 种）`);
   for (const [k, v] of Object.entries(ri.stats)) if (k !== 'share' && k !== 'rotate') console.log(`${k.padEnd(15)} ${v.n} 次  答案 ${v.answers}`);
   console.log('逆向题占比（battle 关）：' + ri.stats.share);
   console.log('题型轮换：' + ri.stats.rotate);
   console.log(`题库审查：选项位置检查了 ${rq.stats.pos.length} 种生成器；魔法森林逆向占比 ${rq.stats.forest}；连式逆向首题讲解检查了 ${rq.stats.intro} 关`);
-  const bad = errs.map(e => 'JS error: ' + e).concat(r.problems, ri.problems, rq.problems);
+  console.log(`第五轮新题型：${Object.keys(r5.stats).length - 2} 类各抽样 ${2000} 次，易错应用题模板 ${r5.stats.trapKinds} 种`);
+  console.log('各大关题型配比（battle + 消除关抽样）：');
+  for (const t of r5.stats.table) console.log(`  ${t.world}  得数>20：${t.big}  ${t.mix}`);
+  const bad = errs.map(e => 'JS error: ' + e).concat(r.problems, ri.problems, rq.problems, r5.problems);
   if (bad.length) { console.error('\nFAILED:\n- ' + bad.join('\n- ')); process.exit(1); }
   console.log('wp_check: all word problem types, inverse questions and question-bank checks OK');
 }
