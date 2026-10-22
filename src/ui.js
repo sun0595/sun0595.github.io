@@ -584,7 +584,9 @@ function openHeroes(){
   };
   // 探险：MYSTIC_Q 道题（这个大关 Boss 关的计算类题，没有限时、答错不扣东西），答对 ≥ MYSTIC_PASS 道成功
   const runQuest = pair => {
-    const [cw] = curLevel(), gen = levelDef(cw, NLV-1).math;
+    // 一出发就记下今天已经探险过（Fable 审查：原来结束时才记，中途返回或刷新就能无限重开）
+    S.mystic.day = today(); save();
+    const [cw] = curLevel(), gen = questGenForce || levelDef(cw, NLV-1).math;
     let n = 0, right = 0, q = null, busy = false;
     const next = () => {
       if(n>=MYSTIC_Q) return finish();
@@ -594,7 +596,7 @@ function openHeroes(){
       const show = q.html ? q.html : q.parts.map(p=>p==="?" ? '<span class="blank">?</span>' : '<span>'+p+'</span>').join(" ");
       setBody('<div class="qhead">'+pair.map(i=>'<span class="qhero">'+heroPic(i)+'</span>').join("")+'<span class="qprog">第 <b class="num">'+(n+1)+'/'+MYSTIC_Q+'</b> 题 · 答对 <b class="num" id="qRight">'+right+'</b></span></div>'
         + '<div class="qbox panel"><div class="q'+(q.small?" small":"")+'" id="qBox">'+show+'</div></div>'
-        + '<div class="answers qans'+(q.options.length===3?" three":"")+'">'+q.options.map(o=>'<button class="ans" data-v="'+o+'">'+(q.optHtml?q.optHtml(o):o)+'</button>').join("")+'</div>');
+        + '<div class="answers qans'+(q.options.length===3?" three":"")+'">'+q.options.map(o=>'<button class="ans" data-v="'+o+'">'+(q.optHtml?q.optHtml(o):o+(q.kind==="cmp"?'<small>'+CMP_LABEL[o]+'</small>':''))+'</button>').join("")+'</div>');
       say(q.speak);
       $("pbody").querySelectorAll(".ans").forEach(b=>b.onclick=()=>{
         if(busy) return; busy = true;
@@ -1191,6 +1193,7 @@ function swapQuestion(){
   sfx.shield(); tint("#4ade80"); toast("💡","换一道简单点的！");
   nextQuestion(q);
 }
+const CMP_LABEL = {">":"大于","<":"小于","=":"等于"};   // 比大小选项下面的小字（战斗和结伴探险都用）
 function qKey(q){ return q.key || q.parts.join(" "); }
 function nextQuestion(given){
   let q = given, tries = 0;
@@ -1220,8 +1223,7 @@ function nextQuestion(given){
   ["hintBtn","qHint"].forEach(id=>{ if($(id)) $(id).onclick = e=>{ e.stopPropagation(); if(B && B.q===q && !B.busy && !B.over) showHint(); }; });
   const ans = $("answers");
   ans.className = "answers"+(q.options.length===3?" three":"");
-  const label = {">":"大于","<":"小于","=":"等于"};
-  ans.innerHTML = q.options.map(o=>'<button class="ans" data-v="'+o+'">'+emoQ(q.optHtml?q.optHtml(o):o+(q.kind==="cmp"?'<small>'+label[o]+'</small>':''))+'</button>').join("");
+  ans.innerHTML = q.options.map(o=>'<button class="ans" data-v="'+o+'">'+emoQ(q.optHtml?q.optHtml(o):o+(q.kind==="cmp"?'<small>'+CMP_LABEL[o]+'</small>':''))+'</button>').join("");
   ans.querySelectorAll(".ans").forEach(b=>b.addEventListener("click",()=>answer(b)));
   B.busy = false;
   drawCharge();
@@ -1361,7 +1363,7 @@ function punchFx(crit){
 /* 怪物闪避（第五轮）：答对后有 DODGE_RATE 的机会怪物闪开（显示「闪避！」+ 闪避动作，不掉血，自动换下一题，连击不断）。
    不会连续两次闪避；第 1 大关前 3 关不闪避；Boss 这一下可能打倒它（血量 ≤ 单次伤害上限）时不闪避。 */
 const DODGE_RATE = 0.04;
-let dodgeForce = null, questForce = null, questQ = null, lastCopy = "";   // lastCopy：测试看复制了什么   // questForce：测试用（__t.setQuest），固定探险找没找到的随机数   // 测试用（__t.setDodge）：固定闪避用的随机数
+let dodgeForce = null, questForce = null, questGenForce = null, questQ = null, lastCopy = "";   // lastCopy：测试看复制了什么   // questForce：测试用（__t.setQuest），固定探险找没找到的随机数   // 测试用（__t.setDodge）：固定闪避用的随机数
 function dodgeCheck(b, r){
   if(!b || b.lastDodge) return false;
   if(!b.run && b.w===0 && b.l<3) return false;
