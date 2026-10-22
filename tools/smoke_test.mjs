@@ -125,13 +125,30 @@ async function playAll(view) {
   await tapNode(0, 1); await p.waitForTimeout(1700); await shot('03-battle');
   const dt = await p.evaluate(() => document.getElementById('dropTag').textContent.replace(/\s+/g, ''));
   if (dt !== '头盔20%') problems.push(`[${view.name}] 加法森林 第 2 关 should show its possible drop 「🪖 头盔 20%」, got "${dt}"`);
-  await p.evaluate(() => __t.useItem('ice')); await p.waitForTimeout(800); await shot('04-freeze');
-  // 冰冻：冰块、霜边、6 秒倒数；蓄力和限时都停住
-  const fz = await p.evaluate(async () => { const B = __t.B, c0 = B.charge, q0 = B.qt; await new Promise(r => setTimeout(r, 500)); return { ice: !document.getElementById('iceBlock').hidden, frost: document.getElementById('frost').classList.contains('on'), chip: document.getElementById('iceChip').textContent, left: (B.frozenUntil - performance.now()) / 1000, still: B.charge === c0 && B.qt === q0 }; });
-  if (!fz.ice || !fz.frost || !(fz.left > 4 && fz.left < 6) || !fz.still || !/[1-6]/.test(fz.chip)) problems.push(`[${view.name}] 冰冻 should show the ice block and frost for 6 s and stop the charge: ${JSON.stringify(fz)}`);
+  // 计时条只有一条（家长 10-22）：在怪兽血条正下方，题目卡里没有计时条；主角站着时在呼吸（.hwrap 待机动画，武器盾牌在里面一起动）
+  const tb = await p.evaluate(() => {
+    const bar = document.querySelector('#monBox .bar').getBoundingClientRect(), ch = document.getElementById('chargeWrap'), cr = ch.getBoundingClientRect();
+    return { bars: document.querySelectorAll('.charge, .qtime, #qTime').length, inQ: document.querySelectorAll('#qcard .charge, #qcard .qtime, #qcard [id="qTime"]').length,
+      under: ch.previousElementSibling && ch.previousElementSibling.classList.contains('bar') && cr.top >= bar.bottom - 1 && cr.top - bar.bottom < 12 && Math.abs((cr.left + cr.right) - (bar.left + bar.right)) < 4,
+      idle: getComputedStyle(document.querySelector('#heroBox .hwrap')).animationName, sprite: !!document.querySelector('#heroBox .hwrap #heroSprite') };
+  });
+  if (tb.bars !== 1 || tb.inQ || !tb.under) problems.push(`[${view.name}] there should be one timer bar, right under the monster's HP bar, none in the question card: ${JSON.stringify(tb)}`);
+  if (tb.idle !== 'breathe' || !tb.sprite) problems.push(`[${view.name}] the hero should breathe while standing (with the gear inside): ${JSON.stringify(tb)}`);
+  // 道具「去错」：4 选 1 变 3 选 1（去掉的是错的，变灰点不了）
+  const cut = await p.evaluate(() => { const B = __t.B, n0 = __t.S.items.cut; __t.useItem('cut'); const a = String(B.q.answer), g = [...document.querySelectorAll('.ans.gone')];
+    return { n0, n1: __t.S.items.cut, gone: g.length, wrong: g.every(b => b.dataset.v !== a && b.disabled), left: document.querySelectorAll('.ans:not(.gone)').length, opts: B.q.options.length }; });
+  await p.waitForTimeout(300); await shot('04-item-cut');
+  if (cut.gone !== 1 || !cut.wrong || cut.left !== cut.opts - 1 || cut.n1 !== cut.n0 - 1) problems.push(`[${view.name}] 去错 should grey out exactly one wrong answer: ${JSON.stringify(cut)}`);
+  // 道具「换题」：换一道同类型、简单一档的题，重新计时
+  const sw = await p.evaluate(() => { const B = __t.B, k0 = B.q.key || B.q.parts.join(' '); B.qt = 0.5; __t.useItem('swap'); return { k0, k1: B.q.key || B.q.parts.join(' '), qt: B.qt, kind: B.q.kind, max: Number(B.q.answer), ans: document.querySelectorAll('.ans').length, gone: document.querySelectorAll('.ans.gone').length }; });
+  await p.waitForTimeout(300); await shot('04b-item-swap');
+  if (sw.k0 === sw.k1 || sw.qt > 0.05 || sw.kind !== 'num' || sw.max > 10 || !sw.ans || sw.gone) problems.push(`[${view.name}] 换题 should give a new, easier question of the same kind and restart the timer: ${JSON.stringify(sw)}`);
+  // 换题降一档：两位数 → 一位数，进位 → 不进位，整百 → 整十
+  const easy = await p.evaluate(() => { const r = {}; for (const [w, l] of [[6, 0], [5, 0], [6, 7]]) { const L = __t.levelDef(w, l), q0 = L.math(), out = []; for (let i = 0; i < 30; i++) out.push(L.easy(q0)); r[w + '-' + l] = Math.max(...out.map(q => Math.max(...q.parts.filter(x => /^\d+$/.test(x)).map(Number)))); } return r; });
+  if (!(easy['5-0'] < 200)) problems.push(`[${view.name}] 换题 on 整百 should give 整十 questions: ${JSON.stringify(easy)}`);
   // 答错：心立刻少一颗（怪兽马上扑过来，不等蓄力）；挨完打，小老师的提示在画面中央弹出（战斗区大小不变），弹窗开着时蓄力暂停
   const arenaBox = () => p.evaluate(() => { const r = document.getElementById('arena').getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round).join(','); });
-  const wrong = await p.evaluate(() => { const B = __t.B; B.frozenUntil = 0; B.lucky = 0; B.shield = 0; const a = String(B.q.answer); return [...document.querySelectorAll('.ans')].map(b => b.dataset.v).find(v => v !== a); });
+  const wrong = await p.evaluate(() => { const B = __t.B; B.lucky = 0; B.shield = 0; const a = String(B.q.answer); return [...document.querySelectorAll('.ans')].map(b => b.dataset.v).find(v => v !== a); });
   await p.waitForTimeout(300);
   const box0 = await arenaBox(), h0 = await p.evaluate(() => { const B = __t.B; B.qt = 0.5; B.charge = 0.5; return { h: B.hearts, d: B.dmg }; });
   await tap(`.ans[data-v="${wrong}"]`); await p.waitForTimeout(260);
@@ -267,6 +284,15 @@ async function playAll(view) {
     return { out: rs.filter(r => r.left < pb.left - 0.5 || r.right > pb.right + 0.5).length, left: Math.round(rs[0].left - st.left), right: Math.round(st.right - rs[3].right), shadows: [...sh] };
   });
   if (hp.out || Math.abs(hp.left) > 1 || Math.abs(hp.right) > 1 || hp.shadows.length !== 1) problems.push(`[${view.name}] hero picker cards should line up with the panel above and share one shadow: ${JSON.stringify(hp)}`);
+  // 没解锁的勇士：点进去只有剪影、「？？？」和解锁条件，不显示名字和技能
+  const li = await p.evaluate(() => [...document.querySelectorAll('.hcard')].findIndex(c => c.classList.contains('lock')));
+  if (li < 0) problems.push(`[${view.name}] the test save should have a locked hero`);
+  else {
+    await tap(`.hcard[data-i="${li}"]`); await p.waitForTimeout(300); await shot('10b-hero-locked');
+    const lk = await p.evaluate(i => { const st = document.querySelector('.herostage'), h = __t.HEROES[i], t = st.textContent;
+      return { qqq: /？？？/.test(t), name: t.includes(h.n), skill: t.includes(h.skill), sil: !!st.querySelector('.sil .ei'), filter: getComputedStyle(st.querySelector('.sil .ei')).filter, need: !!st.querySelector('.lockline') }; }, li);
+    if (!lk.qqq || lk.name || lk.skill || !lk.sil || !/brightness\(0\)/.test(lk.filter) || !lk.need) problems.push(`[${view.name}] a locked hero should only show a silhouette, 「？？？」 and how to unlock it: ${JSON.stringify(lk)}`);
+  }
   await tap('#pgBack'); await tap('#parentBtn'); await p.waitForTimeout(300); await shot('11-parent');
   await tap('.tab[data-t="rep"]'); await shot('12-report'); await tap('#pgBack');
   await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.openAll = true; s.mapWorld = 2; localStorage.setItem(k, JSON.stringify(s)); }, V1);
@@ -291,23 +317,23 @@ async function playAll(view) {
   if (rage.rage !== 1 || !rage.tagShown || rage.tag.replace(/\s+/g, '') !== '狂暴×2') problems.push(`[${view.name}] rage x2 not shown: ${JSON.stringify(rage)}`);
   if (Math.abs(rage.t - 10) > 1e-9) problems.push(`[${view.name}] rage x2 time limit should be 10 s, got ${rage.t}`);
   const rc = await p.evaluate(() => __t.chargeTime());
-  if (Math.abs(rc - 5.5) > 1e-9) problems.push(`[${view.name}] rage x2 monster charge should take 5.5 s, got ${rc}`);
+  if (Math.abs(rc - rage.t) > 1e-9) problems.push(`[${view.name}] rage x2: the one timer bar = the time limit (${rage.t} s), got ${rc}`);
   await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 0; });
   const wrong2 = await p.evaluate(() => { const a = String(__t.B.q.answer); return [...document.querySelectorAll('.ans')].map(b => b.dataset.v).find(v => v !== a); });
   await tap(`.ans[data-v="${wrong2}"]`); await p.waitForTimeout(900); await shot('19-rage-hit');
   const lost = rage.hearts - await p.evaluate(() => __t.B.hearts);
   if (lost !== 2) problems.push(`[${view.name}] rage x2 hit should cost 2 hearts, cost ${lost}`);
-  // 最后 5 秒的大数字：怪兽蓄力打过来以后，同一个数字不能再弹一次；「💢 蓄力攻击！」在道具提示时也看得见
+  // 最后 5 秒的大数字：怪兽（超时）打过来以后，同一个数字不能再弹一次；「⏰ 太慢啦！」在道具提示时也看得见
   await p.evaluate(() => __t.closeHint());
   await p.waitForFunction(() => __t.B && !__t.B.busy && !__t.B.over, null, { timeout: 4000 });
-  await p.evaluate(() => { const B = __t.B; window.__cds = []; document.getElementById('cd').addEventListener('animationstart', () => window.__cds.push(document.getElementById('cd').textContent)); B.shield = 1; __t.S.items.ice = 2; __t.renderItems(); B.qt = 0.62; B.charge = 0.9; });
+  await p.evaluate(() => { const B = __t.B; window.__cds = []; document.getElementById('cd').addEventListener('animationstart', () => window.__cds.push(document.getElementById('cd').textContent)); B.shield = 1; __t.S.items.cut = 2; __t.renderItems(); B.qt = 0.62; });
   await p.waitForTimeout(500);
-  await p.evaluate(() => { __t.B.charge = 0.999; }); await p.waitForTimeout(200);
-  const warnVis = await p.evaluate(() => { const c = document.getElementById('combo'); return /蓄力攻击/.test(c.textContent) && getComputedStyle(c).visibility === 'visible'; });
+  await p.evaluate(() => { __t.B.qt = 0.999; }); await p.waitForTimeout(200);
+  const warnVis = await p.evaluate(() => { const c = document.getElementById('combo'); return /太慢/.test(c.textContent) && getComputedStyle(c).visibility === 'visible'; });
   await p.waitForTimeout(700);
   const cds = await p.evaluate(() => window.__cds);
   if (!cds.length || new Set(cds).size !== cds.length) problems.push(`[${view.name}] the big countdown should not repeat a number after a monster attack: ${cds}`);
-  if (!warnVis) problems.push(`[${view.name}] 「💢 蓄力攻击！」 should stay visible`);
+  if (!warnVis) problems.push(`[${view.name}] 「⏰ 太慢啦！」 should stay visible`);
   // gear in battle: ⏳ +5 秒 makes the time limit longer, ⚔️ +3 adds floor(3/3) = 1 to every hit
   const mk = (slot, e, id, val, q) => ({ id: 't_' + id, slot, quality: q, name: '测试·' + id, e, affixes: [{ id, val }] });
   await leaveBattle(); await p.waitForTimeout(300);
@@ -344,7 +370,7 @@ async function playAll(view) {
     await ready();
     const a = await p.evaluate(c => { const B = __t.B; B.hp = B.maxHp = 99; B.combo = c; B.charge = 0; B.qt = 0; __t.fxHold(1500); return String(B.q.answer); }, combo);
     await tap(`.ans[data-v="${a}"]`); await p.waitForTimeout(240); await shot(name);
-    const r = await p.evaluate(() => ({ slash: !!document.querySelector('.slash path'), crit2: !!document.querySelector('.slash.crit'), col: document.querySelector('.slash')?.style.getPropertyValue('--qc'), hero: document.getElementById('heroSprite').className, stop: document.getElementById('arena').classList.contains('hitstop'), paused: getComputedStyle(document.getElementById('heroSprite')).animationPlayState, num: document.querySelector('.dmg.hitn')?.textContent || '', crit: !!document.querySelector('.dmg.hitn.crit'), punch: !!document.querySelector('.punchfx'), combo: document.getElementById('combo').className, tier: document.getElementById('arena').dataset.combo }));
+    const r = await p.evaluate(() => ({ slash: !!document.querySelector('.slash path'), crit2: !!document.querySelector('.slash.crit'), col: document.querySelector('.slash')?.style.getPropertyValue('--qc'), hero: document.getElementById('heroSprite').className, stop: document.getElementById('arena').classList.contains('hitstop'), paused: getComputedStyle(document.getElementById('heroSprite')).animationPlayState, num: document.querySelector('.dmg.hitn')?.textContent || '', crit: !!document.querySelector('.dmg.hitn.crit'), punch: !!document.querySelector('.punchfx'), fist: !!document.querySelector('.punchfx img, .punchfx .ei') || [...document.querySelectorAll('img')].some(i => i.getAttribute('src') === __t.IMG['👊']), combo: document.getElementById('combo').className, tier: document.getElementById('arena').dataset.combo }));
     await p.evaluate(() => __t.fxHold(0));
     return r;
   };
@@ -363,16 +389,16 @@ async function playAll(view) {
   await p.evaluate(() => { __t.S.equipped.weapon = null; });
   const s5 = await hitOnce(0, '54-punch');
   if (!s5.punch || !/atk-punch/.test(s5.hero) || s5.slash) problems.push(`[${view.name}] without a weapon the hero should punch: ${JSON.stringify(s5)}`);
-  // 蓄力：普通关 8 秒蓄满打一下（这一题最多 1 次，到 15 秒超时再 1 次）；过 70% 道具按钮闪「快用冰冻！」；加时 +8 秒
+  // 拳击特效只有光圈，界面上不能冒出系统拳头 emoji 👊
+  if (s5.fist) problems.push(`[${view.name}] the punch effect must not show the 👊 emoji: ${JSON.stringify(s5)}`);
+  // 蓄力 = 本题限时：普通关 15 秒蓄满打一下；过 70% 道具按钮闪「快用去错！」
   await ready();
   const ct = await p.evaluate(() => __t.chargeTime());
-  if (Math.abs(ct - 8) > 1e-9) problems.push(`[${view.name}] a normal monster should charge in 8 s, got ${ct}`);
-  await p.evaluate(() => { const B = __t.B; __t.S.items.ice = 2; __t.S.items.time = 2; __t.renderItems(); B.charge = 0.75; }); await p.waitForTimeout(200); await shot('55-urge-ice');
-  const ug = await p.evaluate(() => ({ txt: document.getElementById('urge').hidden ? '' : document.getElementById('urge').textContent, btn: !!document.querySelector('.item.nudge[data-it="ice"]:not(:disabled)') }));
-  if (!/快用冰冻/.test(ug.txt) || !ug.btn) problems.push(`[${view.name}] over 70% charge the ice button should flash with 「快用冰冻！」: ${JSON.stringify(ug)}`);
-  const tm = await p.evaluate(() => { const B = __t.B; B.qt = 0.6; __t.useItem('time'); return { qt: B.qt, want: 0.6 - 8 / __t.qTime() }; });
-  if (Math.abs(tm.qt - tm.want) > 0.02) problems.push(`[${view.name}] 加时 should give 8 s back at once: ${JSON.stringify(tm)}`);
-  const ch0 = await p.evaluate(() => { const B = __t.B; B.lucky = 0; B.shield = 0; B.charge = 0.995; return B.hearts; }); await p.waitForTimeout(450);
+  if (Math.abs(ct - 15) > 1e-9) problems.push(`[${view.name}] a normal monster should attack after the 15 s time limit, got ${ct}`);
+  await p.evaluate(() => { const B = __t.B; __t.S.items.cut = 2; __t.S.items.swap = 2; __t.renderItems(); B.qt = 0.75; }); await p.waitForTimeout(200); await shot('55-urge-cut');
+  const ug = await p.evaluate(() => ({ txt: document.getElementById('urge').hidden ? '' : document.getElementById('urge').textContent, btn: !!document.querySelector('.item.nudge[data-it="cut"]:not(:disabled)') }));
+  if (!/快用去错/.test(ug.txt) || !ug.btn) problems.push(`[${view.name}] over 70% the 去错 button should flash with 「快用去错！」: ${JSON.stringify(ug)}`);
+  const ch0 = await p.evaluate(() => { const B = __t.B; B.lucky = 0; B.shield = 0; B.qt = 0.995; return B.hearts; }); await p.waitForTimeout(450);
   const ch1 = await p.evaluate(() => __t.B.hearts);
   if (ch1 !== ch0 - 1) problems.push(`[${view.name}] a full charge should make the monster hit: ${ch0} → ${ch1}`);
   await leaveBattle(); await p.waitForTimeout(300);
@@ -657,8 +683,9 @@ async function playAll(view) {
     // every monster's centre must be on the painted road (ART_ROADS, mapped like the band's background: cover, centred)
     const band = document.querySelector(`.band[data-w="${w}"]`), br = band.getBoundingClientRect(), id = __t.WORLDS_V2[w].id;
     const im = new Image(); im.src = __t.art('map_' + id); await im.decode();
-    const k = Math.max(br.width / im.naturalWidth, br.height / im.naturalHeight), dw = im.naturalWidth * k, dh = im.naturalHeight * k;
-    const R = __t.ART_ROADS[id].map(([fx, fy]) => [br.left + fx * dw - (dw - br.width) / 2, br.top + fy * dh - (dh - br.height) / 2]);
+    // the picture is cover-sized but shifted sideways so the roads of neighbouring worlds line up: read the real size / position
+    const bcs = getComputedStyle(band), [dw, dh] = bcs.backgroundSize.split(' ').map(parseFloat), [px, py] = [parseFloat(bcs.backgroundPositionX), parseFloat(bcs.backgroundPositionY)];
+    const R = __t.ART_ROADS[id].map(([fx, fy]) => [br.left + px + fx * dw, br.top + py + fy * dh]);
     const segD = (p, a, b) => { const vx = b[0] - a[0], vy = b[1] - a[1], t = Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / (vx * vx + vy * vy || 1))); return Math.hypot(p[0] - a[0] - t * vx, p[1] - a[1] - t * vy); };
     const offRoad = balls.map((b, l) => { const c = [b.x + b.width / 2, b.y + b.height / 2]; let d = 1e9; for (let i = 1; i < R.length; i++) d = Math.min(d, segD(c, R[i - 1], R[i])); return d > 3 ? (l + 1) + ':' + Math.round(d) : null; }).filter(Boolean);
     const framed = [...Array(15)].map((_, l) => getComputedStyle(el(l).querySelector('.ball'))).filter(cs => parseFloat(cs.borderTopWidth) > 0 || cs.backgroundImage !== 'none' || cs.borderRadius === '50%').length;
@@ -697,6 +724,35 @@ async function playAll(view) {
     await p.screenshot({ path: path.join(SHOTS, `42-map-full-${w + 1}-${ids[w]}.png`), clip: box });
   }
   await p.setViewportSize(vp); await p.waitForTimeout(300);
+  // 世界接缝（家长 10-22）：上下两段重叠 120–200px，下面那段顶部渐变透明（叠化）；上面那段小路从接缝出来的 x 对准下面那段小路的终点（Boss）
+  const seams = await p.evaluate(() => {
+    const n = __t.WORLDS_V2.length, S = __t.MAP_SEAM, out = [];
+    const geo = w => { const b = document.querySelector(`.band[data-w="${w}"]`), cs = getComputedStyle(b), [dw, dh] = cs.backgroundSize.split(' ').map(parseFloat), px = parseFloat(cs.backgroundPositionX), rd = __t.ART_ROADS[__t.WORLDS_V2[w].id];
+      const y = b.offsetHeight - S; let entry = null;
+      for (let i = 1; i < rd.length && entry === null; i++) if (rd[i][1] * dh <= y) { const a = rd[i - 1], c = rd[i], t = (a[1] * dh - y) / ((a[1] - c[1]) * dh || 1); entry = px + (a[0] + (c[0] - a[0]) * t) * dw; }
+      return { top: b.offsetTop, h: b.offsetHeight, entry, exit: px + rd[rd.length - 1][0] * dw, fade: (cs.maskImage || cs.webkitMaskImage || 'none') !== 'none' }; };
+    for (let w = 0; w < n - 1; w++) { const lo = geo(w), up = geo(w + 1); out.push({ w, dx: Math.round(up.entry - lo.exit), overlap: up.top + up.h - lo.top, fade: lo.fade, topFade: up.fade === (w + 1 < n - 1) }); }
+    return out;
+  });
+  const badSeam = seams.filter(x => x.overlap < 120 || x.overlap > 200 || !x.fade || Math.abs(x.dx) > 40);
+  if (badSeam.length) problems.push(`[${view.name}] world seams should overlap 120–200px with a fade and line the roads up (|dx| ≤ 40px): ${JSON.stringify(badSeam)}`);
+  console.log('   seams dx', seams.map(x => x.dx).join(' '));
+  const seamAt = async (top, name) => { await p.evaluate(t => { const s = document.getElementById('lscroll'); s.scrollTop = t - s.clientHeight / 2; }, top); await p.waitForTimeout(300); await shot(name); };
+  await seamAt(await p.evaluate(() => document.querySelector('.band[data-w="0"]').offsetTop + 80), '43-map-seam-1-2');
+  await seamAt(await p.evaluate(() => document.querySelector('.band[data-w="5"]').offsetTop + 80), '43-map-seam-6-7');
+  // 过渡图 trans_add_sub：插在两段之间（铺满宽度），两头都叠化；去掉后恢复直接叠化
+  const tr = await p.evaluate(() => {
+    const c = document.createElement('canvas'); c.width = 390; c.height = 200; const g = c.getContext('2d');
+    g.fillStyle = '#8fd16a'; g.fillRect(0, 0, 390, 200); g.fillStyle = '#e8c98f'; g.beginPath(); g.moveTo(150, 200); g.bezierCurveTo(120, 120, 260, 90, 200, 0); g.lineTo(250, 0); g.bezierCurveTo(310, 90, 170, 120, 210, 200); g.fill();
+    __t.setArt('trans_add_sub', c.toDataURL()); __t.renderMap();
+    const t = document.querySelector('.band.trans'), b0 = document.querySelector('.band[data-w="0"]'), b1 = document.querySelector('.band[data-w="1"]');
+    if (!t) return { trans: false };
+    return { trans: true, full: Math.abs(t.offsetWidth - t.parentElement.offsetWidth) < 1, between: t.offsetTop < b0.offsetTop && t.offsetTop + t.offsetHeight > b0.offsetTop && t.offsetTop < b1.offsetTop + b1.offsetHeight && t.offsetTop + t.offsetHeight > b1.offsetTop + b1.offsetHeight, top: t.offsetTop };
+  });
+  if (!tr.trans || !tr.full || !tr.between) problems.push(`[${view.name}] a transition picture should sit between the two worlds, full width: ${JSON.stringify(tr)}`);
+  if (tr.trans) await seamAt(tr.top + 100, '43b-map-trans');
+  await p.evaluate(() => { __t.setArt('trans_add_sub', null); __t.renderMap(); });
+  if (await p.evaluate(() => !!document.querySelector('.band.trans'))) problems.push(`[${view.name}] without the transition picture the seam should be a plain fade`);
   await p.evaluate(() => { __t.S.openAll = false; __t.renderMap(); });
   // 糖果风（家长 10-22）：按钮、面板、标签、道具按钮都是深棕粗描边 + 单层底部阴影，没有仿三维的内高光；图标用原画
   const candy = () => p.evaluate(() => {
@@ -722,13 +778,13 @@ async function playAll(view) {
   await tap('#pgBack'); await p.evaluate(() => { __t.S.sound = false; }); await p.waitForTimeout(200);
   await tapNode(0, 1); await p.waitForTimeout(1900);
   // one heart lost (empty-heart picture), all three items in stock
-  await p.evaluate(() => { const B = __t.B; __t.S.items.heal = 2; __t.S.items.time = 2; __t.S.items.ice = 2; B.lucky = 0; B.shield = 0; B.hearts = B.maxH - 2; __t.renderItems(); });
+  await p.evaluate(() => { const B = __t.B; __t.S.items.heal = 2; __t.S.items.cut = 2; __t.S.items.swap = 2; B.lucky = 0; B.shield = 0; B.hearts = B.maxH - 2; __t.renderItems(); });
   await p.evaluate(() => __t.useItem('heal')); await p.waitForTimeout(1400);
   await shot('63-candy-battle');
-  const cBat = await candy(), iBat = await p.evaluate(() => ({ items: document.querySelectorAll('#items img.icon').length, hearts: document.querySelectorAll('#hearts img.icon').length, empty: document.querySelectorAll('#hearts .lost img.icon').length, back: !!document.querySelector('#bBack img.icon') }));
+  const cBat = await candy(), iBat = await p.evaluate(() => ({ items: document.querySelectorAll('#items img.icon').length + document.querySelectorAll('#items svg.isvg').length, svg: document.querySelectorAll('#items svg.isvg').length, hearts: document.querySelectorAll('#hearts img.icon').length, empty: document.querySelectorAll('#hearts .lost img.icon').length, back: !!document.querySelector('#bBack img.icon') }));
   if (cBat.length) problems.push(`[${view.name}] battle is not candy style: ${cBat.slice(0, 4)}`);
-  if (iBat.items !== 3 || !iBat.hearts || !iBat.back) problems.push(`[${view.name}] battle should use the painted heart / potion / hourglass / ice / map icons: ${JSON.stringify(iBat)}`);
-  await p.evaluate(() => __t.setDrops(() => ({ exp: 15, gear: rollGear(10, false, { slot: 'weapon', quality: 'purple' }), item: 'ice', stone: 1, gearExp: 10 })));
+  if (iBat.items !== 3 || iBat.svg !== 2 || !iBat.hearts || !iBat.back) problems.push(`[${view.name}] battle should use the painted heart / potion / map icons and the candy 去错 / 换题 icons: ${JSON.stringify(iBat)}`);
+  await p.evaluate(() => __t.setDrops(() => ({ exp: 15, gear: rollGear(10, false, { slot: 'weapon', quality: 'purple' }), item: 'cut', stone: 1, gearExp: 10 })));
   await winLevel(); await p.waitForTimeout(2000); await shot('64-candy-win');
   const cWin = await candy(); if (cWin.length) problems.push(`[${view.name}] win page is not candy style: ${cWin.slice(0, 4)}`);
   await p.evaluate(() => { __t.setDrops(null); document.getElementById('modal').hidden = true; __t.toMap(); });
@@ -797,6 +853,23 @@ async function betaCheck() {
   await ctx.close();
 }
 
+// 道具重做：旧存档的冰冻 → 去错、加时 → 换题，各 1:1，只折算一次
+async function itemMigration() {
+  const view = { name: 'items', viewport: { width: 375, height: 667 }, dpr: 1, safe: { top: 0, bottom: 0 } };
+  const { ctx, p } = await newPage(view);
+  await p.goto('file://' + path.join(ROOT, 'build', 'test.html'));
+  await p.evaluate(([k, s]) => { localStorage.clear(); localStorage.setItem(k, JSON.stringify(s)); }, [V1, { ...SAVE, items: { heal: 2, time: 3, ice: 4 } }]);
+  await p.reload(); await p.waitForTimeout(500);
+  const it = await p.evaluate(() => ({ ...__t.S.items }));
+  await p.reload(); await p.waitForTimeout(500);
+  const it2 = await p.evaluate(() => ({ ...__t.S.items }));
+  if (it.heal !== 2 || it.cut !== 4 || it.swap !== 3 || it.ice || it.time) problems.push(`[items] old 冰冻 ×4 / 加时 ×3 should become 去错 ×4 / 换题 ×3: ${JSON.stringify(it)}`);
+  if (JSON.stringify(it2) !== JSON.stringify(it)) problems.push(`[items] items must be converted only once: ${JSON.stringify(it)} → ${JSON.stringify(it2)}`);
+  console.log('ok ', 'items migration', JSON.stringify(it));
+  await ctx.close();
+}
+
+await itemMigration();
 await playAll({ name: '375', viewport: { width: 375, height: 667 }, dpr: 2, safe: { top: 0, bottom: 0 } });
 await playAll({ name: '393', viewport: { width: 393, height: 852 }, dpr: 3, safe: { top: 59, bottom: 34 } });
 await betaCheck();
