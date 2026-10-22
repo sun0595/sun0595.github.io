@@ -979,8 +979,10 @@ function wordOpts(ans, traps){
   return [...set].sort((a,b)=>a-b);
 }
 function wq(o){
-  return {kind:"word", html:o.html, speak:o.speak||strip(o.html), answer:o.answer, options:wordOpts(o.answer,o.traps),
+  const q = {kind:"word", html:o.html, speak:o.speak||strip(o.html), answer:o.answer, options:o.options||wordOpts(o.answer,o.traps),
     steps:o.steps, key:o.key, rec:o.rec||strip(o.html), pic:o.pic||"🤔"};
+  if(o.optHtml) q.optHtml = o.optHtml;
+  return q;
 }
 function bars(rows, max){
   max = max || Math.max(...rows.map(r=>r.segs.reduce((a,s)=>a+s.v,0)));
@@ -996,6 +998,42 @@ function bars(rows, max){
 }
 // a row of children in a queue; list of {c,t}
 const ppl = (list, lead) => '<div class="ppl">'+(lead?'<span class="front">'+lead+'</span>':'')+list.map(p=>'<span class="pp '+(p.c||"")+'">'+(p.t==null?"":p.t)+'</span>').join("")+'</div>';
+/* 下面几个画图小工具只用内联样式（不加新 CSS），描边都用 --c-line，和糖果风一致 */
+// 两行一一对齐的圆点（比多少）：rows = [{l:标签, n:个数, bg:颜色}]；hl = 从第几个起涂成「多出来的」
+function pairRows(rows, hl){
+  const dot = on => bg => '<span style="width:16px;height:16px;flex:none;border-radius:50%;border:var(--c-lw-s) solid var(--c-line);background:'+(on?"#ffe08a;box-shadow:0 0 0 2px var(--red)":bg)+'"></span>';
+  return '<div style="display:flex;flex-direction:column;gap:7px;margin:6px 0">'+rows.map(r=>'<div style="display:flex;align-items:center;gap:3px"><span style="width:34px;flex:none">'+r.l+'</span>'
+    +[...Array(r.n)].map((_,i)=>dot(hl!=null && i>=hl)(r.bg)).join("")+'</div>').join("")+'</div>';
+}
+// 人民币：y1 = 1 元硬币，j1 = 1 角硬币，y10 / y20 = 10 元 / 20 元纸币；off = 划掉（花掉了）
+function rmb(k, off){
+  const note = k==="y10" || k==="y20", v = k.slice(1), u = k[0]==="y" ? "元" : "角";
+  const box = note ? "width:50px;height:28px;border-radius:6px;background:"+(k==="y10"?"#a6e3a1":"#ffb07a")
+    : "width:"+(k==="y1"?34:26)+"px;height:"+(k==="y1"?34:26)+"px;border-radius:50%;background:"+(k==="y1"?"#ffd23f":"#e5e7f0");
+  return '<span style="display:inline-grid;place-items:center;vertical-align:middle;margin:2px;border:var(--c-lw-s) solid var(--c-line);'+box+';font:800 '+(k==="j1"?11:13)+'px/1 var(--f-num);color:var(--c-line)'
+    +(off?';opacity:.35;text-decoration:line-through;text-decoration-color:var(--red-d);text-decoration-thickness:3px':'')+'">'+v+'<small style="font:400 9px/1 var(--f-ui)">'+u+'</small></span>';
+}
+const coins = (n, off) => [...Array(n)].map((_,i)=>rmb("j1", off && i<off)).join("");
+// 钟面：h 时 m 分（m = 0 或 30）；h 或 m 为 null 就不画那根针；hl = "h" / "m" / "hm" 把那根针涂红（讲解时指给孩子看）
+function clockSvg(h, m, size, hl){
+  hl = hl||"";
+  const rad = d => d*Math.PI/180, pt = (deg, r) => [(50+r*Math.sin(rad(deg))).toFixed(1), (50-r*Math.cos(rad(deg))).toFixed(1)];
+  const hand = (cls, deg, r, w, on) => { const [x,y] = pt(deg, r); return '<line class="'+cls+'" x1="50" y1="50" x2="'+x+'" y2="'+y+'" style="stroke:'+(on?"var(--red)":"var(--c-line)")+';stroke-width:'+w+';stroke-linecap:round"/>'; };
+  let s = '<svg viewBox="0 0 100 100" width="'+size+'" height="'+size+'" style="vertical-align:middle;flex:none"><circle cx="50" cy="50" r="46" style="fill:#fff8e6;stroke:var(--c-line);stroke-width:4"/>';
+  for(let i=1;i<=12;i++){ const [x,y] = pt(i*30, 35); s += '<text x="'+x+'" y="'+(+y+5)+'" text-anchor="middle" style="font:800 14px var(--f-num);fill:var(--c-line)">'+i+'</text>'; }
+  // 分针 = 分钟 × 6°；时针 = (小时 % 12 + 分钟 / 60) × 30°，半点时时针正好在两个数中间（wp_check 会量角度）
+  if(m!=null) s += hand("mh", m*6, 36, 4, hl.includes("m"));
+  if(h!=null) s += hand("hh", ((h%12) + (m||0)/60)*30, 23, 7, hl.includes("h"));
+  return s + '<circle cx="50" cy="50" r="4" style="fill:var(--c-line)"/></svg>';
+}
+// 图形（分类计数）：k = 圆 c / 正方形 s / 三角形 t
+function shapeSvg(k, col, size){
+  const body = k==="c" ? '<circle cx="12" cy="12" r="9.5"/>' : k==="s" ? '<rect x="3" y="3" width="18" height="18" rx="2"/>' : '<path d="M12 2.5 22 21H2Z"/>';
+  return '<svg viewBox="0 0 24 24" width="'+size+'" height="'+size+'" style="vertical-align:middle;flex:none;fill:'+col+';stroke:var(--c-line);stroke-width:2;stroke-linejoin:round">'+body+'</svg>';
+}
+// 盖住一部分的布（看图列式）
+const cover = t => '<span style="display:inline-grid;place-items:center;vertical-align:middle;min-width:46px;height:30px;padding:0 6px;margin-left:4px;border-radius:10px;border:var(--c-lw-s) dashed var(--c-line);background:#d6c3a5;font:800 18px/1 var(--f-num);color:var(--c-line)">'+t+'</span>';
+const picRow = (inner, fs) => '<div style="font-size:'+(fs||18)+'px;line-height:1.3;margin-top:4px">'+inner+'</div>';
 
 const WP = {
   joinResult(){
@@ -1193,6 +1231,208 @@ const WP = {
         {t:n+" 个"+x+"，就是换 <b>"+n+"</b> 次，每次都换 "+k+" 个：", v:rowV(n)},
         {t:"数一数右边所有的"+y+"，或者算：<b>"+Array(n).fill(k).join(" + ")+" = ?</b>", v:rowV(n)}
       ]});
+  },
+  /* ---- 一年级上下册常见题型（第二批）。每个都收 h：0 = 简单档，1 = 进阶档（见 WP_NEW）；
+     v 只给测试用，指定出哪一种（不传就随机）。 ---- */
+  // 看图列式：图里一部分被布盖住。part = 知道一共，求盖住的；total = 知道盖住的有几个，求一共
+  picCover(h, v){
+    const [u,th,pic] = pick(THINGS), part = (v||pick(["part","total"]))==="part";
+    if(part){
+      const t = h ? ri(10,18) : ri(5,10), a = h ? ri(3,Math.min(10,t-3)) : ri(2,t-2), c = t-a;
+      return wq({key:"pc"+t+"-"+a+th, pic, answer:c, traps:[a, t, a+t, c+1],
+        speak:"一共有"+t+u+th+"，有一些被布盖住了。布下面有几"+u+"？", rec:"看图：一共"+t+u+th+"，露出"+a+u+"，盖住几"+u,
+        html:"一共有"+N(t)+u+th+"，有一些被布盖住了。布下面有几"+u+"？"+picRow(pic.repeat(a)+cover("?")),
+        steps:[
+          {t:"一共有 <b>"+t+"</b> "+u+"。用圆点画出来，盖住的也画上（虚线圈）。", v:dots([{n:a,c:"a"},{n:c,c:"e"}])},
+          {t:"露在外面的有 <b>"+a+"</b> "+u+"，就是橙色的。剩下的虚线圈在布下面。", v:dots([{n:a,c:"a"},{n:c,c:"e"}])},
+          {t:"盖住的 = 一共的 − 露在外面的：<b style='white-space:nowrap'>"+t+" − "+a+" = ?</b>", v:dots([{n:a,c:"x"},{n:c,c:"e"}])}
+        ]});
+    }
+    const a = h ? ri(4,10) : ri(2,7), c = h ? ri(3,Math.min(9,18-a)) : ri(2,10-a), t = a+c;
+    return wq({key:"pt"+a+"+"+c+th, pic, answer:t, traps:[Math.abs(a-c), a, c, t-1],
+      speak:"外面有"+a+u+th+"，布下面还盖着"+c+u+"。一共有几"+u+"？", rec:"看图：外面"+a+u+th+"，盖住"+c+u+"，一共几"+u,
+      html:"外面有"+N(a)+u+th+"，布下面还盖着"+N(c)+u+"。一共有几"+u+"？"+picRow(pic.repeat(a)+cover(c)),
+      steps:[
+        {t:"先画外面看得见的 <b>"+a+"</b> "+u+"（橙色）。", v:dots([{n:a,c:"a"}])},
+        {t:"布下面的 <b>"+c+"</b> "+u+"看不见，但也要算上（蓝色）。", v:dots([{n:a,c:"a"},{n:c,c:"b"}])},
+        {t:"求一共，就是把两部分合起来：<b style='white-space:nowrap'>"+a+" + "+c+" = ?</b>", v:dots([{n:a,c:"a"},{n:c,c:"b"}])}
+      ]});
+  },
+  // 排队问题（用「我」来说）：behind = 一共几人、我前面几人，求我后面；ahead = 我排第几，求我前面；
+  // back（进阶）= 一共几人、从前数我第几，求从后数我第几
+  lineUp(h, v){
+    v = v || pick(h ? ["behind","ahead","back","back"] : ["behind","ahead"]);
+    const front = "前→";
+    if(v==="ahead"){
+      const p = ri(3, h ? 12 : 9);
+      const row = mode => [...Array(p)].map((_,i)=> i===p-1 ? {c:"me"+(mode===2?" hl":""),t:"我"} : {c:mode?"f":"",t:i+1});
+      return wq({key:"luA"+p, pic:"🧍", answer:p-1, traps:[p, p+1, p-2],
+        html:"小朋友排队。从前往后数，"+P("我")+"排第"+N(p)+"。"+P("我")+"前面有几人？",
+        steps:[
+          {t:"从前往后数：1、2、3……数到我是第 <b>"+p+"</b> 个。", v:ppl(row(0),front)},
+          {t:"我前面的人涂成蓝色。⚠️ 我自己不在我的前面！", v:ppl(row(1),front)},
+          {t:"前面的人数比我排的位置少 1：<b style='white-space:nowrap'>"+p+" − 1 = ?</b>", v:ppl(row(2),front)}
+        ]});
+    }
+    if(v==="back"){
+      const n = ri(6,15), p = ri(2,n-1), q = n-p+1;
+      const row = mode => [...Array(n)].map((_,i)=>{
+        if(i===p-1) return {c:"me"+(mode===2?" hl":""),t:"我"};
+        if(mode===0) return {c:i<p?"f":"",t:i<p?i+1:""};
+        return {c:i>p-1?"b":"",t:i>p-1?n-i:""};
+      });
+      return wq({key:"luB"+n+"-"+p, pic:"🧍", answer:q, traps:[q-1, q+1, p],
+        html:"一队有"+N(n)+"个小朋友。从前往后数，"+P("我")+"排第"+N(p)+"。从后往前数，"+P("我")+"排第几？",
+        steps:[
+          {t:"画 <b>"+n+"</b> 个圆圈。从前往后数，第 <b>"+p+"</b> 个是我。", v:ppl(row(0),front)},
+          {t:"我后面的人（绿色）有 <b>"+n+" − "+p+"</b> 个，从后往前数要先数完他们。", v:ppl(row(1),front)},
+          {t:"⚠️ 数完后面的人，还要再数上我自己：<b style='white-space:nowrap'>"+n+" − "+p+" + 1 = ?</b>", v:ppl(row(2),front)}
+        ]});
+    }
+    const n = ri(h ? 8 : 6, h ? 16 : 11), f = ri(1,n-3), b = n-f-1;
+    const row = mode => [...Array(n)].map((_,i)=> i===f ? {c:"me"+(mode===2?" hl":""),t:"我"} : {c:mode && i<f ? "f" : mode===2 ? "b" : "", t:i+1});
+    return wq({key:"luC"+n+"-"+f, pic:"🧍", answer:b, traps:[n-f, f, b+2],
+      html:"一队有"+N(n)+"个小朋友。"+P("我")+"前面有"+N(f)+"人，"+P("我")+"后面有几人？",
+      steps:[
+        {t:"一共 <b>"+n+"</b> 人，画 "+n+" 个圆圈。", v:ppl([...Array(n)].map((_,i)=>({t:i+1})),front)},
+        {t:"我前面有 <b>"+f+"</b> 人（蓝色），接着就是我。", v:ppl(row(1),front)},
+        {t:"⚠️ 我自己也要去掉！后面的人（绿色）：<b style='white-space:nowrap'>"+n+" − "+f+" − 1 = ?</b>", v:ppl(row(2),front)}
+      ]});
+  },
+  // 比多少：两行一一对齐的圆点；问「多几」或「少几」
+  compareRows(h, v){
+    const [x,xn,xu,y,yn,yu] = pick([["🐰","小兔","只","🥕","萝卜","根"],["🐶","小狗","只","🦴","骨头","根"],["🐵","小猴","只","🍌","香蕉","根"],["🐱","小猫","只","🐟","鱼","条"]]);
+    const hi = h ? 14 : 10, big = ri(h ? 7 : 4, hi), small = ri(Math.max(1,big-(h?7:5)), big-1), d = big-small;
+    const xBig = Math.random()<.5, nx = xBig ? big : small, ny = xBig ? small : big;
+    const askMore = (v||pick(["more","less"]))==="more";
+    // 问「多」就问多的那一个，问「少」就问少的那一个
+    const [A,An,Au,B,Bn] = (askMore===xBig) ? [x,xn,xu,y,yn] : [y,yn,yu,x,xn];
+    const q = An+"比"+Bn+(askMore?"多":"少")+"几"+Au+"？";
+    const rows = hl => pairRows([{l:x,n:nx,bg:"#ffb07a"},{l:y,n:ny,bg:"#8fc1ff"}], hl);
+    return wq({key:"cr"+nx+"-"+ny+x+(askMore?"m":"l"), pic:A, answer:d, traps:[big+small, big, small, d+1],
+      speak:xn+"有"+nx+xu+"，"+yn+"有"+ny+yu+"。"+q,
+      html:x+xn+"有"+N(nx)+xu+"，"+y+yn+"有"+N(ny)+yu+"。"+A+q,
+      steps:[
+        {t:"把"+xn+"和"+yn+"排成两行，<b>一个对一个</b>，左边对齐。", v:rows(null)},
+        {t:"能一对一配上的是一样多的部分；没配上的（黄色）就是多出来的。", v:rows(small)},
+        {t:(askMore?"多几个":"少几个")+"，都是看黄色的有几个：<b style='white-space:nowrap'>"+big+" − "+small+" = ?</b>", v:rows(small)}
+      ]});
+  },
+  // 人民币（1 元 = 10 角）：jiao = 付 1 元买几角的东西，找回几角；yuan = 付 10 / 20 元，找回几元；mix = 1 元几角是几角
+  money(h, v){
+    v = v || (h ? pick(["jiao","yuan","mix"]) : "jiao");
+    const [u,th,pic] = pick([["支","铅笔","✏️"],["颗","糖","🍬"],["个","苹果","🍎"],["朵","花","🌸"]]);
+    if(v==="yuan"){
+      const pay = pick([10,20]), price = pay===10 ? ri(3,8) : ri(11,18), c = pay-price;
+      const [tu,tn,tp] = pick([["个","球","⚽"],["本","书","📚"],["个","汉堡","🍔"]]);
+      return wq({key:"mny"+pay+"-"+price+tn, pic:tp, answer:c, traps:[price, price+pay, c+1, c-1],
+        speak:"一"+tu+tn+price+"元。付"+pay+"元，应找回几元？", rec:"一"+tu+tn+price+"元，付"+pay+"元，找回几元",
+        html:"一"+tu+tn+tp+" "+N(price)+"元。付"+N(pay)+"元，应找回几元？"+picRow(rmb("y"+pay)),
+        steps:[
+          {t:"付了 <b>"+pay+"</b> 元，画一条线段表示 "+pay+" 元。", v:bars([{l:"付",segs:[{v:pay,c:"g"}],brace:{from:0,len:pay,t:"付 "+pay+" 元"}}],pay)},
+          {t:tn+"的价钱是 <b>"+price+"</b> 元，占去一段；剩下的就是找回的钱。", v:bars([{l:"付",segs:[{v:price},{v:c,c:"q",t:"?"}],brace:{from:0,len:pay,t:"付 "+pay+" 元"}}],pay)},
+          {t:"找回的 = 付的钱 − 价钱：<b style='white-space:nowrap'>"+pay+" − "+price+" = ?</b>", v:bars([{l:"付",segs:[{v:price,c:"x"},{v:c,c:"q hl",t:"?"}],brace:{from:0,len:pay,t:"付 "+pay+" 元"}}],pay)}
+        ]});
+    }
+    const one = rmb("y1")+'<b style="margin:0 4px">=</b>'+coins(10);
+    if(v==="mix"){
+      const b = ri(1,9), t = 10+b;
+      return wq({key:"mnm"+b, pic:"💰", answer:t, traps:[1+b, b, 10, t+1],
+        speak:"1元"+b+"角是几角？",
+        html:N(1)+"元"+N(b)+"角是几角？"+picRow(rmb("y1")+coins(b)),
+        steps:[
+          {t:"1 元 = 10 角，把 1 元换成 <b>10</b> 个 1 角。", v:picRow(one)},
+          {t:"再加上原来的 <b>"+b+"</b> 个 1 角。", v:picRow(coins(10)+'<b style="margin:0 4px">+</b>'+coins(b))},
+          {t:"⚠️ 不是 1 + "+b+"！要先把 1 元变成 10 角：<b style='white-space:nowrap'>10 + "+b+" = ?</b>", v:picRow(coins(10)+'<b style="margin:0 4px">+</b>'+coins(b))}
+        ]});
+    }
+    const price = ri(2,9), c = 10-price;
+    return wq({key:"mnj"+price+th, pic, answer:c, traps:[price, 10+price, c+1, c-1],
+      speak:"一"+u+th+price+"角。付1元，应找回几角？", rec:"一"+u+th+price+"角，付1元，找回几角",
+      html:"一"+u+th+" "+N(price)+"角。付"+N(1)+"元，应找回几角？"+picRow(rmb("y1")),
+      steps:[
+        {t:"1 元 = 10 角，把 1 元换成 <b>10</b> 个 1 角。", v:picRow(one)},
+        {t:"买"+th+"花掉 <b>"+price+"</b> 角，划掉 "+price+" 个 1 角。", v:picRow(coins(10, price))},
+        {t:"没划掉的就是找回的钱：<b style='white-space:nowrap'>10 − "+price+" = ?</b>", v:picRow(coins(10, price))}
+      ]});
+  },
+  // 认钟表（整点 / 半点）：read = 看钟面选时间；pick = 看时间选钟面（选项画成钟面）；half 只给测试用（指定半点）
+  clock(h, v, half){
+    v = v || pick(["read","read","pick"]);
+    half = h ? (half==null ? Math.random()<.7 : !!half) : false;
+    const hr = ri(1,12), m = half ? 30 : 0;
+    const nx = k => (k%12)+1, pv = k => ((k+10)%12)+1, fmt = (k,mm) => k+":"+(mm?"30":"00");
+    const ans = fmt(hr,m), traps = half ? [fmt(nx(hr),30), fmt(hr,0), fmt(nx(hr),0)] : [fmt(nx(hr),0), fmt(pv(hr),0), fmt(hr,30)];
+    const toMin = s => { const [a,b] = s.split(":").map(Number); return (a%12)*60+b; };
+    const options = [ans].concat(traps).sort((a,b)=>toMin(a)-toMin(b));
+    const name = hr+"时"+(half?"半":"");
+    if(v==="pick"){
+      return wq({key:"clp"+ans, pic:"⏰", answer:ans, options, optHtml:o=>{ const [a,b] = o.split(":").map(Number); return clockSvg(a,b,56); },
+        speak:"哪个钟面是"+name+"？", rec:"认钟表：哪个钟面是"+name,
+        html:"哪个钟面是 "+N(ans)+"（"+name+"）？",
+        steps: half ? [
+          {t:"半点时，<b>长针</b>（分针）指着 <b>6</b>。", v:clockSvg(null,30,96,"m")},
+          {t:"<b>短针</b>（时针）走过了 <b>"+hr+"</b>，还没到 <b>"+nx(hr)+"</b>，停在两个数中间。", v:clockSvg(hr,null,96,"h")},
+          {t:"两根针都对上的钟面才对。⚠️ 别选短针还没走过 "+hr+" 的！", v:""}
+        ] : [
+          {t:"整点时，<b>长针</b>（分针）指着 <b>12</b>。", v:clockSvg(null,0,96,"m")},
+          {t:"<b>短针</b>（时针）正好指着 <b>"+hr+"</b>。", v:clockSvg(hr,null,96,"h")},
+          {t:"两根针都对上的钟面才对：长针指 12，短针指 "+hr+"。", v:""}
+        ]});
+    }
+    return wq({key:"clr"+ans, pic:clockSvg(hr,m,84), answer:ans, options,
+      speak:"看钟面，现在是几时？", rec:"认钟表：钟面是"+name+"，读时间",
+      html:"看钟面，现在是几时？<br>短针是时针，长针是分针。",
+      steps: half ? [
+        {t:"先看<b>长针</b>（分针，涂红了）：指着 <b>6</b>，说明是<b>半点</b>。", v:clockSvg(hr,m,96,"m")},
+        {t:"再看<b>短针</b>（时针）：它停在两个数<b>中间</b>。", v:clockSvg(hr,m,96,"h")},
+        {t:"⚠️ 半点要看短针<b>刚走过</b>的那个数，不是还没走到的那个。写成 几:30。", v:clockSvg(hr,m,96,"h")}
+      ] : [
+        {t:"先看<b>长针</b>（分针，涂红了）：指着 <b>12</b>，说明是<b>整点</b>。", v:clockSvg(hr,m,96,"m")},
+        {t:"再看<b>短针</b>（时针）：它指着哪个数？", v:clockSvg(hr,m,96,"h")},
+        {t:"整点时，短针指着几就是几时，写成 几:00。", v:clockSvg(hr,m,96,"hm")}
+      ]});
+  },
+  // 分类计数：一堆彩色图形，按颜色或形状分一分。count = 某一类有几个；diff（进阶）= 两类相差几个
+  sortCount(h, v){
+    const COLS = [["红","#ff5d6c"],["蓝","#4aa8ff"],["黄","#ffd23f"]], SHP = [["c","圆"],["t","三角形"],["s","正方形"]];
+    const cols = h ? COLS : COLS.slice(0,2), shps = h ? SHP : [SHP[0],SHP[1]];
+    v = v || (h ? pick(["count","diff"]) : "count");
+    for(;;){
+      const n = h ? ri(8,12) : ri(6,9);
+      const items = [...Array(n)].map(()=>({c:pick(cols), s:pick(shps)}));
+      const byCol = Math.random()<.5, attr = byCol ? "颜色" : "形状";
+      const cats = byCol ? cols.map(c=>({l:c[0]+"色的", k:c[0], txt:c[0]+"色", it:items.filter(x=>x.c===c)}))
+                         : shps.map(s=>({l:s[1], k:s[0], txt:s[1], it:items.filter(x=>x.s===s)}));
+      if(cats.some(c=>c.it.length>9)) continue;
+      const other = (byCol ? shps.map(s=>items.filter(x=>x.s===s).length) : cols.map(c=>items.filter(x=>x.c===c).length));
+      const lab = c => byCol ? '<span style="display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:middle;border:var(--c-lw-s) solid var(--c-line);background:'+cols.find(x=>x[0]===c.k)[1]+'"></span> '+c.txt : shapeSvg(c.k,"#fff",18)+" "+c.txt;
+      const rowsV = hls => cats.map((c,i)=>'<div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;margin:3px 0;padding:2px 6px;border-radius:10px;'+(hls.includes(i)?'background:#fff3cf;box-shadow:0 0 0 2px var(--red) inset':'')+'"><span style="width:5.2em;flex:none;font-size:15px;white-space:nowrap">'+lab(c)+'</span>'+c.it.map(x=>shapeSvg(x.s[0],x.c[1],22)).join("")+'</div>').join("");
+      const pile = picRow('<span style="display:flex;flex-wrap:wrap;gap:4px">'+items.map(x=>shapeSvg(x.s[0],x.c[1],26)).join("")+'</span>');
+      if(v==="diff"){
+        const [p,q] = shuffle(cats.slice()).slice(0,2).sort((a,b)=>b.it.length-a.it.length);
+        const a = p.it.length, b = q.it.length;
+        if(a===b || b===0) continue;
+        const ip = cats.indexOf(p), iq = cats.indexOf(q), ask = "按"+attr+"分一分。"+p.l+"比"+q.l+"多几个？";
+        return wq({key:"scd"+items.map(x=>x.c[0]+x.s[0]).join(""), pic:"🧩", answer:a-b, traps:[a+b, a, b, a-b+1],
+          speak:ask, rec:"分类计数："+p.l+a+"个，"+q.l+b+"个，多几个", html:ask+pile,
+          steps:[
+            {t:"按"+attr+"分：一样的放在同一行。", v:rowsV([])},
+            {t:"数一数这两行："+p.l+"和"+q.l+"。", v:rowsV([ip,iq])},
+            {t:p.l+"有 <b>"+a+"</b> 个，"+q.l+"有 <b>"+b+"</b> 个：<b style='white-space:nowrap'>"+a+" − "+b+" = ?</b>", v:rowsV([ip,iq])}
+          ]});
+      }
+      const c = pick(cats), ans = c.it.length;
+      if(ans<1 || ans>n-2) continue;
+      const ask = "按"+attr+"分一分。"+c.l+"有几个？";
+      return wq({key:"scc"+items.map(x=>x.c[0]+x.s[0]).join("")+c.k, pic:"🧩", answer:ans, traps:[n, Math.max(...other), ans+1, ans-1],
+        speak:ask, rec:"分类计数："+n+"个图形里"+c.l+"有几个", html:ask+pile,
+        steps:[
+          {t:"按"+attr+"分：一样的放在同一行。"+(byCol?"只看颜色，不管形状。":"只看形状，不管颜色。"), v:rowsV([])},
+          {t:"找到"+c.l+"这一行（圈出来了）。", v:rowsV([cats.indexOf(c)])},
+          {t:"指一个、数一个，不漏也不重复，数到几就是几个。", v:rowsV([cats.indexOf(c)])}
+        ]});
+    }
   }
 };
 
@@ -1380,6 +1620,16 @@ const diffOf = (w,l) => Math.min(mastery(w,l),3);
 // 应用题混进 battle 关：第 3 个世界起，比例 12%；前两个世界之后先用简单题型，第 5 个世界起加入排队、植树等
 const WP_EASY = ["joinResult","compareDiff","compareBigger","joinChange","separateStart"];
 const WP_MORE = WP_EASY.concat(["queue","queuePos","between","compareTrap","gaps"]);
+/* 第二批题型按难度插入：[题型, 档位 h, 从第几个世界起（下标）, 到第几个世界前为止]
+   凑十火山（2）起：看图列式、比多少、分类计数、认整点；冰雪城堡（3）起：排队（我前面/后面）、1 元找零；
+   整十草原（4）起全部换成进阶档：数到 18、两行 14 个圆点、三色三形状和相差、半点和选钟面、从后往前数第几、10/20 元找零和 1 元几角。 */
+const WP_NEW = [
+  ["picCover",0,2,4],["compareRows",0,2,4],["sortCount",0,2,4],["clock",0,2,4],
+  ["lineUp",0,3,4],["money",0,3,4],
+  ["picCover",1,4],["compareRows",1,4],["sortCount",1,4],["clock",1,4],["lineUp",1,4],["money",1,4]
+];
+const wpPool = w => (w>=4 ? WP_MORE : WP_EASY).filter(k=>WP[k]).map(k=>()=>WP[k]())
+  .concat(WP_NEW.filter(([k,h,a,b])=>WP[k] && w>=a && (b==null || w<b)).map(([k,h])=>()=>WP[k](h)));
 const WP_RATE = 0.12;
 const planFn = it => () => G[it.g](...(it.args||[]));
 /* 一关的全部信息。怪兽血量 = 10 + floor(全局关卡序号 / 10)，Boss 再 +5（星级档位另加，见 ui.js startLevel）。
@@ -1390,7 +1640,7 @@ function levelDef(w,l){
   const math = mix(...plan.mix.map(planFn));
   let g = math;
   if(mode==="blend") g = blendQ;
-  else if(mode==="battle" && w>=2){ const pool = (w>=4 ? WP_MORE : WP_EASY).filter(k=>WP[k]); g = () => Math.random()<WP_RATE ? WP[pick(pool)]() : math(); }
+  else if(mode==="battle" && w>=2){ const pool = wpPool(w); g = () => Math.random()<WP_RATE ? pick(pool)() : math(); }
   const i = gIndex(w,l);
   return {w, l, m:lv.emoji, n:lv.name, boss:!!lv.boss, mode, g, math, hp:10 + Math.floor(i/10) + (lv.boss?5:0)};
 }
