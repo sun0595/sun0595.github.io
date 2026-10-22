@@ -209,10 +209,10 @@ function nodePos(l){
    The bottom of the road (behind the world sign) is skipped, the 15 monsters stand on the rest, evenly spaced, the Boss at
    the road's end. Every band is only as tall as its road needs for MAP_GAP px between monsters (between ART_H_MIN and
    ART_H_MAX), so all worlds are equally dense. No road listed → the usual rows of three. */
-const ART_H_MIN = 860, ART_H_MAX = 1900, ART_SIGN = 150, MAP_GAP = 10;
+const ART_H_MIN = 860, ART_H_MAX = 1600, ART_SIGN = 150, MAP_GAP = 10;
 /* 世界之间的接缝（家长 10-22：地图要连贯）：
    - 上下两段原画重叠 MAP_SEAM px，下面那段的顶部在这段里渐变成透明，露出上面那段的底部（叠化）；
-     上面那段的世界牌和第 1 关都往上挪 MAP_SEAM，不压在接缝里。
+     世界牌放在所有地图段上面的一层（.wsign.ov），不会被接缝盖住。
    - 原画比地图宽（cover 按高度铺满），每段左右平移（MAPL.ox），让这段小路的入口 x 对准下面那段小路的出口（Boss 处）的 x；
      平移不能让小路上的关卡出画（留 MAP_EDGE px），对不齐时尽量靠近。
    - 有过渡图 trans_<下面世界>_<上面世界>（铺满宽度，小路从下穿到上）就插在两段之间，两头也各叠化 MAP_SEAM px。 */
@@ -315,10 +315,9 @@ function layoutMap(W){
   if(LAYOUT_CACHE[key]) return LAYOUT_CACHE[key];
   const roadOK = w => artBand[w] && ART_ROADS[WORLDS_V2[w].id] && ART_SIZE["map_"+WORLDS_V2[w].id];
   for(let w=0; w<n; w++) artBand[w] = !!art("map_"+WORLDS_V2[w].id);
-  // a painted band with a painted band (or a transition picture) below it keeps its sign and first level out of the seam
   const seamBelow = w => w>0 && artBand[w] && (artBand[w-1] || trans[w-1]);
   for(let w=0; w<n-1; w++) if(artBand[w] && artBand[w+1] && art(transName(w))){ const sz = ART_SIZE[transName(w)]; trans[w] = {name:transName(w), h: sz ? Math.round(W*sz[1]/sz[0]) : TRANS_H}; }
-  for(let w=0; w<n; w++){ sign[w] = ART_SIGN + (seamBelow(w) ? MAP_SEAM : 0); hs[w] = !artBand[w] ? SEG_H : roadOK(w) ? roadBandH(WORLDS_V2[w].id, W, sign[w]) : ART_H_MAX; }
+  for(let w=0; w<n; w++){ sign[w] = ART_SIGN; hs[w] = !artBand[w] ? SEG_H : roadOK(w) ? roadBandH(WORLDS_V2[w].id, W, sign[w]) : ART_H_MAX; }
   for(let w=0; w<n; w++){
     if(!roadOK(w)) continue;
     const id = WORLDS_V2[w].id, below = w>0 && roadOK(w-1) ? WORLDS_V2[w-1].id : null;
@@ -395,7 +394,7 @@ function renderMap(focus, width){
   // the map's inner width (map padding 2×12, frame 2×4) decides where levels land on painted roads
   MAPL = layoutMap(width || ($("lscroll") && $("lscroll").clientWidth) || Math.max(200, ($("map").clientWidth || 375) - 32));
   const total = MAPL.total;   // includes room under the bottom island for its cliff
-  let segs = "", nodes = "", pts = [];
+  let segs = "", signs = "", nodes = "", pts = [];
   for(let wi=WORLDS_V2.length-1; wi>=0; wi--){
     const w = WORLDS_V2[wi], top = MAPL.tops[wi], bh = MAPL.hs[wi], bg = art("map_"+w.id);
     // scenery along both edges of the island, between the rows of levels
@@ -403,10 +402,11 @@ function renderMap(focus, width){
     const deco = bg ? "" : [0,1,2,3,4].map(r=>[0,1].map(side=>{ const [e,,,sz] = dl[(r*2+side+wi)%dl.length], y = SEG_H - MAP_PAD_B - r*MAP_ROW + 36 + side*18;
       return '<span class="deco" style="'+(side?'right':'left')+':'+(6+(r%2)*3)+'%;top:'+y+'px;font-size:'+Math.round(Math.min(sz,64)*.8)+'px">'+img(e)+'</span>'; }).join("")).join("");
     const bossDone = starOf(wi, NLV-1)>0;
-    // the band's top fades into whatever is above it (the next world or a transition picture); the sign sits above the seam
-    segs += '<div class="band'+(bg?" art":"")+(MAPL.seam(wi)?" fade":"")+'" data-w="'+wi+'" style="top:'+top+'px;height:'+bh+'px;--seam:'+MAP_SEAM+'px">'+(bg?'':'<div class="cliff" data-w="'+wi+'"></div>')+deco
-      + '<div class="wsign'+(worldOpen(wi)?"":" locked")+'"'+(bg && MAPL.sign[wi]>ART_SIGN ? ' style="bottom:'+(22+MAPL.sign[wi]-ART_SIGN)+'px"' : '')+'><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><span class="wsub2"><small>'+w.sub+'</small>'
-      + (bossDone ? '<button class="btn white wrun" data-w="'+wi+'">'+img("🏅")+'连闯</button>' : '')+'</span></div></div>';
+    // the band's top fades into whatever is above it (the next world or a transition picture)
+    segs += '<div class="band'+(bg?" art":"")+(MAPL.seam(wi)?" fade":"")+'" data-w="'+wi+'" style="top:'+top+'px;height:'+bh+'px;--seam:'+MAP_SEAM+'px">'+(bg?'':'<div class="cliff" data-w="'+wi+'"></div>')+deco+'</div>';
+    // the sign at the band's bottom goes on a layer above all bands, so a seam fading over it never hides it
+    signs += '<div class="wsign ov'+(worldOpen(wi)?"":" locked")+'" data-w="'+wi+'" style="top:'+(top+bh)+'px"><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><span class="wsub2"><small>'+w.sub+'</small>'
+      + (bossDone ? '<button class="btn white wrun" data-w="'+wi+'">'+img("🏅")+'连闯</button>' : '')+'</span></div>';
     const tr = wi>0 && MAPL.trans[wi-1];
     if(tr) segs += '<div class="band trans fade" data-t="'+(wi-1)+'" style="top:'+tr.top+'px;height:'+tr.h+'px;--seam:'+MAP_SEAM+'px;background-image:url(&quot;'+art(tr.name)+'&quot;)"></div>';
   }
@@ -432,7 +432,7 @@ function renderMap(focus, width){
   // the drawn road skips painted islands: their picture has its own road, and their Boss stands at its end
   const runs = [[]]; pts.forEach((p,i)=>{ if(i && pts[i-1][2]) runs.push([]); runs[runs.length-1].push(p); });
   const road = runs.filter(r=>r.length>1).map(roadD).join(" ");
-  html += '<div class="wview"><div class="lscroll" id="lscroll"><div class="lmap" style="height:'+total+'px">'+segs
+  html += '<div class="wview"><div class="lscroll" id="lscroll"><div class="lmap" style="height:'+total+'px">'+segs+signs
     + '<svg class="wpath" viewBox="0 0 100 '+total+'" preserveAspectRatio="none" style="height:'+total+'px"><g fill="none" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"><path d="'+road+'" stroke="rgba(120,80,30,.35)" stroke-width="30" vector-effect="non-scaling-stroke"/><path d="'+road+'" stroke="#f6e4bd" stroke-width="22" vector-effect="non-scaling-stroke"/><path d="'+road+'" stroke="#fff" stroke-opacity=".9" stroke-width="5" stroke-dasharray="0.1 14" vector-effect="non-scaling-stroke"/></g></svg>'
     + nodes+'</div></div>'
     + (IS_BETA?'<span class="pill beta" id="betaTag">试玩版</span>':'')+'</div>';

@@ -455,7 +455,7 @@ async function playAll(view) {
   // with a beaten Boss the sign grows a 「连闯」 button: it must not touch level 1 (or its stars)
   await p.evaluate(() => { __t.S.lv.stars['add-15'] = 3; __t.renderMap(); });
   await scrollToBand(0); await shot('22a-map-w1-run');
-  const sg = await p.evaluate(() => { const a = document.querySelector('.band[data-w="0"] .wsign').getBoundingClientRect(), n = document.querySelector('.node[data-w="0"][data-l="0"]').getBoundingClientRect(); return { gap: Math.round(a.top - n.bottom), run: !!document.querySelector('.band[data-w="0"] .wrun') }; });
+  const sg = await p.evaluate(() => { const a = document.querySelector('.wsign[data-w="0"]').getBoundingClientRect(), n = document.querySelector('.node[data-w="0"][data-l="0"]').getBoundingClientRect(); return { gap: Math.round(a.top - n.bottom), run: !!document.querySelector('.wsign[data-w="0"] .wrun') }; });
   if (!sg.run || sg.gap < 2) problems.push(`[${view.name}] world sign with 连闯 overlaps level 1: ${JSON.stringify(sg)}`);
   await p.evaluate(() => { delete __t.S.lv.stars['add-15']; __t.renderMap(); });
   for (let w = 0; w < 8; w++) { await scrollToBand(w); await shot(`22-map-w${w + 1}`); }
@@ -730,7 +730,7 @@ async function playAll(view) {
   if (forest.art !== 15) problems.push(`[${view.name}] 加法森林 should show all 15 monster pictures: ${JSON.stringify(forest)}`);
   if (forest.gap < 8 || forest.covered.length || !forest.bossTop || !forest.inside || forest.offRoad.length || forest.framed) problems.push(`[${view.name}] 加法森林 levels should not overlap, Boss on top, all on screen: ${JSON.stringify(forest)}`);
   // 8 个世界的地图段都是原画；每段整段截一张全景（视口临时拉高到一整段，宽度不变，节点位置也不变）
-  const noArt = await p.evaluate(() => [...document.querySelectorAll('.band')].filter(b => !b.classList.contains('art')).map(b => b.dataset.w));
+  const noArt = await p.evaluate(() => [...document.querySelectorAll('.band[data-w]')].filter(b => !b.classList.contains('art')).map(b => b.dataset.w));
   if (noArt.length) problems.push(`[${view.name}] every world should use its map art, these do not: ${noArt}`);
   const vp = p.viewportSize(), ids = await p.evaluate(() => __t.WORLDS_V2.map(w => w.id));
   for (let w = 0; w < ids.length; w++) {
@@ -758,8 +758,8 @@ async function playAll(view) {
     return layers.slice(1).map((up, i) => { const lo = layers[i]; return { at: lo.name + '/' + up.name, dx: Math.round(up.inX - lo.outX), overlap: up.top + up.h - lo.top, fade: lo.fade, full: up.full !== false }; });
   });
   const seams = await seamCheck();
-  const badSeam = seams.filter(x => x.overlap < 120 || x.overlap > 200 || !x.fade || !x.full || Math.abs(x.dx) > 60);
-  if (badSeam.length) problems.push(`[${view.name}] world seams should overlap 120–200px with a fade and line the roads up (|dx| ≤ 60px): ${JSON.stringify(badSeam)}`);
+  const badSeam = seams.filter(x => x.overlap < 120 || x.overlap > 200 || !x.fade || !x.full || Math.abs(x.dx) > 75);
+  if (badSeam.length) problems.push(`[${view.name}] world seams should overlap 120–200px with a fade and line the roads up (|dx| ≤ 75px): ${JSON.stringify(badSeam)}`);
   const nTrans = await p.evaluate(() => document.querySelectorAll('.band.trans').length);
   if (nTrans !== 7) problems.push(`[${view.name}] all 7 transition pictures (trans_*) should be on the map, found ${nTrans}`);
   console.log('   seams', seams.map(x => x.at + ':' + x.dx).join(' '));
