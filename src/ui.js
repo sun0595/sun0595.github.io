@@ -736,7 +736,7 @@ function statsHTML(){
    （💎×1，品质升一档）；「合成」= 3 件同品质未穿的 → 1 件高一档；旧宝箱一次「一键全开」。 */
 function openBag(slot){
   slot = slot || SLOT_KEYS.find(k=>S.equipped[k] || S.bag.some(g=>g && g.slot===k)) || "weapon";   // open on a slot that has something
-  let sel = null, pg = 0, note = "", gone = null;   // gone: exp from the piece just salvaged → a card with no buttons in its place
+  let sel = null, pg = 0, note = "", gone = null, goneH = 0;   // gone: exp from the piece just salvaged → a card with no buttons in its place
   const PER = 8;
   const render = first => {
     const list = S.bag.filter(g=>g && g.slot===slot), worn = S.equipped[slot];
@@ -749,7 +749,8 @@ function openBag(slot){
       + '<button class="btn white bagsm" id="synthBtn">'+img("✨")+'合成'+(synthOK?'<span class="badge pulse">!</span>':'')+'</button>'
       + (S.chests>0 ? '<button class="btn bagsm" id="chestAll">'+img("🎁")+'一键全开<b class="num" id="chestN">×'+S.chests+'</b></button>' : '')+'</div></div></div>'
       + '<div class="tabs">'+SLOT_KEYS.map(k=>'<button class="tab'+(k===slot?" on":"")+'" data-s="'+k+'">'+img(GEAR_SLOTS[k].e)+GEAR_SLOTS[k].name+'</button>').join("")+'</div>';
-    if(gone!==null) body += '<div class="gnone ggone" id="gGone">'+img("♻️")+'<span>已分解成 <b class="num">'+gone+'</b> 点经验</span></div>';
+    // 分解后的卡片和原来的装备卡一样高：下面的格子不往上跳，连点第二下不会点到别的装备
+    if(gone!==null) body += '<div class="gnone ggone" id="gGone"'+(goneH ? ' style="min-height:'+goneH+'px;box-sizing:border-box"' : '')+'>'+img("♻️")+'<span>已分解成 <b class="num">'+gone+'</b> 点经验</span></div>';
     else if(cur){
       const nq = nextQuality(cur.quality), maxed = (cur.lv||1) >= GEAR_LV_MAX;
       let btns = isWorn(cur) ? '<button class="btn white gwear" id="gOff">卸下</button>'
@@ -769,7 +770,8 @@ function openBag(slot){
     const on = (id,f) => { if($(id)) $(id).onclick = f; };
     on("gOn", tapOnce(()=>{ wearWithPop(cur.id); applySpareExp(); save(); sel = cur.id; sfx.right(); render(false); }));
     on("gOff", tapOnce(()=>{ unequipGear(slot); sel = cur.id; sfx.click(); render(false); }));
-    on("gSalvage", tapOnce(()=>{ const r = salvageGear(cur.id); if(!r.ok) return; sfx.click(); sel = null; gone = r.exp; say("分解成"+r.exp+"点装备经验"); render(false); }));
+    on("gSalvage", tapOnce(()=>{ const card = $("pbody").querySelector(".gcard"); goneH = card ? card.offsetHeight : 0;
+      const r = salvageGear(cur.id); if(!r.ok) return; sfx.click(); sel = null; gone = r.exp; say("分解成"+r.exp+"点装备经验"); render(false); }));
     on("gAscend", tapOnce(()=>{ const r = ascendGear(cur.id); if(!r.ok) return; sfx.chest(); confetti(120); sel = cur.id; note = '进阶成功！变成 <b style="color:'+qCol(r.gear)+'">'+GEAR_QUALITY_MAP[r.gear.quality].name+'色</b> 啦'; say("进阶成功！"); render(false); }));
     on("gPrev", ()=>{ pg--; render(false); });
     on("gNext", ()=>{ pg++; render(false); });
@@ -875,7 +877,7 @@ function openParent(tab){
       // 插入题开关：拼音题照旧「关 / 偶尔 / 经常」，其余每类一个开关（默认全开）；关掉后这类题不再混进关卡（关卡专用玩法不受影响）
       body += '<div class="tgls"><div class="toggle"><span class="tl">插入拼音题</span><span class="seg3">'+[[0,"关"],[0.25,"偶尔"],[0.5,"经常"]].map(([v,t])=>'<button data-py="'+v+'" class="'+(S.py===v?"on":"")+'">'+t+'</button>').join("")+'</span></div></div>'
         + '<div class="tgls two">'+Q_SWITCHES.map(([k,label])=>tg("q_"+k, label, qOn(k))).join("")+'</div>'
-        + '<p class="muted"><small>关掉的题型不再混进关卡；算术消除、连连看、拼读这些关卡玩法不受影响。小知识、科普题、颜色题下一版加入。</small></p>';
+        + '<p class="muted"><small>关掉的题型不再混进关卡；算术消除、连连看、拼读这些关卡玩法不受影响。科普题 = 实物辨认（哪一个是鸭蛋？）。</small></p>';
     } else if(tab==="bug") body += reportsHTML(bugPg);
     else if(tab==="color") body += colorLogHTML(colPg);
     else if(tab==="set"){
@@ -1285,7 +1287,9 @@ function answer(btn){
     sfx.wrong();
     breakCombo();
     const first = !B.wrongThisQ;
-    if(first){
+    // 颜色题答错只记「颜色题记录」，不进错题本、不算进正确率
+    if(first && q.kind==="color") B.wrongThisQ = true;
+    else if(first){
       B.wrongThisQ = true; st.w++;
       const d = q.disp || (x=>x);
       // 选项和关卡也记下来，家长点「这题有问题」时一起交上去
@@ -1296,7 +1300,9 @@ function answer(btn){
     // 答错立刻挨一下（不等蓄力）；第一次答错，挨完打再弹出小老师的提示
     // 答错也重新计时、蓄力清零：答错这一下之后至少还有一整轮蓄力，一题内不会「蓄力 + 答错 + 超时」连挨 3 下
     B.qt = 0; B.charge = 0; B.lastTick = 0;
-    if(B.lucky>0){
+    // 颜色题只是穿插题：答错记进「颜色题记录」，不扣心、不卡关，再选一次
+    if(q.kind==="color"){ if(first) colorMiss(q, v); toast("🎨","再仔细看看颜色！"); B.busy = false; }
+    else if(B.lucky>0){
       B.lucky--; sfx.shield();
       toast("🍀","幸运光环！不扣心");
     } else monsterAttack("wrong");
