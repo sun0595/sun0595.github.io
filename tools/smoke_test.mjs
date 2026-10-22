@@ -129,6 +129,9 @@ async function playAll(view) {
   // (a tutor popup that is open covers the answers: close it first, like tapping its dark backdrop)
   const winLevel = async () => { for (let i = 0; i < 30; i++) { if (await p.isVisible('#modal')) return; const a = await p.evaluate(() => { const B = __t.B; if (!B || !B.q || B.busy) return null; if (B.hintOpen) __t.closeHint(); B.hp = Math.min(B.hp, 1); return String(B.q.answer); }); if (a) await tap(`.ans[data-v="${a}"]`).catch(() => {}); await p.waitForTimeout(450); } };
   await shot('01-map');
+  // 没解锁的勇士不露名字：地图顶栏只说「再拿 N⭐ 解锁新勇士」+ 剪影（Fable 审查 #40）
+  const nhm = await p.evaluate(() => { const t = document.querySelector('.nexthero .nh'); return { txt: t.textContent, sil: !!t.querySelector('.sil .ei'), names: __t.HEROES.filter(h => t.textContent.includes(h.n)).map(h => h.n) }; });
+  if (!/解锁新勇士/.test(nhm.txt) || !nhm.sil || nhm.names.length) problems.push(`[${view.name}] the map bar should not name the next locked hero: ${JSON.stringify(nhm)}`);
   // 旧进度迁移：旧 add 第 l 关 → 新 add 第 l+1 关（星星、档位照搬）；旧 think 不映射但星星算进总数
   const mig = await p.evaluate(() => ({ lv: __t.S.lv, cur: __t.curLevel(), total: __t.S && document.querySelector('.topbar .pill .num').textContent, old: __t.S.stars['add-3'] }));
   if (mig.lv.stars['add-4'] !== 3 || mig.lv.stars['add-3'] !== 2 || mig.lv.tier['add-2'] !== 2 || mig.lv.stars['ten-5'] !== 3 || mig.lv.stars['add-6']) problems.push(`[${view.name}] old progress not mapped to the new levels: ${JSON.stringify(mig.lv)}`);
@@ -160,6 +163,14 @@ async function playAll(view) {
   const sw = await p.evaluate(() => { const B = __t.B, k0 = B.q.key || B.q.parts.join(' '); B.qt = 0.5; __t.useItem('swap'); return { k0, k1: B.q.key || B.q.parts.join(' '), qt: B.qt, kind: B.q.kind, max: Number(B.q.answer), ans: document.querySelectorAll('.ans').length, gone: document.querySelectorAll('.ans.gone').length }; });
   await p.waitForTimeout(300); await shot('04b-item-swap');
   if (sw.k0 === sw.k1 || sw.qt > 0.05 || sw.kind !== 'num' || sw.max > 10 || !sw.ans || sw.gone) problems.push(`[${view.name}] 换题 should give a new, easier question of the same kind and restart the timer: ${JSON.stringify(sw)}`);
+  // 去错不能「白扣」：先答错一个（变灰 .wrong），再用去错，去掉的必须是另一个还没点过的错项（Fable 审查 #38）
+  const cw = await p.evaluate(() => { const B = __t.B; B.lucky = 1; B.shield = 0; __t.S.items.cut = 2; __t.renderItems(); const a = String(B.q.answer); return [...document.querySelectorAll('.ans')].map(b => b.dataset.v).find(v => v !== a); });
+  await tap(`.ans[data-v="${cw}"]`); await p.waitForTimeout(400);
+  const cut2 = await p.evaluate(v => { const B = __t.B; if (B.hintOpen) __t.closeHint(); B.busy = false; const n0 = __t.S.items.cut; __t.useItem('cut'); const a = String(B.q.answer), g = [...document.querySelectorAll('.ans.gone')];
+    return { tapped: v, gone: g.map(b => b.dataset.v), n0, n1: __t.S.items.cut, ok: g.length === 1 && g[0].dataset.v !== v && g[0].dataset.v !== a }; }, cw);
+  if (!cut2.ok || cut2.n1 !== cut2.n0 - 1) problems.push(`[${view.name}] after a wrong tap, 去错 should remove another wrong answer the child has not tapped: ${JSON.stringify(cut2)}`);
+  await shot('04c-item-cut-after-wrong');
+  await p.evaluate(() => { __t.S.items.swap = 1; __t.useItem('swap'); __t.B.lucky = 0; }); await p.waitForTimeout(300);
   // 换题降一档：两位数 → 一位数，进位 → 不进位，整百 → 整十
   const easy = await p.evaluate(() => { const r = {}; for (const [w, l] of [[6, 0], [5, 0], [6, 7]]) { const L = __t.levelDef(w, l), q0 = L.math(), out = []; for (let i = 0; i < 30; i++) out.push(L.easy(q0)); r[w + '-' + l] = Math.max(...out.map(q => Math.max(...q.parts.filter(x => /^\d+$/.test(x)).map(Number)))); } return r; });
   if (!(easy['5-0'] < 200)) problems.push(`[${view.name}] 换题 on 整百 should give 整十 questions: ${JSON.stringify(easy)}`);
@@ -189,6 +200,9 @@ async function playAll(view) {
   const chests0 = await p.evaluate(() => __t.S.chests);
   await p.evaluate(() => __t.setDrops(() => ({ exp: 15, gear: null, item: null, stone: 0, gearExp: 10 })));
   await winLevel(); await p.waitForTimeout(2300); await shot('06-win');
+  const nhw = await p.evaluate(() => { const t = document.getElementById('nextHero'); return t ? { txt: t.textContent, sil: !!t.querySelector('.sil .ei'), names: __t.HEROES.filter(h => t.textContent.includes(h.n)).map(h => h.n) } : null; });
+  if (nhw && (!/解锁新勇士/.test(nhw.txt) || !nhw.sil || nhw.names.length)) problems.push(`[${view.name}] the win page should not name the next locked hero: ${JSON.stringify(nhw)}`);
+  if (!nhw) problems.push(`[${view.name}] the win page should say how many stars to the next hero`);
   const w0 = await p.evaluate(() => ({ chest: !!document.querySelector('#chest, .chest'), drops: !!document.getElementById('rDrops'), exp: __t.S.exp, chests: __t.S.chests, bar: document.getElementById('xFill').style.width, btns: !!document.getElementById('rNext') }));
   if (w0.chest || w0.drops || w0.exp !== 15 || w0.chests !== chests0 || w0.bar !== '30%' || !w0.btns) problems.push(`[${view.name}] a win without drops: no chest step, no drop area, +15 exp, no new chests: ${JSON.stringify(w0)}`);
   // a win with a drop (gear + item + 进阶石); 「不要」 turns the gear into gear experience

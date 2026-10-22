@@ -125,6 +125,11 @@ svg.ei.cs{overflow:visible}
 .nexthero .ei{font-size:24px}
 .nexthero .nh{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:2px;white-space:nowrap;overflow:hidden;opacity:.95}
 .nexthero .num{color:var(--gold)}
+.nexthero .sil{line-height:0}
+.nexthero .sil .ei{filter:brightness(0) invert(1) opacity(.7)}
+.nexthero .sil .ei.art{height:1em}
+.nexth .sil{line-height:0}
+.nexth .sil .ei.art{height:1em}
 /* the long map: only .lscroll scrolls (native, momentum on iOS); the bars above stay put */
 .wview{position:relative;flex:1;min-height:0}
 .lscroll{position:absolute;inset:0;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y;
@@ -597,6 +602,8 @@ svg.ei.cs{overflow:visible}
    The sword's grip (84% down the blade picture) sits in the right fist, the shield's centre on the left fist. */
 .av.lay{--fr:.22;--fl:.80;--fy:.71}
 .av.lay.a-orange{--fy:.62;--fl:.77}
+/* 其他人形勇士（h1 忍者、h3 宇航员、h7 国王）：宇航服更宽，手更低、更靠外 */
+.av.lay.a-h3{--fr:.20;--fl:.82;--fy:.74}
 .av.lay>.ei.art{height:1.3em;width:auto}
 .av.lay .hand{position:absolute;height:auto;pointer-events:none;filter:drop-shadow(0 0 2px var(--qc)) drop-shadow(0 0 5px var(--qc))}
 .av.lay .hand.rh{width:36%;left:calc(var(--fr)*100% - 18%);top:calc(var(--fy)*100% - 52%);transform:rotate(-18deg);transform-origin:50% 84%}
@@ -733,6 +740,9 @@ svg.ei.cs{overflow:visible}
 .herostage b{display:block;font-weight:400;font-size:24px}
 .herostage p{text-align:left!important}
 .herostage .lockline{color:var(--red-d)!important}
+/* 没解锁的勇士只给剪影（地图顶栏、结算页、勇士选择页） */
+.sil .ei{filter:brightness(0) opacity(.55)}
+.sil .ei.art{width:auto;height:1.15em}
 .herostage .sil{flex:none;line-height:0}
 .herostage .sil .ei{font-size:clamp(76px,22vw,96px);vertical-align:0;filter:brightness(0) opacity(.55)}
 .herostage .sil .ei.art{width:auto;height:1.15em}

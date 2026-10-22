@@ -389,7 +389,7 @@ function renderMap(focus, width){
     + '<button class="ibtn" id="soundBtn" aria-label="声音">'+img(S.sound||S.voice?"🔊":"🔇")+'</button>'
     + '<button class="ibtn" id="parentBtn" aria-label="家长设置">'+img("⚙️")+'</button></div>';
   // 今天进度 | 下一个勇士 | 📍当前关 (kept off the map so it never covers a level)
-  html += '<div class="nexthero">'+dayTag+'<span class="nh">'+(next ? img(next.e)+'再拿 <span class="num">'+(next.need-ts)+'</span>'+img("⭐")+'解锁「'+next.n+'」' : img("🏆")+'勇士全解锁！')+'</span>'
+  html += '<div class="nexthero">'+dayTag+'<span class="nh">'+(next ? '<span class="sil">'+heroPic(HEROES.indexOf(next))+'</span>再拿 <span class="num">'+(next.need-ts)+'</span>'+img("⭐")+'解锁新勇士' : img("🏆")+'勇士全解锁！')+'</span>'
     + '<button class="btn white wcur" id="goCur">'+img("📍")+'当前关</button></div>';
   // the map's inner width (map padding 2×12, frame 2×4) decides where levels land on painted roads
   MAPL = layoutMap(width || ($("lscroll") && $("lscroll").clientWidth) || Math.max(200, ($("map").clientWidth || 375) - 32));
@@ -929,7 +929,7 @@ function itemUsable(k){
   if(!B || B.over) return false;
   if(k==="heal") return B.hearts<B.maxH;
   if(B.busy || !B.q) return false;
-  if(k==="cut") return B.mode==="match" || B.mode==="link" ? !!(B.board && hintPair()) : !!$("answers").querySelector(".ans:not(.gone):not([data-v='"+String(B.q.answer).replace(/'/g,"\\'")+"'])") && $("answers").querySelectorAll(".ans:not(.gone)").length>2;
+  if(k==="cut") return B.mode==="match" || B.mode==="link" ? !!(B.board && hintPair()) : !!$("answers").querySelector(".ans:not(.gone):not(.wrong):not([data-v='"+String(B.q.answer).replace(/'/g,"\\'")+"'])") && $("answers").querySelectorAll(".ans:not(.gone):not(.wrong)").length>2;
   if(k==="swap") return !BOARD_TIME[B.mode] && !!B.L.easy;
   return false;
 }
@@ -961,7 +961,8 @@ function cutWrong(){
     toast("💡","这两个是一对！"); say("这两个是一对！");
     return;
   }
-  const a = String(B.q.answer), wrong = [...$("answers").querySelectorAll(".ans:not(.gone)")].filter(b=>b.dataset.v!==a);
+  // 已经点错变灰的（.wrong）不算：要去掉一个孩子还没点过的错项
+  const a = String(B.q.answer), wrong = [...$("answers").querySelectorAll(".ans:not(.gone):not(.wrong)")].filter(b=>b.dataset.v!==a);
   const b = pick(wrong); if(!b) return;
   b.classList.add("gone"); b.disabled = true;
   toast("💡","去掉一个错的！"); say("去掉一个错的！");
@@ -1462,7 +1463,7 @@ function showWin(info){
   body += '</div>';
   // 星星有用：离下一个勇士还差几颗星
   const nh = HEROES.find(x=>x.need!=null && x.need>totalStars());
-  if(nh && !info.newHero) body += '<p class="nexth" id="nextHero">再拿 <b class="num">'+(nh.need-totalStars())+'</b> 颗'+img("⭐")+'解锁 '+img(nh.e)+'「'+nh.n+'」</p>';
+  if(nh && !info.newHero) body += '<p class="nexth" id="nextHero">再拿 <b class="num">'+(nh.need-totalStars())+'</b> 颗'+img("⭐")+'解锁新勇士 <span class="sil">'+heroPic(HEROES.indexOf(nh))+'</span></p>';
   const notes = [];
   if(info.tierUp){
     const t = info.tierUp;
