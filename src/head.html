@@ -138,6 +138,8 @@ svg.ei.cs{overflow:visible}
 .lmap{position:relative;width:100%;overflow:hidden}
 .band{position:absolute;left:0;right:0;background-size:100% 100%;background-repeat:no-repeat}
 .band.art{background-size:cover;background-position:center;background-repeat:no-repeat}
+/* 世界接缝：这段顶部 --seam 高的一截渐变成透明，和上面那段（或过渡图 .trans）叠化 */
+.band.fade{-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 var(--seam));mask-image:linear-gradient(to bottom,transparent 0,#000 var(--seam))}
 .band .deco{position:absolute;opacity:.95;filter:drop-shadow(0 6px 6px rgba(0,0,0,.25));z-index:1;pointer-events:none}
 .cliff{position:absolute;left:0;right:0;bottom:-50px;height:120px;z-index:1;background-size:100% 100%;pointer-events:none;filter:drop-shadow(0 8px 6px rgba(0,0,0,.25))}
 .wsign{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:3;display:flex;flex-direction:column;align-items:center;gap:4px;white-space:nowrap}
@@ -146,6 +148,7 @@ svg.ei.cs{overflow:visible}
 .wsub2{display:flex;align-items:center;gap:8px}
 .wsign small{font-size:13px;color:#fff;background:var(--c-dark);padding:2px 10px;border-radius:10px}
 .wsign.locked{filter:grayscale(.7);opacity:.85}
+.wsign.ov{bottom:auto;transform:translate(-50%,calc(-100% - 22px))}
 .wrun{min-height:36px;padding:2px 12px 2px 6px;font-size:15px;gap:2px;border-radius:14px}
 .wrun .ei{font-size:24px}
 .wcur{flex:none;min-height:34px;padding:2px 10px 2px 4px;gap:2px;font-size:15px;border-radius:14px}
@@ -211,7 +214,6 @@ svg.ei.cs{overflow:visible}
 .charge{width:100%;max-width:150px;height:10px;border-radius:999px;border:var(--c-lw-s) solid var(--c-line);background:rgba(58,42,30,.6);overflow:hidden}
 .charge i{display:block;height:100%;width:0;background:linear-gradient(var(--cy1) var(--c-split),var(--cy2) 0)}
 .charge.hot i{background:linear-gradient(var(--cr1) 50%,var(--cr2) 0)}
-.charge.ice i{background:linear-gradient(#e0f7ff,#7dd3fc)}
 .grow{position:relative;transform-origin:bottom center;transition:transform .15s linear}
 .mon.angry .grow::after{content:"";position:absolute;top:-4px;right:-2px;width:34px;height:34px;background:var(--warn-img) center/contain no-repeat;animation:pulse .45s infinite}
 .mon.angry .sprite:not(.hit):not(.lunge):not(.dead){animation:rage .2s infinite}
@@ -300,13 +302,11 @@ svg.ei.cs{overflow:visible}
 .slash.crit path:nth-child(n+3){animation-delay:.04s}
 @keyframes slashDraw{0%{stroke-dashoffset:130;opacity:1}20%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}
 .punchfx{position:absolute;z-index:6;width:0;height:0;pointer-events:none}
-.punchfx .ei{position:absolute;left:0;top:0;font-size:64px;margin:-32px 0 0 -32px;vertical-align:0;animation:punchIn .42s ease-out forwards}
-.punchfx.crit .ei{font-size:86px;margin:-43px 0 0 -43px}
 .punchfx .ring{position:absolute;left:-44px;top:-44px;width:88px;height:88px;border-radius:50%;border:7px solid #fff;box-shadow:0 0 14px #ffe14d;animation:ring .42s ease-out forwards}
-@keyframes punchIn{0%{transform:scale(1.35);opacity:1}100%{transform:scale(.85) translateX(10px);opacity:0}}
+.punchfx .ring.r2{left:-28px;top:-28px;width:56px;height:56px;border-color:#ffe14d;animation-delay:.05s}
 @keyframes ring{0%{transform:scale(.35);opacity:1}100%{transform:scale(1.8);opacity:0}}
 /* 命中定格：竞技场里的动作停住一下（伤害数字照常弹出） */
-.arena.hitstop .sprite,.arena.hitstop .slash path,.arena.hitstop .punchfx .ei,.arena.hitstop .punchfx .ring,.arena.hitstop .fx .ei{animation-play-state:paused!important}
+.arena.hitstop .sprite,.arena.hitstop .slash path,.arena.hitstop .punchfx .ring,.arena.hitstop .fx .ei{animation-play-state:paused!important}
 .toast{position:absolute;left:0;right:0;top:42%;z-index:8;display:flex;justify-content:center;pointer-events:none}
 .toast>div{display:flex;align-items:center;gap:8px;padding:8px 18px;border-radius:18px;border:var(--c-lw) solid var(--c-line);background:var(--cw1);color:var(--ink);font:400 24px var(--f-ui);box-shadow:var(--c-sh);animation:toast 1.3s forwards}
 .toast .ei{font-size:40px}
@@ -336,22 +336,14 @@ svg.ei.cs{overflow:visible}
 #battle.quakeS{animation:quakeS .22s}
 @keyframes quakeS{0%,100%{transform:none}30%{transform:translate(-4px,2px)}65%{transform:translate(3px,-2px)}}
 @keyframes quake{0%,100%{transform:translate(0,0)}15%{transform:translate(-9px,5px)}30%{transform:translate(8px,-6px)}45%{transform:translate(-6px,-3px)}60%{transform:translate(5px,4px)}80%{transform:translate(-2px,2px)}}
-/* freeze: monster sealed in an ice block, frosted screen edges, falling snow */
-.iceblock{position:absolute;left:50%;bottom:-4%;width:118%;height:112%;transform:translateX(-50%);z-index:3;pointer-events:none;border-radius:18px;border:3px solid #e8fbff;
-  background:linear-gradient(135deg,rgba(255,255,255,.75) 0 8%,rgba(180,235,255,.35) 8% 30%,rgba(255,255,255,.5) 30% 33%,rgba(150,220,255,.35) 33% 100%);
-  box-shadow:inset 0 0 18px rgba(255,255,255,.9),0 0 22px rgba(125,211,252,.95);animation:iceIn .35s cubic-bezier(.2,1.6,.4,1)}
-@keyframes iceIn{from{transform:translateX(-50%) scale(.2);opacity:0}}
-.mon.frozen .sprite:not(.hit){animation:none!important}
-.mon.frozen .sprite .ei{filter:hue-rotate(170deg) saturate(.45) brightness(1.3)!important}
-.frost{position:absolute;inset:0;z-index:7;pointer-events:none;opacity:0;transition:opacity .4s;
-  background:radial-gradient(circle at 0 0,rgba(235,250,255,.95),transparent 28%),radial-gradient(circle at 100% 0,rgba(235,250,255,.95),transparent 28%),radial-gradient(circle at 0 100%,rgba(235,250,255,.9),transparent 26%),radial-gradient(circle at 100% 100%,rgba(235,250,255,.9),transparent 26%);
-  box-shadow:inset 0 0 50px 18px rgba(186,236,255,.95)}
-.frost.on{opacity:1}
-.snow{position:absolute;top:-30px;z-index:6;pointer-events:none;animation:snow linear forwards}
-.snow .ei{font-size:22px}
-@keyframes snow{to{transform:translate(var(--sx),calc(var(--sh) + 40px)) rotate(240deg)}}
-.icechip{position:absolute;top:-34px;left:50%;transform:translateX(-50%);z-index:4;display:flex;align-items:center;gap:4px;padding:2px 10px;border-radius:12px;border:var(--c-lw-s) solid var(--c-line);background:#e0f7ff;color:#0b5c8a;font:800 16px/1.4 var(--f-num);white-space:nowrap}
-.icechip .ei{font-size:20px}
+/* 道具：去错把一个错误选项变灰；消除 / 连连看里亮出一对正确的 */
+.ans.gone{opacity:.25;filter:grayscale(1);pointer-events:none}
+.pairhint{animation:pairHint .7s ease-in-out infinite;box-shadow:0 0 0 4px #ffe14d,0 0 16px 6px #ffe14d!important}
+@keyframes pairHint{50%{transform:scale(1.06)}}
+/* 主角待机：站着时轻轻呼吸、上下浮动（和怪兽 bob 同一 1.6 秒节奏），武器盾牌在 .hwrap 里跟着动 */
+.hero .hwrap{transform-origin:50% 100%;animation:breathe 1.6s ease-in-out infinite}
+.hero .sprite:not(.atk-slash):not(.atk-punch):not(.hurt):not(.attack){animation:none}
+@keyframes breathe{0%,100%{transform:translateY(0) scale(1,1)}50%{transform:translateY(-5px) scale(1.015,.985)}}
 /* boss */
 #battle.boss .arena{box-shadow:inset 0 0 0 999px rgba(60,0,0,.35)}
 #battle.boss .fighter.mon{width:56%}
@@ -375,10 +367,6 @@ svg.ei.cs{overflow:visible}
 /* question card + answers */
 .qcard{position:relative;flex:none;min-height:88px;display:flex;align-items:center;justify-content:center;padding:12px 14px}
 /* 本题还剩多少时间（卡片底边的细条；怪兽蓄力在怪兽脚下） */
-.qtime{position:absolute;left:14px;right:14px;bottom:4px;height:5px;border-radius:3px;background:rgba(58,42,30,.12);overflow:hidden;pointer-events:none}
-.qtime i{display:block;height:100%;width:0;background:#5ad14f;border-radius:3px}
-.qtime i.low{background:#ff5d6c}
-#battle.boardmode .qtime{display:none}
 .qhint{position:absolute;right:6px;top:6px;width:40px;height:40px;border-radius:12px;animation:pulse 1s infinite}
 .qhint .ei{font-size:24px}
 /* 辅导弹窗：战斗画面中央，遮罩 + 卡片；战斗区不缩放 */
@@ -745,6 +733,10 @@ svg.ei.cs{overflow:visible}
 .herostage b{display:block;font-weight:400;font-size:24px}
 .herostage p{text-align:left!important}
 .herostage .lockline{color:var(--red-d)!important}
+.herostage .sil{flex:none;line-height:0}
+.herostage .sil .ei{font-size:clamp(76px,22vw,96px);vertical-align:0;filter:brightness(0) opacity(.55)}
+.herostage .sil .ei.art{width:auto;height:1.15em}
+.herostage .qqq{font:400 26px/1 var(--f-ui);letter-spacing:2px}
 .heroes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:0 0 4px}
 .hcard{--c1:var(--cw1);--c2:var(--cw2);position:relative;min-width:0;aspect-ratio:1;border-radius:18px;border:var(--c-lw) solid var(--c-line);background:linear-gradient(var(--c1) var(--c-split),var(--c2) 0);display:grid;place-items:center;box-shadow:var(--c-sh)}
 .hcard .ei{font-size:min(12vw,50px);vertical-align:0}
