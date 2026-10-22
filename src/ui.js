@@ -74,6 +74,8 @@ const decoHTML = (id, scale) => SCENES[id].deco.map(([e,x,y,s])=>'<span class="d
 
 /* ================= small shared bits ================= */
 const restart = (el, cls) => { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); };
+// 震屏：轻震 quakeS 和重震 quake 是两个类，先都拿掉再加，不然留着的 quakeS 会把之后的 quake 盖住
+const shake = cls => { const bt = $("battle"); bt.classList.remove("quake","quakeS"); void bt.offsetWidth; bt.classList.add(cls||"quake"); };
 const play = (el, cls) => { el.className = "sprite"; void el.offsetWidth; el.classList.add(cls); };
 const chev = r => '<span class="chev'+(r?" r":"")+'"></span>';
 const starImg = (on, tier) => '<span class="'+(on?"":"off")+'"'+(on && tier && TIERS[tier].f ? ' style="filter:'+TIERS[tier].f+'"' : '')+'>'+img("⭐")+'</span>';
@@ -600,7 +602,7 @@ function startLevel(w,l,run){
   let delay;
   if(L.boss){
     banner('<div class="warn"><b>⚠ WARNING ⚠</b><span>'+L.n+' 来袭！</span></div>', 2300);
-    sfx.siren(); setTimeout(()=>{ if(B===cur){ restart(bt,"quake"); sfx.roar(); } }, 900);
+    sfx.siren(); setTimeout(()=>{ if(B===cur){ shake(); sfx.roar(); } }, 900);
     say("警告！"+L.n+"来了！");
     delay = 2400;
   } else {
@@ -616,7 +618,7 @@ function banner(html, ms){
   const el = $("banner").firstChild; if(el) el.style.animation = "bannerIn "+(ms/1000)+"s forwards";
   setTimeout(()=>{ if($("banner").firstChild===el) $("banner").innerHTML = ""; }, ms+50);
 }
-function setCombo(t, tier){ const c = $("combo"); c.innerHTML = emo(t); c.className = "combo"+(tier?" c"+tier:""); restart(c,"pop"); }
+function setCombo(t, tier, warn){ const c = $("combo"); c.innerHTML = emo(t); c.className = "combo"+(tier?" c"+tier:"")+(warn?" warn":""); restart(c,"pop"); }
 function toast(e, text){
   $("toast").innerHTML = '<div>'+img(e)+'<span>'+emo(text)+'</span></div>';
   const el = $("toast").firstChild; setTimeout(()=>{ if($("toast").firstChild===el) $("toast").innerHTML = ""; }, 1350);
@@ -727,7 +729,7 @@ function loop(t){
       B.qt += dt/qTime(); B.charge += dt/chargeTime();
       const left = Math.ceil(qTime()*(1-B.qt));
       if(left<=5 && left>=1 && left!==B.lastTick){ B.lastTick = left; bigCount(left); }
-      if(B.qt>=1){ B.qt = 0; B.charge = 0; monsterAttack("timeout"); }
+      if(B.qt>=1){ B.qt = 0; B.charge = 0; B.lastTick = 0; monsterAttack("timeout"); }
       else if(B.charge>=1){ B.charge = 0; monsterAttack("charge"); }
     }
     drawCharge(); fleeTick();
@@ -849,8 +851,10 @@ function answer(btn){
       S.mistakes = S.mistakes.slice(0,30); save();
     }
     // 答错立刻挨一下（不等蓄力）；第一次答错，挨完打再弹出小老师的提示
+    // 答错也重新计时、蓄力清零：答错这一下之后至少还有一整轮蓄力，一题内不会「蓄力 + 答错 + 超时」连挨 3 下
+    B.qt = 0; B.charge = 0; B.lastTick = 0;
     if(B.lucky>0){
-      B.lucky--; B.charge = 0; B.lastTick = 0; sfx.shield();
+      B.lucky--; sfx.shield();
       toast("🍀","幸运光环！不扣心");
     } else monsterAttack("wrong");
     if(first && (q.hint || q.steps)){ const cur = B; setTimeout(()=>{ if(B===cur && !B.over && B.q===q && !B.hintOpen) showHint(); }, 700); }
@@ -942,7 +946,7 @@ function heroAttack(board){   // board = {dmg, crit} for 消除 / 连连看
     sfx.thud(heavy||crit); crit ? sfx.crit() : sfx.right();
     fxAt(h.fx, crit); tint(crit ? "#ffe14d" : h.col);   // 勇士技能的特色特效照样有
     dmgPop(dmg, crit);
-    restart($("battle"), crit||heavy||tier>=2 ? "quake" : "quakeS");
+    shake(crit||heavy||tier>=2 ? "quake" : "quakeS");
     $("arena").dataset.combo = String(tier);
     if(COMBO_TIERS.includes(B.combo)){ sfx.combo(tier); burst(6+tier*4, tier>=3 ? ["🌈","✨","⭐"] : tier>=2 ? ["🔥","✨"] : ["✨","⭐"]); }
     else if(crit) burst(8,[h.fx,"✨"]);
@@ -959,7 +963,7 @@ function heroAttack(board){   // board = {dmg, crit} for 消除 / 连连看
     if(B.L.boss && !B.enraged && B.hp <= B.maxHp/2){
       B.enraged = true;
       $("battle").classList.add("enraged");
-      sfx.roar(); restart($("battle"),"quake");
+      sfx.roar(); shake();
       banner('<div class="ribbon">'+B.L.n+' 暴怒了！小心！</div>', 1500);
       say(B.L.n+"暴怒了！");
       setTimeout(()=>{ if(B===cur && !B.over) nextQuestion(); }, 1500 + stop);
@@ -975,11 +979,11 @@ function monsterAttack(reason){
   B.busy = true;
   sfx.roar();
   play($("monSprite"),"lunge");
-  if(reason==="timeout") setCombo("⏰ 太慢啦！");
-  if(reason==="charge") setCombo("💢 蓄力攻击！");
+  if(reason==="timeout") setCombo("⏰ 太慢啦！", 0, true);
+  if(reason==="charge") setCombo("💢 蓄力攻击！", 0, true);
   setTimeout(()=>{
     if(B!==cur || B.over) return;
-    B.charge = 0; B.lastTick = 0;
+    B.charge = 0;
     if(B.shield>0){
       B.shield--; sfx.shield(); tint("#38bdf8");
       const sh = $("shield"); restart(sh,"pop"); setTimeout(()=>{ if(B.shield>0) sh.className = "shield"; else sh.hidden = true; }, 500);
@@ -990,7 +994,7 @@ function monsterAttack(reason){
     }
     sfx.hit();
     restart($("flash"),"on");
-    restart($("battle"),"quake");
+    shake();
     play($("heroSprite"),"hurt");
     try{ navigator.vibrate && navigator.vibrate([120,60,120]); }catch(e){}
     const dmg = Math.min(B.hearts, B.dmg);
@@ -1066,7 +1070,7 @@ function boardRight(){
   if(cleared) dmg = Math.max(dmg, B.hp);   // last pair: always the finishing blow
   B.lastHit = dmg; B.combo = B.bcombo + 1;
   // 闪电连击也走同一套打击反馈（heroAttack：定格、伤害数字、3 / 5 / 10 连档位）
-  if(B.bcombo>0){ setCombo((fast ? "⚡闪电连击 ×" : "连击 ×")+(B.bcombo+1), comboTier(B.combo)); if(fast) restart($("battle"),"quake"); }
+  if(B.bcombo>0){ setCombo((fast ? "⚡闪电连击 ×" : "连击 ×")+(B.bcombo+1), comboTier(B.combo)); if(fast) shake(); }
   else { $("combo").textContent = ""; $("arena").dataset.combo = "0"; }   // combo timed out: take the old 「连击 ×N」 off the screen
   const st = S.stats[B.W.id] || (S.stats[B.W.id]={r:0,w:0}); st.r++; save();
   heroAttack({dmg, crit:fast});
@@ -1077,7 +1081,7 @@ function boardWrong(els){
   sfx.wrong(); breakCombo(); B.bcombo = 0; B.lastPair = -1e9;
   const st = S.stats[B.W.id] || (S.stats[B.W.id]={r:0,w:0}); st.w++; save();
   setTimeout(()=>els.forEach(el=>{ if(el && B===cur) el.classList.remove("shake","bad"); }), 600);
-  if(B.lucky>0){ B.lucky--; B.charge = 0; B.lastTick = 0; sfx.shield(); toast("🍀","幸运光环！不扣心"); }
+  if(B.lucky>0){ B.lucky--; B.charge = 0; sfx.shield(); toast("🍀","幸运光环！不扣心"); }
   else monsterAttack("wrong");
 }
 function pickCard(id, el){
@@ -1140,14 +1144,14 @@ function win(){
 function bossFinale(cur, info){
   const bt = $("battle");
   const wo = document.createElement("div"); wo.className = "whiteout"; document.body.appendChild(wo); setTimeout(()=>wo.remove(), 900);
-  sfx.boom(); sfx.ko(); restart(bt,"quake");
+  sfx.boom(); sfx.ko(); shake();
   try{ navigator.vibrate && navigator.vibrate([200,80,200,80,400]); }catch(e){}
   const ko = document.createElement("div"); ko.className = "ko"; ko.textContent = "K.O.!"; $("arena").appendChild(ko); setTimeout(()=>ko.remove(), 1900);
   $("monSprite").className = "sprite dying";
   say("K O！打败了"+info.L.n+"！");
   for(let i=0;i<5;i++) setTimeout(()=>{
     if(B!==cur) return;
-    sfx.boom(); restart(bt,"quake");
+    sfx.boom(); shake();
     burst(9, ["💥","🔥","✨"], (Math.random()-.5)*90, (Math.random()-.5)*90);
   }, 350+i*300);
   setTimeout(()=>{

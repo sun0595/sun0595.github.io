@@ -133,10 +133,12 @@ async function playAll(view) {
   const arenaBox = () => p.evaluate(() => { const r = document.getElementById('arena').getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round).join(','); });
   const wrong = await p.evaluate(() => { const B = __t.B; B.frozenUntil = 0; B.lucky = 0; B.shield = 0; const a = String(B.q.answer); return [...document.querySelectorAll('.ans')].map(b => b.dataset.v).find(v => v !== a); });
   await p.waitForTimeout(300);
-  const box0 = await arenaBox(), h0 = await p.evaluate(() => ({ h: __t.B.hearts, d: __t.B.dmg }));
+  const box0 = await arenaBox(), h0 = await p.evaluate(() => { const B = __t.B; B.qt = 0.5; B.charge = 0.5; return { h: B.hearts, d: B.dmg }; });
   await tap(`.ans[data-v="${wrong}"]`); await p.waitForTimeout(260);
-  const h1 = await p.evaluate(() => __t.B.hearts);
-  if (h1 !== h0.h - h0.d) problems.push(`[${view.name}] a wrong answer should cost ${h0.d} heart(s) at once (within 260 ms): ${h0.h} → ${h1}`);
+  const h1 = await p.evaluate(() => ({ h: __t.B.hearts, qt: __t.B.qt, c: __t.B.charge }));
+  if (h1.h !== h0.h - h0.d) problems.push(`[${view.name}] a wrong answer should cost ${h0.d} heart(s) at once (within 260 ms): ${h0.h} → ${h1.h}`);
+  // 答错后重新计时、蓄力清零：一题内不会「蓄力 + 答错 + 超时」连着挨 3 下
+  if (h1.qt > 0.05 || h1.c > 0.05) problems.push(`[${view.name}] a wrong answer should restart the question timer and the charge: ${JSON.stringify(h1)}`);
   await shot('05a-wrong-hit');
   await p.waitForTimeout(900); await shot('05-hint');
   const tu = await p.evaluate(async () => {
@@ -287,6 +289,17 @@ async function playAll(view) {
   await tap(`.ans[data-v="${wrong2}"]`); await p.waitForTimeout(900); await shot('19-rage-hit');
   const lost = rage.hearts - await p.evaluate(() => __t.B.hearts);
   if (lost !== 2) problems.push(`[${view.name}] rage x2 hit should cost 2 hearts, cost ${lost}`);
+  // 最后 5 秒的大数字：怪兽蓄力打过来以后，同一个数字不能再弹一次；「💢 蓄力攻击！」在道具提示时也看得见
+  await p.evaluate(() => __t.closeHint());
+  await p.waitForFunction(() => __t.B && !__t.B.busy && !__t.B.over, null, { timeout: 4000 });
+  await p.evaluate(() => { const B = __t.B; window.__cds = []; document.getElementById('cd').addEventListener('animationstart', () => window.__cds.push(document.getElementById('cd').textContent)); B.shield = 1; __t.S.items.ice = 2; __t.renderItems(); B.qt = 0.62; B.charge = 0.9; });
+  await p.waitForTimeout(500);
+  await p.evaluate(() => { __t.B.charge = 0.999; }); await p.waitForTimeout(200);
+  const warnVis = await p.evaluate(() => { const c = document.getElementById('combo'); return /蓄力攻击/.test(c.textContent) && getComputedStyle(c).visibility === 'visible'; });
+  await p.waitForTimeout(700);
+  const cds = await p.evaluate(() => window.__cds);
+  if (!cds.length || new Set(cds).size !== cds.length) problems.push(`[${view.name}] the big countdown should not repeat a number after a monster attack: ${cds}`);
+  if (!warnVis) problems.push(`[${view.name}] 「💢 蓄力攻击！」 should stay visible`);
   // gear in battle: ⏳ +5 秒 makes the time limit longer, ⚔️ +3 adds floor(3/3) = 1 to every hit
   const mk = (slot, e, id, val, q) => ({ id: 't_' + id, slot, quality: q, name: '测试·' + id, e, affixes: [{ id, val }] });
   await leaveBattle(); await p.waitForTimeout(300);
@@ -327,10 +340,14 @@ async function playAll(view) {
     await p.evaluate(() => __t.fxHold(0));
     return r;
   };
+  // 震屏：先轻震（普通一下）再重震（暴击），两次动画都要真的开始（轻震的类不能把重震盖住）
+  await p.evaluate(() => { window.__quakes = []; document.getElementById('battle').addEventListener('animationstart', e => { if (e.target.id === 'battle') window.__quakes.push(e.animationName); }); });
   const s1 = await hitOnce(0, '50-slash');
   if (!s1.slash || (s1.col || '').trim() !== await p.evaluate(() => GEAR_QUALITY_MAP.orange.col) || !/atk-slash/.test(s1.hero) || !s1.stop || s1.paused !== 'paused' || !/^-\d+$/.test(s1.num) || s1.crit) problems.push(`[${view.name}] a sword hit should dash, draw an orange slash and freeze on impact: ${JSON.stringify(s1)}`);
   const s2 = await hitOnce(2, '51-crit-hitstop');   // 3rd in a row → 小勇士 crits
   if (!s2.crit || !/暴击/.test(s2.num) || !s2.crit2 || !s2.stop || s2.paused !== 'paused') problems.push(`[${view.name}] a crit should show a big 「暴击!」 number, a cross slash and a hit-stop: ${JSON.stringify(s2)}`);
+  const qk = await p.evaluate(() => window.__quakes.join());
+  if (!/quakeS.*\bquake\b/.test(qk)) problems.push(`[${view.name}] a light shake then a heavy shake should both play, got "${qk}"`);
   const s3 = await hitOnce(4, '52-combo5');
   if (!/\bc2\b/.test(s3.combo) || s3.tier !== '2') problems.push(`[${view.name}] 5 in a row should switch to the 2nd combo tier: ${JSON.stringify(s3)}`);
   const s4 = await hitOnce(9, '53-combo10');
