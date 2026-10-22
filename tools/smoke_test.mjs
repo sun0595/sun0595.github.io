@@ -14,6 +14,7 @@ import { chromium } from 'playwright';
 import { wpCheck, invCheck, qbankCheck, r5Check } from './wp_check.mjs';
 import { mkdirSync } from 'fs';
 import { r5Systems, r5Growth, r5Heroes, r5Mystic, r5Parent, r5Migrate } from './r5_systems.mjs';
+import { r5Knowledge } from './r5_knowledge.mjs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -1150,6 +1151,7 @@ async function r5Run(view) {
   await r5Heroes(p, o);
   await r5Mystic(p, o);
   await r5Parent(p, o);
+  await r5Knowledge(p, o);
   await r5Migrate(p, o, V1);
   await ctx.close();
 }

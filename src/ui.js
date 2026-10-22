@@ -875,7 +875,7 @@ function openParent(tab){
       // 插入题开关：拼音题照旧「关 / 偶尔 / 经常」，其余每类一个开关（默认全开）；关掉后这类题不再混进关卡（关卡专用玩法不受影响）
       body += '<div class="tgls"><div class="toggle"><span class="tl">插入拼音题</span><span class="seg3">'+[[0,"关"],[0.25,"偶尔"],[0.5,"经常"]].map(([v,t])=>'<button data-py="'+v+'" class="'+(S.py===v?"on":"")+'">'+t+'</button>').join("")+'</span></div></div>'
         + '<div class="tgls two">'+Q_SWITCHES.map(([k,label])=>tg("q_"+k, label, qOn(k))).join("")+'</div>'
-        + '<p class="muted"><small>关掉的题型不再混进关卡；算术消除、连连看、拼读这些关卡玩法不受影响。小知识、科普题、颜色题下一版加入。</small></p>';
+        + '<p class="muted"><small>关掉的题型不再混进关卡；算术消除、连连看、拼读这些关卡玩法不受影响。科普题 = 实物辨认（哪一个是鸭蛋？）。</small></p>';
     } else if(tab==="bug") body += reportsHTML(bugPg);
     else if(tab==="color") body += colorLogHTML(colPg);
     else if(tab==="set"){
@@ -1296,7 +1296,9 @@ function answer(btn){
     // 答错立刻挨一下（不等蓄力）；第一次答错，挨完打再弹出小老师的提示
     // 答错也重新计时、蓄力清零：答错这一下之后至少还有一整轮蓄力，一题内不会「蓄力 + 答错 + 超时」连挨 3 下
     B.qt = 0; B.charge = 0; B.lastTick = 0;
-    if(B.lucky>0){
+    // 颜色题只是穿插题：答错记进「颜色题记录」，不扣心、不卡关，再选一次
+    if(q.kind==="color"){ if(first) colorMiss(q, v); toast("🎨","再仔细看看颜色！"); B.busy = false; }
+    else if(B.lucky>0){
       B.lucky--; sfx.shield();
       toast("🍀","幸运光环！不扣心");
     } else monsterAttack("wrong");

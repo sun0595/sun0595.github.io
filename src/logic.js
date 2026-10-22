@@ -2285,6 +2285,222 @@ function rotate(gen){
     return q;
   };
 }
+/* ================= 第五轮知识题：小知识 fact、实物辨认 spot、颜色题 color =================
+   都是穿插题（按家长开关「插入小知识 / 科普题 / 颜色题」混进各大关的打怪关，见 knowledgeMix），
+   选项 3～4 个、打乱；题面短、能朗读；能配图就配图（src/art/obj_*.webp 原画，没有就用 3D 图）。 */
+// 实物原画：[中文名, 没有原画时用的 3D 图]
+const OBJ = {
+  obj_ambulance:["救护车","🚑"], obj_apple:["苹果","🍎"], obj_banana:["香蕉","🍌"], obj_bike:["自行车","🚲"], obj_bird:["小鸟","🐦"],
+  obj_boat:["小船","⛵"], obj_book:["书","📖"], obj_broccoli:["西兰花","🥦"], obj_bus:["公交车","🚌"], obj_cabbage:["大白菜","🥬"],
+  obj_car:["小汽车","🚗"], obj_carrot:["胡萝卜","🥕"], obj_cat:["小猫","🐱"], obj_cauliflower:["花菜","🥦"], obj_chicken:["小鸡","🐤"],
+  obj_clock:["钟","🕐"], obj_corn:["玉米","🌽"], obj_cow:["奶牛","🐮"], obj_cucumber:["黄瓜","🥒"], obj_cup:["杯子","🥤"],
+  obj_dog:["小狗","🐶"], obj_duck:["鸭子","🦆"], obj_egg_chicken:["鸡蛋","🥚"], obj_egg_dino:["恐龙蛋","🥚"], obj_egg_duck:["鸭蛋","🥚"],
+  obj_egg_goose:["鹅蛋","🥚"], obj_egg_ostrich:["鸵鸟蛋","🥚"], obj_egg_pigeon:["鸽子蛋","🥚"], obj_egg_quail:["鹌鹑蛋","🥚"], obj_eggplant:["茄子","🍆"],
+  obj_eraser:["橡皮","🧽"], obj_firetruck:["消防车","🚒"], obj_frog:["青蛙","🐸"], obj_grape:["葡萄","🍇"], obj_horse:["马","🐴"],
+  obj_kiwi:["猕猴桃","🥝"], obj_orange:["橙子","🍊"], obj_peach:["桃子","🍑"], obj_pear:["梨","🍐"], obj_pebble:["鹅卵石","🪨"],
+  obj_pencil:["铅笔","✏️"], obj_pepper:["青椒","🫑"], obj_pig:["小猪","🐷"], obj_pineapple:["菠萝","🍍"], obj_plane:["飞机","✈️"],
+  obj_potato:["土豆","🥔"], obj_ruler:["尺子","📏"], obj_scissors:["剪刀","✂️"], obj_sheep:["小羊","🐑"], obj_spoon:["勺子","🥄"],
+  obj_strawberry:["草莓","🍓"], obj_tomato:["西红柿","🍅"], obj_toothbrush:["牙刷","🪥"], obj_train:["火车","🚆"], obj_umbrella:["雨伞","☂️"],
+  obj_watermelon:["西瓜","🍉"]
+};
+// 蛋按真实大小缩放（鸵鸟蛋最大，鹌鹑蛋、鸽子蛋最小）；别的东西都一样大
+const OBJ_SCALE = {obj_egg_quail:.42, obj_egg_pigeon:.48, obj_egg_chicken:.66, obj_egg_duck:.74, obj_pebble:.7, obj_egg_goose:.88, obj_egg_dino:.94, obj_egg_ostrich:1};
+const objName = k => (OBJ[k]||[k])[0];
+// 原画图（高 h px，蛋再按真实大小缩放）；没有原画用 3D 图
+const objPic = (k, h) => { const u = typeof art==="function" && art(k), sz = Math.round((h||56) * (OBJ_SCALE[k]||1));
+  return u ? '<img class="ei art obj" src="'+u+'" alt="" style="height:'+sz+'px;width:auto">' : '<span style="font-size:'+sz+'px;line-height:1">'+(OBJ[k]||["","❓"])[1]+'</span>'; };
+const picOf = (p, h) => !p ? "" : /^obj_/.test(p) ? objPic(p, h) : '<span style="font-size:'+(h||56)+'px;line-height:1">'+p+'</span>';
+const kStem = (pic, text) => '<div class="kq">'+(pic ? '<span class="kpic">'+picOf(pic, 64)+'</span>' : '')+'<span class="kt">'+text+'</span></div>';
+
+/* 小知识 FACTS：[话题, 从第几个大关起（下标）, 题, 答案, [错的选项], 题图]。选项是 obj_ 开头的就画成图片按钮（下面写名字）。
+   第 1 大关只有动物叫声和水果蔬菜颜色，越往后话题越多。 */
+const FACTS = [
+  // 动物叫声
+  ["sound",0,"小猫怎么叫？","喵喵",["汪汪","哞哞","呱呱"],"obj_cat"], ["sound",0,"小狗怎么叫？","汪汪",["喵喵","咩咩","嘎嘎"],"obj_dog"],
+  ["sound",0,"奶牛怎么叫？","哞哞",["汪汪","叽叽","呱呱"],"obj_cow"], ["sound",0,"青蛙怎么叫？","呱呱",["哞哞","喵喵","咩咩"],"obj_frog"],
+  ["sound",0,"小羊怎么叫？","咩咩",["喵喵","汪汪","嘎嘎"],"obj_sheep"], ["sound",0,"鸭子怎么叫？","嘎嘎",["咩咩","哞哞","喵喵"],"obj_duck"],
+  ["sound",0,"小鸡怎么叫？","叽叽",["汪汪","哞哞","呱呱"],"obj_chicken"], ["sound",0,"小猪怎么叫？","哼哼",["喵喵","咩咩","呱呱"],"obj_pig"],
+  ["sound",0,"小马怎么叫？","咴咴",["汪汪","喵喵","嘎嘎"],"obj_horse"], ["sound",0,"小鸟怎么叫？","叽叽喳喳",["哞哞","汪汪","咩咩"],"obj_bird"],
+  ["sound",0,"哪个动物会“汪汪”叫？","obj_dog",["obj_cat","obj_cow","obj_duck"]], ["sound",0,"哪个动物会“喵喵”叫？","obj_cat",["obj_dog","obj_sheep","obj_frog"]],
+  ["sound",0,"哪个动物会“呱呱”叫？","obj_frog",["obj_cow","obj_pig","obj_cat"]], ["sound",0,"哪个动物会“哞哞”叫？","obj_cow",["obj_dog","obj_duck","obj_chicken"]],
+  ["sound",0,"哪个动物会“咩咩”叫？","obj_sheep",["obj_cat","obj_frog","obj_pig"]], ["sound",0,"哪个动物会“嘎嘎”叫？","obj_duck",["obj_dog","obj_cow","obj_horse"]],
+  // 水果蔬菜的颜色
+  ["fcolor",0,"香蕉是什么颜色的？","黄色",["红色","蓝色","紫色"],"obj_banana"], ["fcolor",0,"草莓是什么颜色的？","红色",["蓝色","绿色","白色"],"obj_strawberry"],
+  ["fcolor",0,"胡萝卜是什么颜色的？","橙色",["蓝色","紫色","黑色"],"obj_carrot"], ["fcolor",0,"茄子是什么颜色的？","紫色",["黄色","红色","白色"],"obj_eggplant"],
+  ["fcolor",0,"黄瓜是什么颜色的？","绿色",["红色","紫色","白色"],"obj_cucumber"], ["fcolor",0,"葡萄常常是什么颜色的？","紫色",["橙色","白色","黑色"],"obj_grape"],
+  ["fcolor",0,"西瓜里面是什么颜色的？","红色",["蓝色","紫色","黑色"],"obj_watermelon"], ["fcolor",0,"哪个是黄色的？","obj_banana",["obj_strawberry","obj_grape","obj_cucumber"]],
+  ["fcolor",0,"哪个是红色的？","obj_strawberry",["obj_banana","obj_cucumber","obj_grape"]], ["fcolor",0,"哪个是绿色的？","obj_cucumber",["obj_banana","obj_strawberry","obj_carrot"]],
+  ["fcolor",0,"哪个是紫色的？","obj_eggplant",["obj_banana","obj_carrot","obj_cucumber"]],
+  // 动物住在哪里、吃什么
+  ["home",1,"小鱼住在哪里？","水里",["树上","土里","天上"],"🐟"], ["home",1,"小鸟的家叫什么？","鸟窝",["鱼缸","狗窝","蜂巢"],"obj_bird"],
+  ["home",1,"蜜蜂住在哪里？","蜂巢",["鸟窝","鱼缸","狗窝"],"🐝"], ["home",1,"小狗住在哪里？","狗窝",["蜂巢","鸟窝","水里"],"obj_dog"],
+  ["home",1,"小兔子喜欢住在哪里？","洞里",["树上","水里","蜂巢"],"🐰"], ["home",1,"小鸡住在哪里？","鸡窝",["水里","蜂巢","鱼缸"],"obj_chicken"],
+  ["home",1,"青蛙小时候是什么？","小蝌蚪",["小鱼","小虫","小鸟"],"obj_frog"], ["home",1,"毛毛虫长大变成什么？","蝴蝶",["蜜蜂","小鸟","青蛙"],"🐛"],
+  ["home",1,"哪个动物会在天上飞？","obj_bird",["obj_pig","obj_cow","obj_sheep"]], ["home",1,"哪个动物会下蛋？","obj_chicken",["obj_dog","obj_cat","obj_pig"]],
+  ["home",1,"哪个动物能挤出牛奶？","obj_cow",["obj_pig","obj_dog","obj_chicken"]], ["home",1,"小蜜蜂会做什么？","采蜜",["织网","打洞","游泳"],"🐝"],
+  ["home",1,"蜘蛛会做什么？","织网",["采蜜","游泳","下蛋"],"🕷️"], ["home",1,"大熊猫最爱吃什么？","竹子",["鱼","肉骨头","胡萝卜"],"🐼"],
+  ["home",1,"小兔子爱吃什么？","胡萝卜",["骨头","鱼","虫子"],"🐰"], ["home",1,"小猫爱吃什么？","鱼",["骨头","竹子","草"],"obj_cat"],
+  ["home",1,"小狗爱啃什么？","骨头",["竹子","胡萝卜","树叶"],"obj_dog"], ["home",1,"牛和羊爱吃什么？","草",["鱼","骨头","虫子"],"obj_cow"],
+  ["home",1,"羊身上的毛可以做成什么？","毛衣",["书本","杯子","雨伞"],"obj_sheep"],
+  // 身体和五官
+  ["body",1,"我们用什么看东西？","眼睛",["耳朵","鼻子","嘴巴"],"👀"], ["body",1,"我们用什么听声音？","耳朵",["眼睛","手","脚"],"👂"],
+  ["body",1,"我们用什么闻气味？","鼻子",["耳朵","眼睛","手"],"👃"], ["body",1,"我们用什么尝味道？","舌头",["耳朵","鼻子","眼睛"],"👅"],
+  ["body",1,"我们用什么走路？","脚",["手","耳朵","鼻子"],"🦶"], ["body",1,"一只手有几根手指？","5 根",["4 根","6 根","10 根"],"✋"],
+  ["body",1,"两只手一共有几根手指？","10 根",["5 根","8 根","12 根"],"✋"], ["body",1,"我们有几只眼睛？","2 只",["1 只","3 只","4 只"],"👀"],
+  ["body",1,"哪个是用来刷牙的？","obj_toothbrush",["obj_spoon","obj_pencil","obj_scissors"]], ["body",1,"眼睛看累了，应该怎么做？","看看远处",["一直看手机","用手揉眼睛","离屏幕更近"],"👀"],
+  // 生活常识
+  ["life",1,"吃饭前要做什么？","洗手",["睡觉","看电视","跑步"],"🧼"], ["life",1,"早上起床和晚上睡觉前要做什么？","刷牙",["吃糖","看电视","跳绳"],"🦷"],
+  ["life",1,"刚吃完饭，可以马上跑跑跳跳吗？","不可以",["可以","想跑就跑"],"🍉"], ["life",1,"咳嗽、打喷嚏时要怎么做？","捂住口鼻",["对着别人","大声喊","不用管"],"🤧"],
+  ["life",1,"用什么喝水？","obj_cup",["obj_ruler","obj_scissors","obj_eraser"]], ["life",1,"用什么喝汤？","obj_spoon",["obj_pencil","obj_ruler","obj_eraser"]],
+  ["life",1,"用什么写字？","obj_pencil",["obj_spoon","obj_cup","obj_umbrella"]], ["life",1,"写错了字用什么擦掉？","obj_eraser",["obj_ruler","obj_cup","obj_spoon"]],
+  ["life",1,"用什么画直直的线？","obj_ruler",["obj_eraser","obj_cup","obj_toothbrush"]], ["life",1,"用什么剪纸？","obj_scissors",["obj_spoon","obj_cup","obj_book"]],
+  ["life",1,"剪刀的尖头可以对着别人吗？","不可以",["可以","开玩笑时可以"]], ["life",1,"看什么能知道几点了？","obj_clock",["obj_book","obj_cup","obj_umbrella"]],
+  // 季节
+  ["season",2,"一年有几个季节？","4 个",["2 个","3 个","7 个"],"🌸"], ["season",2,"哪个季节最热？","夏天",["春天","秋天","冬天"],"☀️"],
+  ["season",2,"哪个季节最冷？","冬天",["春天","夏天","秋天"],"❄️"], ["season",2,"下大雪、堆雪人是在哪个季节？","冬天",["夏天","春天","秋天"],"⛄"],
+  ["season",2,"树叶变黄落下来是哪个季节？","秋天",["春天","夏天","冬天"],"🍂"], ["season",2,"春天来了，花儿会怎么样？","开花",["结冰","落叶","下雪"],"🌸"],
+  ["season",2,"春天过去是哪个季节？","夏天",["秋天","冬天"],"🌸"], ["season",2,"冬天过去是哪个季节？","春天",["夏天","秋天"],"⛄"],
+  ["season",2,"冬天小熊会做什么？","冬眠",["游泳","开花","换牙"],"❄️"], ["season",2,"秋天地里能收什么？","玉米",["雪花","冰块","贝壳"],"obj_corn"],
+  // 一周七天、今天明天
+  ["week",2,"一个星期有几天？","7 天",["5 天","6 天","10 天"],"📅"], ["week",2,"星期一的后一天是星期几？","星期二",["星期三","星期日","星期五"],"📅"],
+  ["week",2,"星期五的后一天是星期几？","星期六",["星期四","星期日","星期一"],"📅"], ["week",2,"星期日的后一天是星期几？","星期一",["星期六","星期二","星期三"],"📅"],
+  ["week",2,"星期三的前一天是星期几？","星期二",["星期四","星期一","星期五"],"📅"], ["week",2,"今天是星期二，明天是星期几？","星期三",["星期一","星期四","星期五"],"📅"],
+  ["week",2,"今天是星期四，昨天是星期几？","星期三",["星期五","星期二","星期六"],"📅"], ["week",2,"今天是星期六，明天是星期几？","星期日",["星期五","星期一","星期三"],"📅"],
+  ["week",2,"哪两天常常不用上学？","星期六和星期日",["星期一和星期二","星期三和星期四","星期五和星期一"],"📅"],
+  ["week",2,"太阳从哪边升起来？","东边",["西边","南边","北边"],"☀️"], ["week",2,"晚上天上会出现什么？","月亮和星星",["太阳","彩虹","大白云"],"🌙"],
+  // 天气
+  ["weather",2,"下雨天出门要带什么？","obj_umbrella",["obj_spoon","obj_ruler","obj_cup"]], ["weather",2,"打雷下雨时，不能站在哪里？","大树下",["屋子里","教室里","床上"],"⛈️"],
+  ["weather",2,"下过雨，天上有时会出现什么？","彩虹",["星星","月亮","雪花"],"🌈"], ["weather",2,"冬天天上飘下来的白白的是什么？","雪花",["雨点","沙子","花瓣"],"❄️"],
+  ["weather",2,"天气很热的时候要多做什么？","喝水",["穿棉袄","捂被子","不喝水"],"☀️"], ["weather",2,"刮大风的时候，树会怎么样？","摇来摇去",["开花","结果","一动不动"],"🌧️"],
+  // 交通安全
+  ["traffic",3,"红灯亮了，我们要怎么做？","停下来",["快快跑","慢慢走过去","闯过去"],"🚦"], ["traffic",3,"绿灯亮了，我们可以怎么做？","看好车再通过",["停在路中间","倒着走","在路上玩"],"🚦"],
+  ["traffic",3,"黄灯亮了要怎么做？","等一等",["快跑过去","闭着眼走","在路中间玩"],"🚦"], ["traffic",3,"过马路要走哪里？","斑马线",["马路中间","车道上","翻护栏"],"🚸"],
+  ["traffic",3,"过马路前要先做什么？","左右看",["低头玩","闭上眼","跑起来"],"🚸"], ["traffic",3,"坐小汽车要做什么？","系好安全带",["把头伸出窗外","站在座位上","乱开车门"],"obj_car"],
+  ["traffic",3,"可以在马路上踢球吗？","不可以",["可以","车少时可以"],"🚸"], ["traffic",3,"哪辆车是去救病人的？","obj_ambulance",["obj_firetruck","obj_bus","obj_car"]],
+  ["traffic",3,"哪辆车是去灭火的？","obj_firetruck",["obj_ambulance","obj_bus","obj_train"]], ["traffic",3,"着火了要打什么电话？","119",["110","120","114"],"obj_firetruck"],
+  ["traffic",3,"有人生病了，打什么急救电话？","120",["119","110","114"],"obj_ambulance"], ["traffic",3,"遇到坏人，报警打什么电话？","110",["119","120","114"],"🚦"],
+  ["traffic",3,"哪个是在天上飞的？","obj_plane",["obj_train","obj_bus","obj_boat"]], ["traffic",3,"哪个是在水上走的？","obj_boat",["obj_car","obj_train","obj_bike"]]
+];
+// 每道小知识题的讲解：一句话说清楚为什么（不重复题面）
+const FACT_TIP = {sound:"想一想它平时是怎么叫的，学一学它的叫声。", fcolor:"想一想在家里、超市里见到它时是什么颜色。", home:"想一想这个动物平时在哪里、喜欢做什么。",
+  body:"摸一摸自己的五官和小手，就知道啦。", life:"想一想爸爸妈妈每天提醒你的好习惯。", season:"一年有春、夏、秋、冬四个季节，按顺序一个接一个。",
+  week:"一个星期：星期一、二、三、四、五、六、日，一天接一天。", weather:"想一想下雨、刮风、打雷时，大人是怎么做的。", traffic:"红灯停，绿灯行，黄灯亮了等一等；过马路走斑马线。"};
+// 这个大关能出哪些话题：第 1 大关只有叫声和颜色，往后话题越来越多（但叫声、颜色题也一直会出现）
+const factPool = w => FACTS.filter(f => f[1] <= Math.max(0, w));
+// 文字选项用中文字体（数字照样用数字字体）；obj_ 选项画成图片，下面写名字
+const optLabel = o => /^obj_/.test(o) ? '<span class="kopt">'+objPic(o, 46)+'<small>'+objName(o)+'</small></span>' : '<span class="ktxt">'+o.replace(/\d+/g, '<span class="num">$&</span>')+'</span>';
+G.fact = function(w, i){
+  const pool = factPool(w==null ? 99 : w), f = i!=null ? FACTS[i] : pick(pool), [topic, , text, ans, wrong, pic] = f;
+  const options = shuffle([ans].concat(shuffle(wrong.slice()).slice(0, 3)));
+  const picOpts = /^obj_/.test(ans);
+  const spoken = o => /^obj_/.test(o) ? objName(o) : o;
+  return {kind:"fact", topic, html:kStem(pic, text), speak:text+(picOpts ? "" : "是"+options.map(spoken).join("，还是")+"？"), answer:ans, options,
+    optHtml: optLabel, disp:spoken, hint:'<p class="htitle">小知识</p><p>'+FACT_TIP[topic]+'</p>', rec:text, key:"fact"+FACTS.indexOf(f)+options.join(""), kq:true};
+};
+
+/* 实物辨认 SPOT：每组 3～4 个容易搞混的东西，问「哪一个是 xxx？」，选项是图片按钮（不写名字）。
+   [从第几个大关起（下标）, [物品…]]。蛋按真实大小缩放；鸽子蛋不和鸡蛋同题（太像）；恐龙蛋是搞笑选项、不会被问到。 */
+const SPOT_GROUPS = [
+  // 蛋
+  [2,["obj_egg_chicken","obj_egg_duck","obj_egg_goose","obj_egg_ostrich"]], [2,["obj_egg_quail","obj_egg_chicken","obj_egg_ostrich","obj_pebble"]],
+  [2,["obj_egg_pigeon","obj_egg_duck","obj_egg_goose","obj_egg_dino"]], [2,["obj_egg_quail","obj_egg_pigeon","obj_egg_goose"]],
+  [2,["obj_egg_dino","obj_egg_ostrich","obj_egg_chicken","obj_pebble"]], [2,["obj_pebble","obj_egg_duck","obj_egg_goose"]],
+  [2,["obj_egg_quail","obj_egg_duck","obj_egg_ostrich","obj_egg_dino"]], [2,["obj_egg_pigeon","obj_egg_quail","obj_egg_ostrich","obj_pebble"]],
+  // 蔬菜水果（容易搞混的放一起）
+  [1,["obj_broccoli","obj_cauliflower","obj_cabbage","obj_pepper"]], [1,["obj_carrot","obj_potato","obj_corn","obj_eggplant"]],
+  [2,["obj_kiwi","obj_potato","obj_pear","obj_peach"]], [1,["obj_cucumber","obj_pepper","obj_broccoli","obj_eggplant"]],
+  [0,["obj_tomato","obj_apple","obj_peach","obj_strawberry"]], [0,["obj_orange","obj_peach","obj_apple","obj_pear"]],
+  [1,["obj_watermelon","obj_cabbage","obj_cucumber"]], [0,["obj_grape","obj_strawberry","obj_banana","obj_pineapple"]],
+  [0,["obj_pineapple","obj_corn","obj_banana"]], [2,["obj_cauliflower","obj_cabbage","obj_potato"]],
+  [1,["obj_pear","obj_apple","obj_kiwi","obj_orange"]], [1,["obj_tomato","obj_pepper","obj_eggplant","obj_carrot"]],
+  [0,["obj_strawberry","obj_tomato","obj_peach"]],
+  // 动物
+  [0,["obj_cat","obj_dog","obj_sheep","obj_pig"]], [0,["obj_cow","obj_horse","obj_sheep"]], [0,["obj_chicken","obj_duck","obj_bird","obj_frog"]],
+  [0,["obj_duck","obj_chicken","obj_bird"]], [0,["obj_horse","obj_cow","obj_pig","obj_dog"]], [0,["obj_frog","obj_bird","obj_cat"]],
+  [0,["obj_pig","obj_sheep","obj_cow","obj_chicken"]],
+  // 交通工具
+  [1,["obj_bus","obj_car","obj_train","obj_plane"]], [1,["obj_ambulance","obj_firetruck","obj_bus","obj_car"]], [1,["obj_boat","obj_plane","obj_train","obj_bike"]],
+  [1,["obj_bike","obj_car","obj_bus"]], [1,["obj_firetruck","obj_ambulance","obj_train"]],
+  // 文具、生活用品
+  [1,["obj_pencil","obj_ruler","obj_eraser","obj_scissors"]], [1,["obj_spoon","obj_cup","obj_toothbrush"]], [1,["obj_book","obj_clock","obj_umbrella","obj_cup"]],
+  [1,["obj_toothbrush","obj_pencil","obj_spoon","obj_ruler"]], [1,["obj_scissors","obj_spoon","obj_eraser"]], [1,["obj_umbrella","obj_clock","obj_book"]],
+  // 混搭
+  [2,["obj_watermelon","obj_pebble","obj_egg_ostrich"]], [2,["obj_orange","obj_egg_duck","obj_kiwi"]], [1,["obj_corn","obj_banana","obj_pencil"]]
+];
+const SPOT_NOASK = new Set(["obj_egg_dino"]);   // 搞笑选项，不会被问到
+// 认东西的小提示（讲解）
+const OBJ_TIP = {obj_egg_quail:"鹌鹑蛋最小，身上有一块块黑褐色的花斑。", obj_egg_pigeon:"鸽子蛋很小，白白的、亮亮的。", obj_egg_chicken:"鸡蛋不大不小，常见的是浅棕色。",
+  obj_egg_duck:"鸭蛋比鸡蛋大一点，有点淡淡的青色。", obj_egg_goose:"鹅蛋比鸭蛋还大，白白的。", obj_egg_ostrich:"鸵鸟蛋是最大的蛋，像个小西瓜，表面有小坑点。",
+  obj_pebble:"鹅卵石是石头，不是蛋，灰灰的、硬硬的。", obj_broccoli:"西兰花是绿色的，像一棵棵小树。", obj_cauliflower:"花菜是白色的，一朵一朵挤在一起。",
+  obj_cabbage:"大白菜一片片叶子包起来，菜帮子白白的。", obj_pepper:"青椒绿绿的，鼓鼓的，里面是空的。", obj_kiwi:"猕猴桃外面是毛茸茸的棕色，切开是绿色的。",
+  obj_potato:"土豆是土黄色的，长在土里。", obj_tomato:"西红柿红红圆圆，顶上有绿色的小叶子。", obj_peach:"桃子粉粉的，尖尖的头。"};
+const spotPool = w => SPOT_GROUPS.filter(g => g[0] <= Math.max(0, w));
+G.spot = function(w, gi){
+  const g = gi!=null ? SPOT_GROUPS[gi] : pick(spotPool(w==null ? 99 : w)), items = g[1];
+  const ans = pick(items.filter(k => !SPOT_NOASK.has(k))), options = shuffle(items.slice()), name = objName(ans);
+  const tip = OBJ_TIP[ans] || "仔细看看图片的颜色和样子。";
+  return {kind:"spot", html:kStem(null, "哪一个是<b>"+name+"</b>？"), speak:"哪一个是"+name+"？", answer:ans, options, group:SPOT_GROUPS.indexOf(g),
+    optHtml: o => '<span class="kopt spot">'+objPic(o, 64)+'</span>', disp:objName, hint:'<p class="htitle">认一认</p><p>'+tip+'</p>', rec:"哪一个是"+name+"？",
+    key:"spot"+ans+options.join(""), kq:true};
+};
+
+/* 颜色题 COLOR：选项是色块按钮（不写颜色名，读题时读出颜色名）。四种：
+   basic  认基本色（选项明度也差得多）；shade 深浅相近的颜色里找（红 / 粉红 / 紫）；hue 不同色相里找（橙 / 黄 / 绿）；
+   mix    颜料混合：两个颜料桶倒在一起变成什么颜色（红 + 黄 = 橙、蓝 + 黄 = 绿、红 + 蓝 = 紫……）。
+   答错记进颜色题记录（logColorMiss），不扣心、不卡关。第 1 大关只有 basic，第 2 起加 hue，第 3 起加 shade，第 4 起加 mix。 */
+const COLORS = {red:["红色","#e53935"], yellow:["黄色","#fdd835"], blue:["蓝色","#1e88e5"], green:["绿色","#43a047"], black:["黑色","#212121"], white:["白色","#ffffff"],
+  orange:["橙色","#fb8c00"], purple:["紫色","#8e24aa"], pink:["粉红色","#f48fb1"], brown:["棕色","#8d6e63"], gray:["灰色","#9e9e9e"],
+  lightblue:["浅蓝色","#81d4fa"], lightgreen:["浅绿色","#aed581"], darkred:["深红色","#8e1b1b"], lightyellow:["浅黄色","#fff59d"]};
+const cName = k => COLORS[k][0], cHex = k => COLORS[k][1];
+// 相对明度（0 黑 ～ 1 白），测试用来检查基本色选项明暗差得开
+const cLum = k => { const h = cHex(k), v = [1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255).map(c=>c<=.03928?c/12.92:Math.pow((c+.055)/1.055,2.4)); return .2126*v[0]+.7152*v[1]+.0722*v[2]; };
+const COLOR_BASIC = ["red","yellow","blue","green","black","white"];
+// 深浅相近：每组第一个是要找的颜色
+const COLOR_SHADE = [["red","pink","purple"],["red","darkred","pink"],["blue","lightblue","purple"],["green","lightgreen","yellow"],["yellow","lightyellow","orange"],["orange","red","yellow"]];
+const COLOR_HUE = [["orange","yellow","green"],["red","blue","yellow"],["purple","green","orange"],["blue","green","purple"],["pink","brown","gray"]];
+const COLOR_MIX = [["red","yellow","orange"],["blue","yellow","green"],["red","blue","purple"],["red","white","pink"],["black","white","gray"]];
+const bucket = k => '<svg viewBox="0 0 48 48" width="44" height="44" style="vertical-align:middle"><path d="M8 14 H40 L36 42 H12 Z" fill="'+cHex(k)+'" stroke="#3A2A1E" stroke-width="3.5" stroke-linejoin="round"/>'
+  + '<path d="M8 14 Q24 4 40 14" fill="none" stroke="#3A2A1E" stroke-width="3"/><path d="M14 22 Q24 26 34 22" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="3"/></svg>';
+const cBlock = k => '<span class="cblock" style="background:'+cHex(k)+'"></span>';
+G.color = function(w, mode){
+  w = w==null ? 99 : w;
+  const modes = ["basic"].concat(w>=1 ? ["hue"] : [], w>=2 ? ["shade"] : [], w>=3 ? ["mix"] : []);
+  mode = mode || pick(modes);
+  let ans, opts, html, speak, hint;
+  if(mode==="mix"){
+    const [a, b, r] = pick(COLOR_MIX); ans = r;
+    opts = shuffle([r, a, b].concat(shuffle(["orange","green","purple","pink","gray","brown"].filter(x=>x!==r && x!==a && x!==b)).slice(0,1)));
+    html = '<div class="kq mixq">'+bucket(a)+'<b>+</b>'+bucket(b)+'<b>=</b><span class="blank">?</span></div><div class="kt">把'+cName(a)+'和'+cName(b)+'的颜料倒在一起，会变成什么颜色？</div>';
+    speak = "把"+cName(a)+"和"+cName(b)+"的颜料倒在一起，会变成什么颜色？";
+    hint = '<p class="htitle">调颜料</p><p>两种颜料混在一起，会变出一种新颜色，不是原来的'+cName(a)+'，也不是'+cName(b)+'。</p><p>红 + 黄 = 橙，蓝 + 黄 = 绿，红 + 蓝 = 紫。</p>';
+  } else {
+    if(mode==="basic"){
+      // 4 个基本色，明暗要差得开：任意两个的明度差 ≥ 0.05（白和黄这种太接近的不放一起）
+      for(let k=0;k<50;k++){ opts = shuffle(COLOR_BASIC.slice()).slice(0,4); if(opts.every((x,i)=>opts.every((y,j)=>i>=j || Math.abs(cLum(x)-cLum(y))>=.05))) break; }
+      ans = pick(opts);
+    } else { const set = pick(mode==="shade" ? COLOR_SHADE : COLOR_HUE); ans = mode==="shade" ? set[0] : pick(set); opts = shuffle(set.slice()); }
+    html = kStem(null, "哪一个是<b>"+cName(ans)+"</b>？"); speak = "哪一个是"+cName(ans)+"？";
+    hint = '<p class="htitle">认颜色</p><p>'+(mode==="shade" ? "这几个颜色很像，仔细比一比，想一想"+cName(ans)+"的东西：" : "想一想"+cName(ans)+"的东西：")+'</p>'
+      + '<p>'+({red:"红红的草莓、西红柿",yellow:"黄黄的香蕉",blue:"蓝蓝的天空",green:"绿绿的树叶",black:"黑黑的头发",white:"白白的云朵",orange:"橙色的胡萝卜",purple:"紫色的茄子",pink:"粉红色的桃花"})[ans]+'</p>';
+  }
+  return {kind:"color", mode, html, speak, answer:ans, options:opts, optHtml:cBlock, disp:cName, hint, rec:speak, key:"color"+mode+ans+opts.join(""), kq:true};
+};
+// 记颜色题答错（PR2 的「颜色题记录」页签）：题目要的颜色、孩子选的颜色
+const colorMiss = (q, v) => logColorMiss({name:cName(q.answer), hex:cHex(q.answer)}, {name:cName(v), hex:cHex(v)}, {mode:q.mode});
+
+/* 穿插：打怪关里每类大约 K_RATE（一关 10～15 题 → 每类 1～2 题），按家长开关；不连着出两道知识题 */
+// 第 1 大关以认色和动物叫声为主：实物辨认少一半
+const K_RATE = 0.09, K_KINDS = [["fact", w=>G.fact(w)], ["spot", w=>G.spot(w)], ["color", w=>G.color(w)]];
+const kRate = (c, w) => c==="spot" && w===0 ? K_RATE/2 : K_RATE;
+function knowledgeMix(gen, w){
+  let last = false;
+  return () => {
+    if(!last){ let r = Math.random();
+      for(const [c, f] of K_KINDS){ if(!qOn(c)) continue; const p = kRate(c, w); if(r < p){ last = true; return f(w); } r -= p; } }
+    last = false; return gen();
+  };
+}
+
 /* 题型类别（第五轮）：勇士擅长、家长开关都按这个分。qCat(q) 看题目对象认出类别。 */
 const Q_CATS = {calc:"计算", chain:"连加连减", cmp:"比大小", shape:"图形题", pic4:"看图说话", word:"应用题", trap:"易错题",
   fact:"小知识", spot:"科普题", color:"颜色题", py:"拼音"};
@@ -2360,6 +2576,7 @@ function levelDef(w,l){
   const easyMath = q => isBig(q) ? easyBig() : easySmall();
   const easy = q => q && q.kind==="word" ? (w<2 ? WP[pick(WP_SMALL)](10) : WP[pick(WP_EASY.filter(k=>WP[k]))]()) : q && q.kind==="py" ? (mode==="blend" ? blendQ(w) : pyQ(w)) : easyMath(q);
   // 家长开关和勇士擅长（拼读关整关拼读，不动）
+  if(mode==="battle") g = knowledgeMix(g, w);   // 小知识、实物辨认、颜色题穿插（第五轮）
   if(mode!=="blend") g = qFilter(g, w);
   return {w, l, m:lv.emoji, n:lv.name, boss:!!lv.boss, mode, g, math:qFilter(math, w), easy, hp:10 + Math.floor(i/10) + (lv.boss?5:0)};
 }
