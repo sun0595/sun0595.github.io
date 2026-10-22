@@ -60,6 +60,11 @@ img{-webkit-user-drag:none;pointer-events:none}
 .ei.snd{position:relative;vertical-align:-0.18em}
 .ei.snd>img{position:absolute;left:0;top:6%;width:58%;height:88%;object-fit:contain}
 .ei.snd>svg{position:absolute;right:0;top:12%;width:46%;height:76%;overflow:visible}
+/* 糖果 SVG 图标（ui.js 的 ICON_SVG）：阴影那一层统一涂深棕、半透明 */
+svg.ei.cs{overflow:visible}
+.cs .sh{opacity:.3}
+.cs .sh *{fill:var(--c-line);stroke:var(--c-line)}
+.cs .sh .ln{fill:none}
 #app{height:100%;max-width:520px;margin:0 auto;position:relative;overflow:hidden;background:var(--night)}
 .screen{position:absolute;inset:0;display:flex;flex-direction:column}
 
@@ -162,7 +167,7 @@ img{-webkit-user-drag:none;pointer-events:none}
 .node .lv{position:absolute;left:-6px;top:-6px;z-index:2;min-width:22px;height:22px;border-radius:11px;border:var(--c-lw-s) solid var(--c-line);background:var(--cb2);color:#fff;font:800 13px/18px var(--f-num);text-align:center;padding:0 3px}
 .node.boss .lv{background:var(--cr2);font:400 12px/18px var(--f-ui);padding:0 6px;left:-4px;top:-4px}
 .node .mb{position:absolute;right:-6px;bottom:-4px;z-index:2;width:22px;height:22px;border-radius:50%;background:var(--cw1);border:var(--c-lw-s) solid var(--c-line);display:grid;place-items:center}
-.node .mb .ei{font-size:15px;vertical-align:0}
+.node .mb .ei{font-size:19px;vertical-align:0}
 .node .stars{position:absolute;left:50%;top:-15px;z-index:2;transform:translateX(-50%);display:flex;gap:0;height:14px;line-height:0}
 .node.boss .stars{top:-17px}
 .node .stars .ei{font-size:14px}
@@ -334,7 +339,6 @@ img{-webkit-user-drag:none;pointer-events:none}
 .ans.gone{opacity:.25;filter:grayscale(1);pointer-events:none}
 .pairhint{animation:pairHint .7s ease-in-out infinite;box-shadow:0 0 0 4px #ffe14d,0 0 16px 6px #ffe14d!important}
 @keyframes pairHint{50%{transform:scale(1.06)}}
-svg.ei.isvg{overflow:visible}
 /* 主角待机：站着时轻轻呼吸、上下浮动（和怪兽 bob 同一 1.6 秒节奏），武器盾牌在 .hwrap 里跟着动 */
 .hero .hwrap{transform-origin:50% 100%;animation:breathe 1.6s ease-in-out infinite}
 .hero .sprite:not(.atk-slash):not(.atk-punch):not(.hurt):not(.attack){animation:none}
