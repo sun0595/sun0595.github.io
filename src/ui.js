@@ -74,11 +74,18 @@ const decoHTML = (id, scale) => SCENES[id].deco.map(([e,x,y,s])=>'<span class="d
 
 /* ================= small shared bits ================= */
 const restart = (el, cls) => { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); };
+// 震屏：轻震 quakeS 和重震 quake 是两个类，先都拿掉再加，不然留着的 quakeS 会把之后的 quake 盖住
+const shake = cls => { const bt = $("battle"); bt.classList.remove("quake","quakeS"); void bt.offsetWidth; bt.classList.add(cls||"quake"); };
 const play = (el, cls) => { el.className = "sprite"; void el.offsetWidth; el.classList.add(cls); };
 const chev = r => '<span class="chev'+(r?" r":"")+'"></span>';
 const starImg = (on, tier) => '<span class="'+(on?"":"off")+'"'+(on && tier && TIERS[tier].f ? ' style="filter:'+TIERS[tier].f+'"' : '')+'>'+img("⭐")+'</span>';
 sfx.freeze = ()=>{ tone([1800,2400,3000],.05,"sine",.08); noise(.35,.25,7000); };
 sfx.shatter = ()=>{ noise(.4,.5,5000); tone([2600,1900,1300],.05,"triangle",.07); };
+// 打击感：挥砍（风声 + 金属）、拳击（闷响）、怪兽受击（重击，Boss 更低更重）、连击档位（3 / 5 / 10 连越来越高越亮）
+sfx.slash = ()=>{ noise(.12,.35,4200); tone([1400,2100],.04,"triangle",.06); };
+sfx.punch = ()=>{ noise(.1,.5,900); tone([160,90],.06,"square",.12); };
+sfx.thud = heavy=>{ noise(heavy?.35:.22, heavy?.9:.6, heavy?600:1100); tone(heavy?[90,55]:[140,80],.08,"square",.13); };
+sfx.combo = t=>{ const base = [0,660,880,1046][t]||660; tone([base,base*1.25,base*1.5].concat(t>=2?[base*2]:[]),.06,t>=3?"sawtooth":"triangle",.09); if(t>=3) noise(.3,.25,6000); };
 
 /* ================= map: one long map, scrolled up and down =================
    Like the parents' reference sketch: each world is a floating island stacked on the one below
@@ -289,7 +296,7 @@ function renderMap(focus, width){
     const n = mp.querySelector(".node.current"); if(n){ n.classList.remove("cur-flash"); void n.offsetWidth; n.classList.add("cur-flash"); }
     say("第"+(cl+1)+"关，出发！");
   };
-  $("heroBtn").onclick = ()=>{ sfx.click(); openHeroes(); };
+  $("heroBtn").onclick = e=>{ sfx.click(); e.target.closest("#heroLv") ? openLevel() : openHeroes(); };
   $("bagBtn").onclick = ()=>{ sfx.click(); openBag(); };
   $("soundBtn").onclick = ()=>{ const on = !(S.sound||S.voice); S.sound = on; S.voice = on; save(); if(!on) try{speechSynthesis.cancel()}catch(e){} else { sfx.click(); say("声音打开啦"); } renderMap(); };
   $("parentBtn").onclick = ()=>{ sfx.click(); openParent(); };
@@ -316,6 +323,16 @@ function closePage(){
 $("modal").addEventListener("click", e=>{ if(e.target.id==="modal" && pageClosable) closePage(); });
 function bubble(text){ const b = $("bubble"); if(!b) return; b.innerHTML = emo(text); restart(b,"on"); say(text); }
 
+// 等级页（地图头像下的 Lv 点开）：经验条、现在的等级加成、下一次加成、逃跑的惩罚
+function openLevel(){
+  const lv = S.heroLv||1, b = lvBonus(lv), nx = nextLvBonus(lv);
+  openPage({title:"⭐ 勇士等级", back:true, onClose:renderMap, cls:"lvpage", body:
+    '<div class="rexp"><span class="rlv">Lv.<b class="num">'+lv+'</b></span><span class="xbar"><i style="width:'+pctOf(S.exp||0, expNeed(lv))+'%"></i></span><b class="num rgain">'+(S.exp||0)+'/'+expNeed(lv)+'</b></div>'
+    + '<div class="lvstats"><div class="lvs">'+img("⚔️")+'<span>攻击</span><b class="num" id="lvAtk">+'+b.atk+'</b></div><div class="lvs">'+img("❤️")+'<span>心上限</span><b class="num" id="lvHeart">+'+b.hearts+'</b></div></div>'
+    + (nx ? '<p>'+img("⬆️")+' 升到 <b class="num">Lv.'+nx.lv+'</b>：'+bonusText(nx)+'</p>' : '')
+    + '<p class="muted"><small>每升 '+LV_ATK_EVERY+' 级攻击 +1，每升 '+LV_HEART_EVERY+' 级心 +1（最多 +'+LV_HEART_MAX+'）<br>打怪兽得经验；'+img("🏃")+' 逃跑会扣装备经验</small></p>'});
+  say("勇士"+lv+"级，攻击加"+b.atk+"，心加"+b.hearts);
+}
 // 装备解锁的勇士：获得过这个品质（或更高）的装备
 const gearNeed = k => '获得过<b style="color:'+GEAR_QUALITY_MAP[k].col+'">'+GEAR_QUALITY_MAP[k].name+'色</b>或更好的装备';
 function openHeroes(){
@@ -547,17 +564,18 @@ function startLevel(w,l,run){
   const mode = run ? "battle" : L0.mode;          // 连闯和 Boss 一律是答题打怪
   const L = run ? Object.assign({}, L0, {g:L0.math}) : L0;   // 连闯里一律出本关的计算题（拼读关也不例外）
   const diff = run ? 0 : diffOf(w,l), rage = rageLevel();
-  const maxH = run ? 5 : (L.boss ? 5 : 3);
+  const lb = lvBonus(S.heroLv||1);
+  const maxH = run ? 5 : (L.boss ? 5 : 3) + lb.hearts;   // 等级加成：心上限（连闯固定 5 心）
   const h = hero(), gs = gearStats(S.equipped);
   // 消除 / 连连看：怪兽血量固定（BOARD_HP），连击打得快就能提前打倒；慢慢配完最后一对也一定赢
   const hp = BOARD_HP[mode] || L.hp + 2*diff;
-  B = {w,l,W:Wd,L,h,mode,board:null,sel:null,diff,run:run||null,hp,maxHp:hp,rage,dmg:RAGE[rage].dmg,maxH,hearts:run?run.hearts:maxH,combo:0,q:null,busy:true,charge:0,over:false,recent:[],enraged:false,hintOpen:false,step:0,lastTick:0,wrongThisQ:false,
-       gs, shield:(h.shield||0)+gs.shield, lucky:(h.lucky||0)+gs.lucky, frozenUntil:0};
+  B = {w,l,W:Wd,L,h,mode,board:null,sel:null,diff,run:run||null,hp,maxHp:hp,rage,dmg:RAGE[rage].dmg,maxH,hearts:run?run.hearts:maxH,combo:0,q:null,busy:true,charge:0,qt:0,over:false,recent:[],enraged:false,hintOpen:false,step:0,lastTick:0,wrongThisQ:false,
+       gs, shield:(h.shield||0)+gs.shield, lucky:(h.lucky||0)+gs.lucky, frozenUntil:0, fleeUntil:0, lvAtk:lb.atk, urged:false};
   const cur = B, bt = $("battle");
   $("arena").style.setProperty("--wbg", sceneURL(Wd.id));
   $("arena").querySelectorAll(".deco").forEach(d=>d.remove());
   $("arena").insertAdjacentHTML("afterbegin", decoHTML(Wd.id, .7));
-  bt.classList.toggle("boss", !!L.boss); bt.classList.remove("enraged","hinting");
+  bt.classList.toggle("boss", !!L.boss); bt.classList.remove("enraged");
   bt.classList.toggle("rage", rage>0);
   bt.classList.toggle("boardmode", BOARD_TIME[mode]>0); $("board").innerHTML = ""; $("board").hidden = !BOARD_TIME[mode];
   $("rageTag").hidden = !rage; $("rageTag").innerHTML = '狂暴 <span class="num">×'+B.dmg+'</span>';
@@ -578,12 +596,13 @@ function startLevel(w,l,run){
   $("dropTag").classList.toggle("boss", !!(md && md.boss));
   $("chargeWrap").hidden = !S.timer;
   $("combo").textContent = ""; $("qTag").hidden = true;
-  $("hint").hidden = true; $("answers").innerHTML = ""; $("qText").innerHTML = ""; $("qcard").className = "qcard panel";
+  $("tutor").hidden = true; $("answers").innerHTML = ""; $("qText").innerHTML = ""; $("qcard").className = "qcard panel"; $("qTime").style.width = "0%";
+  $("arena").dataset.combo = "0"; $("arena").classList.remove("hitstop","urging"); fleeTick();
   drawHearts(); drawHP(); drawCharge(); renderItems();
   let delay;
   if(L.boss){
     banner('<div class="warn"><b>⚠ WARNING ⚠</b><span>'+L.n+' 来袭！</span></div>', 2300);
-    sfx.siren(); setTimeout(()=>{ if(B===cur){ restart(bt,"quake"); sfx.roar(); } }, 900);
+    sfx.siren(); setTimeout(()=>{ if(B===cur){ shake(); sfx.roar(); } }, 900);
     say("警告！"+L.n+"来了！");
     delay = 2400;
   } else {
@@ -599,13 +618,14 @@ function banner(html, ms){
   const el = $("banner").firstChild; if(el) el.style.animation = "bannerIn "+(ms/1000)+"s forwards";
   setTimeout(()=>{ if($("banner").firstChild===el) $("banner").innerHTML = ""; }, ms+50);
 }
-function setCombo(t){ const c = $("combo"); c.innerHTML = emo(t); restart(c,"pop"); }
+function setCombo(t, tier, warn){ const c = $("combo"); c.innerHTML = emo(t); c.className = "combo"+(tier?" c"+tier:"")+(warn?" warn":""); restart(c,"pop"); }
 function toast(e, text){
   $("toast").innerHTML = '<div>'+img(e)+'<span>'+emo(text)+'</span></div>';
   const el = $("toast").firstChild; setTimeout(()=>{ if($("toast").firstChild===el) $("toast").innerHTML = ""; }, 1350);
 }
 function drawHearts(broke, gained){
   let h = "";
+  $("hearts").classList.toggle("many", B.maxH>5);
   for(let i=0;i<B.maxH;i++) h += '<span class="'+(i<B.hearts ? (gained && i===B.hearts-1 ? "gain" : "") : (broke && i<B.hearts+(+broke) ? "break" : "lost"))+'">'+img("❤️")+'</span>';
   $("hearts").innerHTML = h;
 }
@@ -634,6 +654,20 @@ function qTime(){
   const slow = Math.min(SLOW_CAP, Math.round(((B.h.slow||1)-1)*100) + B.gs.slow);
   return (base + B.gs.time) * (1 + slow/100);
 }
+/* 战斗手感（家长试玩反馈：要像成熟手游）。数字都在这里调：
+   - 怪兽蓄力：蓄满 CHARGE_SEC[狂暴档] 秒就打一下（勇士 / 装备的时间加成按同样比例拉长）。一题的限时（15 秒，狂暴 10 / 8 / 6）
+     里最多蓄力打 1 次，到时间再打 1 次（超时），所以「一题内挨 1～2 下」；答对一题，怪兽被打断，蓄力清零。
+   - 道具：冰冻 FREEZE_SEC 秒（蓄力和限时都停）；加时 +TIME_ITEM_SEC 秒（蓄力也往回退这么多）；加心 +1。蓄力过 URGE_AT 道具按钮闪烁提示。
+   - 打击：命中瞬间定格 HITSTOP_MS（暴击 / Boss 更久）；连击 COMBO_TIERS = 3 / 5 / 10 三档光效和音效。
+   - 逃跑失败后 FLEE_LOCK_SEC 秒内地图按钮变灰。 */
+const CHARGE_SEC = [8, 5.5, 4.5, 3.5];
+const FREEZE_SEC = 6, TIME_ITEM_SEC = 8, URGE_AT = 0.7;
+const HITSTOP_MS = 90, HITSTOP_CRIT = 120, HITSTOP_BOSS = 30;   // Boss 受击再多定格 30ms
+const COMBO_TIERS = [3, 5, 10];
+const FLEE_LOCK_SEC = 5;
+// 一次蓄力要几秒：和本题限时同比例（应用题、消除、⏳ 装备、宇航员减速都会拉长）
+const chargeTime = () => CHARGE_SEC[B.rage] * qTime() / RAGE[B.rage].t;
+const comboTier = n => COMBO_TIERS.filter(x=>n>=x).length;
 const thinking = () => B && B.hintOpen && B.q && B.q.kind==="word";
 const frozen = () => B && B.frozenUntil > performance.now();
 function drawCharge(){
@@ -642,6 +676,8 @@ function drawCharge(){
   $("chargeFill").style.width = c*100+"%";
   $("chargeWrap").classList.toggle("hot", c>.65 && !fz);
   $("chargeWrap").classList.toggle("ice", fz);
+  $("qTime").style.width = Math.min(100, (1-B.qt)*100)+"%";
+  $("qTime").classList.toggle("low", B.qt>.66);
   $("monGrow").style.transform = "scale("+(1+c*.35)+")";
   $("monBox").classList.toggle("angry", S.timer && c>.65 && !B.over && !fz);
   $("monBox").classList.toggle("frozen", fz && !B.over);
@@ -649,19 +685,32 @@ function drawCharge(){
     const left = Math.ceil((B.frozenUntil-performance.now())/1000);
     if(B.iceLeft!==left){ B.iceLeft = left; $("iceChip").innerHTML = img("🧊")+left; }
   } else if(!$("iceBlock").hidden) unfreeze();
+  urgeItems(c);
+}
+// 蓄力快满了：能用的道具按钮闪烁，并提示「快用冰冻！」（第一次还会读出来）
+function urgeItems(c){
+  const on = S.timer && !B.over && !B.busy && !B.hintOpen && c>=URGE_AT && !frozen();
+  const k = !on ? null : (S.items.ice||0)>0 ? "ice" : (S.items.time||0)>0 ? "time" : null;
+  $("arena").classList.toggle("urging", !!k);
+  $("items").querySelectorAll(".item").forEach(b=>b.classList.toggle("nudge", b.dataset.it===k));
+  const u = $("urge");
+  if(!k){ u.hidden = true; return; }
+  const text = k==="ice" ? "快用冰冻！" : "快用加时！";
+  if(u.hidden || u.textContent!==text){ u.textContent = text; u.hidden = false; }
+  if(!B.urged){ B.urged = true; say(text); }
 }
 function freeze(){
-  B.frozenUntil = performance.now()+10000; B.iceLeft = null;
+  B.frozenUntil = performance.now()+FREEZE_SEC*1000; B.iceLeft = null;
   $("iceBlock").hidden = false; $("iceChip").hidden = false; restart($("iceBlock"),"on");
-  $("frost").classList.add("on");
+  $("frost").classList.add("on"); $("chargeWrap").classList.add("ice");
   sfx.freeze(); tint("#bfefff");
   const a = $("arena"), H = a.clientHeight;
   for(let i=0;i<18;i++){
     const s = document.createElement("span"); s.className = "snow"; s.innerHTML = img("❄️");
     s.style.left = (Math.random()*100)+"%";
     s.style.setProperty("--sx", ((Math.random()-.5)*80)+"px"); s.style.setProperty("--sh", H+"px");
-    s.style.animationDuration = (3+Math.random()*3)+"s"; s.style.animationDelay = (Math.random()*6)+"s";
-    a.appendChild(s); setTimeout(()=>s.remove(), 10500);
+    s.style.animationDuration = (2+Math.random()*2)+"s"; s.style.animationDelay = (Math.random()*(FREEZE_SEC-2))+"s";
+    a.appendChild(s); setTimeout(()=>s.remove(), FREEZE_SEC*1000+500);
   }
 }
 function unfreeze(){
@@ -676,15 +725,23 @@ function bigCount(n){
 function loop(t){
   const dt = Math.min(0.1,(t-lastT)/1000); lastT = t;
   if(B && !B.over){
-    if(S.timer && !B.busy && B.q && $("modal").hidden && !thinking() && !frozen()){
-      B.charge += dt/qTime();
-      const left = Math.ceil(qTime()*(1-B.charge));
+    if(S.timer && !B.busy && B.q && $("modal").hidden && !B.hintOpen && !frozen()){
+      B.qt += dt/qTime(); B.charge += dt/chargeTime();
+      const left = Math.ceil(qTime()*(1-B.qt));
       if(left<=5 && left>=1 && left!==B.lastTick){ B.lastTick = left; bigCount(left); }
-      if(B.charge>=1){ B.charge = 0; monsterAttack("timeout"); }
+      if(B.qt>=1){ B.qt = 0; B.charge = 0; B.lastTick = 0; monsterAttack("timeout"); }
+      else if(B.charge>=1){ B.charge = 0; monsterAttack("charge"); }
     }
-    drawCharge();
+    drawCharge(); fleeTick();
     rafId = requestAnimationFrame(loop);
   }
+}
+// 逃跑失败后的冷却：地图按钮变灰、显示还剩几秒
+function fleeTick(){
+  const bb = $("bBack"), left = B && !B.over ? Math.ceil((B.fleeUntil - performance.now())/1000) : 0, lock = left>0;
+  if(bb.disabled!==lock){ bb.disabled = lock; bb.classList.toggle("cool", lock); }
+  const txt = lock ? String(left) : "";
+  if(bb.dataset.left!==txt) bb.dataset.left = txt;
 }
 function renderItems(){
   if(!B) return;
@@ -699,9 +756,9 @@ function useItem(k){
   if(!B || B.over || !(S.items[k]>0)) return;
   S.items[k]--; save();
   if(k==="heal"){ B.hearts = Math.min(B.maxH, B.hearts+1); drawHearts(false,true); toast("💖","+1 颗心"); sfx.heal(); tint("#f472b6"); }
-  if(k==="time"){ B.charge = Math.max(0, B.charge - 10/qTime()); B.lastTick = 0; toast("⏳","+10 秒"); sfx.shield(); tint("#4ade80"); }
+  if(k==="time"){ B.qt = Math.max(0, B.qt - TIME_ITEM_SEC/qTime()); B.charge = Math.max(0, B.charge - TIME_ITEM_SEC/chargeTime()); B.lastTick = 0; toast("⏳","+"+TIME_ITEM_SEC+" 秒"); sfx.shield(); tint("#4ade80"); }
   if(k==="ice"){ freeze(); toast("🧊","怪兽被冻住了！"); }
-  drawCharge(); renderItems();
+  renderItems(); drawCharge();
   const nb = $("items").querySelector('[data-it="'+k+'"]'); if(nb) restart(nb,"used");
 }
 function qKey(q){ return q.key || q.parts.join(" "); }
@@ -710,8 +767,8 @@ function nextQuestion(){
   const gen = (S.py>0 && B.W.id!=="think" && Math.random()<S.py) ? pyQ : B.L.g;
   do { q = gen(); tries++; } while(B.recent.includes(qKey(q)) && tries<30);
   B.recent.push(qKey(q)); if(B.recent.length>8) B.recent.shift();
-  B.q = q; B.charge = 0; B.lastTick = 0; B.wrongThisQ = false; B.hintOpen = false; B.step = 0;
-  $("battle").classList.remove("hinting");
+  B.q = q; B.charge = 0; B.qt = 0; B.lastTick = 0; B.wrongThisQ = false; B.hintOpen = false; B.step = 0;
+  $("tutor").hidden = true;
   const isWord = q.kind==="word";
   $("battle").classList.toggle("wordmode", isWord);
   $("qcard").className = "qcard panel"+(isWord?" word":"");
@@ -726,8 +783,9 @@ function nextQuestion(){
     if(q.seq) return '<span class="term">'+p+'</span>'+(i<q.parts.length-1?'<span class="comma">,</span>':'');
     return '<span>'+p+'</span>';
   }).join(""));
-  if($("hintBtn")) $("hintBtn").onclick = e=>{ e.stopPropagation(); if(B && B.q && !B.busy){ if($("hint").hidden) showHint(); else if(!B.hintOpen){ B.hintOpen = true; renderStep(true); drawCharge(); } } };
-  $("hint").hidden = true;
+  // 应用题随时可以请小老师；别的题答错一次后右上角出现 💡，点开再看一遍提示
+  if(!isWord && (q.hint || q.steps)) $("qText").insertAdjacentHTML("beforeend", '<button class="ibtn qhint" id="qHint" aria-label="看提示" hidden>'+img("💡")+'</button>');
+  ["hintBtn","qHint"].forEach(id=>{ if($(id)) $(id).onclick = e=>{ e.stopPropagation(); if(B && B.q===q && !B.busy && !B.over) showHint(); }; });
   const ans = $("answers");
   ans.className = "answers"+(q.options.length===3?" three":"");
   const label = {">":"大于","<":"小于","=":"等于"};
@@ -737,28 +795,34 @@ function nextQuestion(){
   drawCharge();
   say(q.speak);
 }
+/* 辅导：画面中央的二级弹窗（遮罩 + 居中卡片），战斗画面不缩放、不跳动；打开时怪兽蓄力和限时都暂停。
+   应用题按 steps 一步一步讲（线段图），别的题显示 hint；「我懂了！」或点遮罩关掉，选项还在下面接着答。 */
 function showHint(){
   const q = B.q;
-  B.hintOpen = true;
-  $("battle").classList.add("hinting");
+  B.hintOpen = true; B.step = 0;
   if(q.steps) renderStep(true);
-  else $("hint").innerHTML = emo(q.hint);
-  $("hint").hidden = false;
+  else { $("hint").innerHTML = emo(q.hint)+'<div class="stepnav"><button class="btn" id="stDone">我懂了！</button></div>'; $("stDone").onclick = closeHint; say(strip(q.hint)); }
+  $("tutor").hidden = false; restart($("hint"),"on");
   drawCharge();
 }
+function closeHint(){
+  if(!B || !B.hintOpen) return;
+  B.hintOpen = false; $("tutor").hidden = true;
+  if($("qHint")) $("qHint").hidden = false;
+  say(B.q && B.q.kind==="word" ? "好，选出答案吧！" : "再试一次！");
+  drawCharge();
+}
+$("tutor").addEventListener("click", e=>{ if(e.target.id==="tutor") closeHint(); });
 function renderStep(speak){
   const q = B.q, n = q.steps.length, s = q.steps[B.step];
-  const nav = B.hintOpen
-    ? '<button class="ibtn round" id="stPrev"'+(B.step?'':' disabled')+' aria-label="上一步">'+chev()+'</button><button class="ibtn round" id="stSay" aria-label="再说一遍">'+img("🔊")+'</button>'
-      + (B.step<n-1 ? '<button class="btn green" id="stNext">下一步</button>' : '<button class="btn" id="stDone">我懂了！</button>')
-    : '<button class="btn white" id="stAgain">从头再讲一遍</button>';
+  const nav = '<button class="ibtn round" id="stPrev"'+(B.step?'':' disabled')+' aria-label="上一步">'+chev()+'</button><button class="ibtn round" id="stSay" aria-label="再说一遍">'+img("🔊")+'</button>'
+    + (B.step<n-1 ? '<button class="btn green" id="stNext">下一步</button>' : '<button class="btn" id="stDone">我懂了！</button>');
   $("hint").innerHTML = emo('<div class="stept">'+s.t+'</div>'+(s.v||"")+'<div class="stepnav"><span class="stepno">💡 '+(B.step+1)+' / '+n+'</span>'+nav+'</div>');
   const go = d => { B.step = Math.max(0,Math.min(n-1,B.step+d)); renderStep(true); };
   if($("stPrev")) $("stPrev").onclick = ()=>go(-1);
   if($("stNext")) $("stNext").onclick = ()=>go(1);
   if($("stSay")) $("stSay").onclick = ()=>say(strip(s.t), true);
-  if($("stDone")) $("stDone").onclick = ()=>{ B.hintOpen = false; renderStep(false); drawCharge(); say("好，看着线段图，选出答案吧！"); };
-  if($("stAgain")) $("stAgain").onclick = ()=>{ B.hintOpen = true; B.step = 0; renderStep(true); drawCharge(); };
+  if($("stDone")) $("stDone").onclick = closeHint;
   if(speak) say(strip(s.t));
 }
 function answer(btn){
@@ -778,24 +842,35 @@ function answer(btn){
   } else {
     btn.classList.add("wrong","shake"); btn.disabled = true;
     sfx.wrong();
-    B.combo = 0; $("combo").textContent = "";
-    if(!B.wrongThisQ){
+    breakCombo();
+    const first = !B.wrongThisQ;
+    if(first){
       B.wrongThisQ = true; st.w++;
       const d = q.disp || (x=>x);
       S.mistakes.unshift({q:q.rec || q.parts.join(" ").replace("?","□"), g:d(v), a:d(String(q.answer))});
       S.mistakes = S.mistakes.slice(0,30); save();
     }
-    if($("hint").hidden) showHint();
-    else if(q.steps && !B.hintOpen){ B.hintOpen = true; renderStep(false); }
+    // 答错立刻挨一下（不等蓄力）；第一次答错，挨完打再弹出小老师的提示
+    // 答错也重新计时、蓄力清零：答错这一下之后至少还有一整轮蓄力，一题内不会「蓄力 + 答错 + 超时」连挨 3 下
+    B.qt = 0; B.charge = 0; B.lastTick = 0;
     if(B.lucky>0){
-      B.lucky--; B.charge = 0; B.lastTick = 0; sfx.shield();
+      B.lucky--; sfx.shield();
       toast("🍀","幸运光环！不扣心");
     } else monsterAttack("wrong");
+    if(first && (q.hint || q.steps)){ const cur = B; setTimeout(()=>{ if(B===cur && !B.over && B.q===q && !B.hintOpen) showHint(); }, 700); }
   }
 }
 function popAt(cls, text){
   const d = document.createElement("span"); d.className = "dmg "+cls; d.innerHTML = emo(text);
   $("arena").appendChild(d); setTimeout(()=>d.remove(), 850);
+}
+// 怪兽身上的大号描边伤害数字；暴击更大、更黄，上面写「暴击!」
+function dmgPop(n, crit){
+  const [cx,cy] = monCenter((Math.random()-.5)*30, -20 - Math.random()*14);
+  const d = document.createElement("span"); d.className = "dmg hitn"+(crit?" crit":"");
+  d.innerHTML = (crit?'<i>暴击!</i>':'')+'<b>-'+n+'</b>';
+  d.style.left = cx+"px"; d.style.top = cy+"px";
+  $("arena").appendChild(d); setTimeout(()=>d.remove(), 900 + FX_HOLD);
 }
 function monCenter(jx, jy){
   const a = $("arena").getBoundingClientRect(), m = $("monSprite").getBoundingClientRect();
@@ -815,32 +890,67 @@ function fxAt(em, big){
   const [cx,cy] = monCenter();
   const f = document.createElement("span"); f.className = "fx"+(big?" big":""); f.innerHTML = img(em);
   f.style.left = cx+"px"; f.style.top = cy+"px";
-  $("arena").appendChild(f); setTimeout(()=>f.remove(), 650);
+  $("arena").appendChild(f); setTimeout(()=>f.remove(), 650 + FX_HOLD);
 }
 function tint(col){ const t = $("tint"); t.style.setProperty("--tc", col); restart(t,"on"); }
-/* 伤害（家长 10-21 平衡）：普通攻击 = 1 + floor(装备攻击总和 / 3)；暴击 = 勇士暴击伤害 + 金色光环 + 装备暴击伤害 + 同样的攻击加成。
-   每一下最多打掉怪兽总血量的 1/4（向下取整，至少 1），所以穿再好的装备一关也至少要答对 4 题。
-   消除 / 连连看（board）每配对一对固定打 1 滴。 */
+/* 打击感：命中瞬间定格（hit-stop）—— 竞技场里的动作（勇士冲刺、怪兽受击、刀光）停住 ms 毫秒再继续。
+   FX_HOLD 只给测试用（__t.fxHold）：把定格拉长，截图才拍得到。 */
+let FX_HOLD = 0;
+function hitStop(ms){
+  const a = $("arena"), t = ms + FX_HOLD;
+  a.classList.add("hitstop"); clearTimeout(hitStop.tm);
+  hitStop.tm = setTimeout(()=>a.classList.remove("hitstop"), t);
+  return t;
+}
+// 拿剑：冲上去挥砍，弧形刀光（颜色 = 武器品质色，暴击再加一道交叉的）。刀光在命中前一点点开始画，定格时正好画满
+function slashFx(col, crit){
+  const [cx,cy] = monCenter(), sz = crit ? 150 : 115, arc = (d, c) => '<path class="sg" d="'+d+'"/><path class="sc" d="'+d+'"/>';
+  const el = document.createElement("div"); el.className = "slash"+(crit?" crit":"");
+  el.style.cssText = "left:"+cx+"px;top:"+cy+"px;width:"+sz+"px;height:"+sz+"px;--qc:"+col;
+  el.innerHTML = '<svg viewBox="0 0 100 100">'+arc("M10 86 Q24 20 92 12")+(crit?arc("M8 24 Q62 26 90 92"):'')+'</svg>';
+  $("arena").appendChild(el); setTimeout(()=>el.remove(), 650 + FX_HOLD);
+}
+// 没武器：拳击，拳头 + 冲击波圈
+function punchFx(crit){
+  const [cx,cy] = monCenter(-16, 0);
+  const el = document.createElement("div"); el.className = "punchfx"+(crit?" crit":"");
+  el.style.left = cx+"px"; el.style.top = cy+"px"; el.innerHTML = '<i class="ring"></i>'+img("👊");
+  $("arena").appendChild(el); setTimeout(()=>el.remove(), 500 + FX_HOLD);
+}
+function breakCombo(){ B.combo = 0; const c = $("combo"); c.textContent = ""; c.className = "combo"; $("arena").dataset.combo = "0"; }
+/* 伤害（家长 10-21 平衡）：普通攻击 = 1 + floor(装备攻击总和 / 3)；暴击 = 勇士暴击伤害 + 金色光环 + 装备暴击伤害 + 同样的攻击加成；
+   再加等级加成（lvBonus：每 2 级 +1）。每一下最多打掉怪兽总血量的 1/4（向下取整，至少 1），所以一关也至少要答对 4 题。
+   消除 / 连连看（board）的伤害由 boardRight 算好传进来，不加装备和等级攻击。 */
 const atkBonus = () => Math.floor(B.gs.atk/3);
 const hitCap = () => Math.max(1, Math.floor(B.maxHp/4));
+const DASH_HIT = 170;   // 冲刺动作（.dash 480ms）在 35% 处碰到怪兽
 function heroAttack(board){   // board = {dmg, crit} for 消除 / 连连看
   const cur = B, h = B.h;
   const gs = B.gs;
   const crit = board ? !!board.crit : (B.combo >= (h.critAt||3) || Math.random()*100 < Math.min(CRIT_CAP, gs.critRate));
-  const dmg = board ? board.dmg : Math.min(B.hp, hitCap(), crit ? (h.critDmg||2)+(goldAura()?1:0)+gs.critDmg+atkBonus() : 1+atkBonus());
-  crit ? sfx.crit() : sfx.right();
-  play($("heroSprite"),"attack");
-  const shot = document.createElement("span"); shot.className = "shot"; shot.innerHTML = img(h.shot);
-  shot.style.setProperty("--sc", h.col); if(crit) shot.style.transform = "scale(1.3)";
-  $("arena").appendChild(shot);
-  if(!board && B.combo>=2) setCombo(crit ? "连击 ×"+B.combo+" 暴击！" : "连击 ×"+B.combo);
+  const dmg = board ? board.dmg : Math.min(B.hp, hitCap(), (crit ? (h.critDmg||2)+(goldAura()?1:0)+gs.critDmg+atkBonus() : 1+atkBonus()) + B.lvAtk);
+  const wpn = S.equipped && S.equipped.weapon, hs = $("heroSprite");
+  // 冲到怪兽面前：距离 = 勇士右边到怪兽左边（留一点重叠，像真的打到）
+  const hr = hs.getBoundingClientRect(), mr = $("monSprite").getBoundingClientRect();
+  hs.style.setProperty("--dash", Math.max(20, mr.left - hr.right + hr.width*.4)+"px");
+  play(hs, wpn ? "atk-slash" : "atk-punch");
+  (wpn ? sfx.slash : sfx.punch)();
+  const tier = comboTier(B.combo);
+  if(!board && B.combo>=2) setCombo(crit ? "连击 ×"+B.combo+" 暴击！" : "连击 ×"+B.combo, tier);
+  if(wpn) setTimeout(()=>{ if(B===cur && !B.over) slashFx(qCol(wpn), crit); }, DASH_HIT-80);
   setTimeout(()=>{
-    shot.remove();
     if(B!==cur || B.over) return;   // level already won (e.g. last pairs tapped fast): don't hit or win() again
-    play($("monSprite"),"hit");
-    fxAt(h.fx, crit); tint(h.col);
-    popAt("mon"+(crit?" big":""), "-"+dmg);
-    if(crit){ burst(8,[h.fx,"✨"]); restart($("battle"),"quake"); }
+    const heavy = !!B.L.boss, ms = $("monSprite");
+    if(!wpn) punchFx(crit);
+    ms.className = "sprite"; void ms.offsetWidth; ms.className = "sprite hit"+(heavy?" heavy":"")+(crit?" crit":"");
+    sfx.thud(heavy||crit); crit ? sfx.crit() : sfx.right();
+    fxAt(h.fx, crit); tint(crit ? "#ffe14d" : h.col);   // 勇士技能的特色特效照样有
+    dmgPop(dmg, crit);
+    shake(crit||heavy||tier>=2 ? "quake" : "quakeS");
+    $("arena").dataset.combo = String(tier);
+    if(COMBO_TIERS.includes(B.combo)){ sfx.combo(tier); burst(6+tier*4, tier>=3 ? ["🌈","✨","⭐"] : tier>=2 ? ["🔥","✨"] : ["✨","⭐"]); }
+    else if(crit) burst(8,[h.fx,"✨"]);
+    const stop = hitStop((crit ? HITSTOP_CRIT : HITSTOP_MS) + (heavy ? HITSTOP_BOSS : 0));
     B.hp = Math.max(0, B.hp - dmg); drawHP();
     // 神龙 heals 1 every h.heal combo; gear 💖 heals gs.comboHeal every 5 combo; both add up
     const heal = (h.heal && B.combo>0 && B.combo%h.heal===0 ? 1 : 0) + (gs.comboHeal && B.combo>0 && B.combo%5===0 ? gs.comboHeal : 0);
@@ -853,25 +963,27 @@ function heroAttack(board){   // board = {dmg, crit} for 消除 / 连连看
     if(B.L.boss && !B.enraged && B.hp <= B.maxHp/2){
       B.enraged = true;
       $("battle").classList.add("enraged");
-      sfx.roar(); restart($("battle"),"quake");
+      sfx.roar(); shake();
       banner('<div class="ribbon">'+B.L.n+' 暴怒了！小心！</div>', 1500);
       say(B.L.n+"暴怒了！");
-      setTimeout(()=>{ if(B===cur && !B.over) nextQuestion(); }, 1500);
+      setTimeout(()=>{ if(B===cur && !B.over) nextQuestion(); }, 1500 + stop);
       return;
     }
-    setTimeout(()=>{ if(B===cur && !B.over) nextQuestion(); }, 550);
-  }, 320);
+    setTimeout(()=>{ if(B===cur && !B.over) nextQuestion(); }, 550 + stop);
+  }, DASH_HIT);
 }
+// 怪兽攻击：蓄力满（charge）、超时（timeout）、答错 / 配错（wrong）、逃跑失败（flee）。扑过来 150ms 就打到
 function monsterAttack(reason){
   if(!B || B.over) return;
   const cur = B;
   B.busy = true;
   sfx.roar();
   play($("monSprite"),"lunge");
-  if(reason==="timeout") setCombo("⏰ 太慢啦！");
+  if(reason==="timeout") setCombo("⏰ 太慢啦！", 0, true);
+  if(reason==="charge") setCombo("💢 蓄力攻击！", 0, true);
   setTimeout(()=>{
     if(B!==cur || B.over) return;
-    B.charge = 0; B.lastTick = 0;
+    B.charge = 0;
     if(B.shield>0){
       B.shield--; sfx.shield(); tint("#38bdf8");
       const sh = $("shield"); restart(sh,"pop"); setTimeout(()=>{ if(B.shield>0) sh.className = "shield"; else sh.hidden = true; }, 500);
@@ -882,7 +994,7 @@ function monsterAttack(reason){
     }
     sfx.hit();
     restart($("flash"),"on");
-    restart($("battle"),"quake");
+    shake();
     play($("heroSprite"),"hurt");
     try{ navigator.vibrate && navigator.vibrate([120,60,120]); }catch(e){}
     const dmg = Math.min(B.hearts, B.dmg);
@@ -891,7 +1003,7 @@ function monsterAttack(reason){
     drawCharge();
     if(B.hearts<=0) return lose();
     setTimeout(()=>{ if(B===cur && !B.over) B.busy = false; }, 450);
-  }, 300);
+  }, 150);
 }
 
 /* ================= 算术消除 (match) 和 汉字-拼音连连看 (link) ================= */
@@ -957,18 +1069,19 @@ function boardRight(){
   const cleared = B.mode==="match" ? !(B.board.cards || B.board).length : linkDone(B.board);
   if(cleared) dmg = Math.max(dmg, B.hp);   // last pair: always the finishing blow
   B.lastHit = dmg; B.combo = B.bcombo + 1;
-  if(B.bcombo>0){ setCombo((fast ? "⚡闪电连击 ×" : "连击 ×")+(B.bcombo+1)); if(fast) restart($("battle"),"quake"); }
-  else $("combo").textContent = "";   // combo timed out: take the old 「连击 ×N」 off the screen
+  // 闪电连击也走同一套打击反馈（heroAttack：定格、伤害数字、3 / 5 / 10 连档位）
+  if(B.bcombo>0){ setCombo((fast ? "⚡闪电连击 ×" : "连击 ×")+(B.bcombo+1), comboTier(B.combo)); if(fast) shake(); }
+  else { $("combo").textContent = ""; $("arena").dataset.combo = "0"; }   // combo timed out: take the old 「连击 ×N」 off the screen
   const st = S.stats[B.W.id] || (S.stats[B.W.id]={r:0,w:0}); st.r++; save();
   heroAttack({dmg, crit:fast});
 }
 function boardWrong(els){
   const cur = B;
   els.forEach(el=>{ if(el){ el.classList.remove("shake"); void el.offsetWidth; el.classList.add("shake","bad"); } });
-  sfx.wrong(); B.combo = 0; B.bcombo = 0; B.lastPair = -1e9; $("combo").textContent = "";
+  sfx.wrong(); breakCombo(); B.bcombo = 0; B.lastPair = -1e9;
   const st = S.stats[B.W.id] || (S.stats[B.W.id]={r:0,w:0}); st.w++; save();
   setTimeout(()=>els.forEach(el=>{ if(el && B===cur) el.classList.remove("shake","bad"); }), 600);
-  if(B.lucky>0){ B.lucky--; B.charge = 0; B.lastTick = 0; sfx.shield(); toast("🍀","幸运光环！不扣心"); }
+  if(B.lucky>0){ B.lucky--; B.charge = 0; sfx.shield(); toast("🍀","幸运光环！不扣心"); }
   else monsterAttack("wrong");
 }
 function pickCard(id, el){
@@ -1031,14 +1144,14 @@ function win(){
 function bossFinale(cur, info){
   const bt = $("battle");
   const wo = document.createElement("div"); wo.className = "whiteout"; document.body.appendChild(wo); setTimeout(()=>wo.remove(), 900);
-  sfx.boom(); sfx.ko(); restart(bt,"quake");
+  sfx.boom(); sfx.ko(); shake();
   try{ navigator.vibrate && navigator.vibrate([200,80,200,80,400]); }catch(e){}
   const ko = document.createElement("div"); ko.className = "ko"; ko.textContent = "K.O.!"; $("arena").appendChild(ko); setTimeout(()=>ko.remove(), 1900);
   $("monSprite").className = "sprite dying";
   say("K O！打败了"+info.L.n+"！");
   for(let i=0;i<5;i++) setTimeout(()=>{
     if(B!==cur) return;
-    sfx.boom(); restart(bt,"quake");
+    sfx.boom(); shake();
     burst(9, ["💥","🔥","✨"], (Math.random()-.5)*90, (Math.random()-.5)*90);
   }, 350+i*300);
   setTimeout(()=>{
@@ -1073,6 +1186,9 @@ function rewardHTML(r){
   if(rows.length || chips.length) h += '<div class="rdrops" id="rDrops">'+rows.slice(0,2).join("")+(chips.length?'<div class="rchips">'+chips.join("")+'</div>':'')+'</div>';
   return h + '<div class="lvup" id="lvUp" hidden></div>';
 }
+// 等级加成的文字：「⚔️攻击 +1 ❤️心 +1」
+const bonusText = b => [b.atk ? img("⚔️")+'攻击 <b class="num">+'+b.atk+'</b>' : '', b.hearts ? img("❤️")+'心 <b class="num">+'+b.hearts+'</b>' : ''].filter(Boolean).join(" ");
+function bonusUp(from, to){ const a = lvBonus(from), z = lvBonus(to); return bonusText({atk:z.atk-a.atk, hearts:z.hearts-a.hearts}); }
 // the hero's bar fills up; on a level-up it bursts, shows 「升级！」 and starts again from the new level
 function animateReward(r){
   const res = r.res, fill = $("xFill"), seq = pageSeq;
@@ -1087,8 +1203,11 @@ function animateReward(r){
       if(seq!==pageSeq || !lv || !lu || !fill.isConnected) return;
       lv.textContent = S.heroLv;
       const gear = res.rewards.flatMap(x=>x.items).map(x=>x.gear).filter(Boolean);
-      lu.innerHTML = emo('<b>⭐ 升级！Lv.'+S.heroLv+'</b>'+(gear.length?'<span>升级奖励：'+gear.map(g=>gearImg(g)+g.name).join("、")+'</span>':'')); lu.hidden = false; restart(lu,"on");
-      sfx.win(); confetti(140); say("升级啦！"+(gear.length?"奖励"+gear[0].name+"！":""));
+      const up = bonusUp(r.lvBefore, S.heroLv), nx = nextLvBonus(S.heroLv);
+      lu.innerHTML = emo('<b>⭐ 升级！Lv.'+S.heroLv+'</b>'
+        + (up ? '<span class="lvbonus" id="lvBonus">'+up+'</span>' : nx ? '<small class="lvnext">Lv.'+nx.lv+'：'+bonusText(nx)+'</small>' : '')
+        + (gear.length?'<span>升级奖励：'+gear.map(g=>gearImg(g)+g.name).join("、")+'</span>':'')); lu.hidden = false; restart(lu,"on");
+      sfx.win(); confetti(140); say("升级啦！"+(up?strip(up).replace(/\+/g,"加")+"！":"")+(gear.length?"奖励"+gear[0].name+"！":""));
       end();
       setTimeout(()=>{ if(seq===pageSeq) lu.hidden = true; }, 2600);
     }, 750);
@@ -1119,6 +1238,9 @@ function showWin(info){
   let body = '<div class="bigstars">';
   for(let i=0;i<3;i++) body += '<span class="s'+(i<info.stars?"":" off")+'" style="animation-delay:'+(0.3+i*0.35)+'s'+(i<info.stars && TIERS[tf] && TIERS[tf].f?';filter:'+TIERS[tf].f:'')+'">'+img(info.diff>=3?"💎":"⭐")+'</span>';
   body += '</div>';
+  // 星星有用：离下一个勇士还差几颗星
+  const nh = HEROES.find(x=>x.need!=null && x.need>totalStars());
+  if(nh && !info.newHero) body += '<p class="nexth" id="nextHero">再拿 <b class="num">'+(nh.need-totalStars())+'</b> 颗'+img("⭐")+'解锁 '+img(nh.e)+'「'+nh.n+'」</p>';
   const notes = [];
   if(info.tierUp){
     const t = info.tierUp;
@@ -1177,7 +1299,7 @@ function lose(){
 }
 function toMap(){
   if(B) B.over = true;
-  cancelAnimationFrame(rafId);
+  cancelAnimationFrame(rafId); fleeTick(); $("tutor").hidden = true;
   try{ speechSynthesis.cancel(); }catch(e){}
   $("battle").hidden = true; $("map").hidden = false;
   renderMap(true);   // back on the map: centre the (new) current level
@@ -1313,9 +1435,10 @@ function fireworks(ms){
 /* 逃跑（家长 10-21）：战斗中点左上角地图按钮先确认；FLEE_RATE 的机会跑掉（扣身上装备经验，fleePenalty），
    跑不掉怪兽打一下（按狂暴档扣心）再接着打。App 切到后台、锁屏都不算逃跑（这里只听这个按钮）。 */
 $("bBack").onclick = ()=>{
+  if(B && !B.over && B.fleeUntil > performance.now()) return;   // 逃跑失败后的冷却（按钮是灰的）
   sfx.click();
   if(!B || B.over) return toMap();
-  openPage({title:"要逃跑吗？", ribbon:"blue", back:true, body:'<div class="fleeart">'+img("🏃")+'</div><p>真的要逃跑吗？<br>逃跑会扣除装备经验</p>'
+  openPage({title:"要逃跑吗？", ribbon:"blue", back:true, body:'<div class="fleeart">'+img("🏃")+'</div><p>真的要逃跑吗？<br>逃跑会扣除装备经验'+(wornList().length?'（每件 <b class="num">-'+FLEE_EXP_LOSS+'</b>）':'')+'<br><small>逃不掉会挨打，'+FLEE_LOCK_SEC+' 秒内不能再逃</small></p>'
     + '<div class="btnrow"><button class="btn green" id="fStay">'+img("⚔️")+' 继续</button><button class="btn red" id="fGo">逃跑</button></div>'});
   $("fStay").onclick = ()=>{ sfx.click(); closePage(); };
   $("fGo").onclick = ()=>{
@@ -1323,6 +1446,7 @@ $("bBack").onclick = ()=>{
     const r = tryFlee(B.rage);
     if(!r.ok){
       closePage(); toast("💥","逃跑失败！"); say("逃跑失败！");
+      B.fleeUntil = performance.now() + FLEE_LOCK_SEC*1000; fleeTick();
       monsterAttack("flee");
       return;
     }
@@ -1334,9 +1458,15 @@ $("bBack").onclick = ()=>{
       + (pen.removed ? '<p>弄丢了 '+img(pen.removed.e)+pen.removed.name+'</p>' : '')
       + '<button class="btn green" id="fMap">'+img("🗺️")+' 回地图</button>'});
     say("逃跑成功"+(pen.lost?"，装备经验少了"+pen.lost+"点":""));
-    $("fMap").onclick = ()=>{ closePage(); toMap(); };
+    $("fMap").onclick = ()=>{ closePage(); toMap(); mapNote("🏃", pen.lost ? '逃跑：装备经验 <b class="num">-'+pen.lost+'</b>' : '逃跑成功'); };
   };
 };
+// 地图上方的一条提示（比如逃跑扣了多少经验），几秒后自己消失
+function mapNote(e, html){
+  const v = $("map").querySelector(".wview"); if(!v) return;
+  const n = document.createElement("div"); n.className = "mapnote"; n.id = "mapNote"; n.innerHTML = img(e)+'<span>'+emo(html)+'</span>';
+  v.appendChild(n); setTimeout(()=>n.remove(), 3500);
+}
 const repeat = ()=>{ if(!B || !B.q) return; if(thinking()) say(strip(B.q.steps[B.step].t), true); else say(B.q.speak, true); };
 $("speakBtn").onclick = e=>{ e.stopPropagation(); repeat(); };
 $("qText").addEventListener("click", e=>{ if(e.target.closest("button")) return; repeat(); });

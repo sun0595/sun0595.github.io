@@ -164,6 +164,7 @@ img{-webkit-user-drag:none;pointer-events:none}
 .tag{position:relative;z-index:2;font-size:14px;color:#fff;background:rgba(42,33,80,.8);border:2px solid var(--ink);border-radius:10px;padding:1px 10px;white-space:nowrap}
 .hearts{position:relative;z-index:2;display:flex;gap:1px;padding:3px 7px;border-radius:14px;background:rgba(42,33,80,.7);border:2px solid var(--ink)}
 .hearts .ei{font-size:clamp(16px,4.6vw,21px);vertical-align:0}
+.hearts.many .ei{font-size:clamp(13px,3.8vw,16px)}
 .hearts .lost{filter:grayscale(1) brightness(.6);opacity:.45}
 .hearts .break{animation:hbreak .8s forwards}
 .hearts .gain{animation:pop .5s}
@@ -182,8 +183,19 @@ img{-webkit-user-drag:none;pointer-events:none}
 @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-10px)}40%{transform:translateX(9px)}60%{transform:translateX(-6px)}80%{transform:translateX(4px)}}
 .hit{animation:hit .45s}
 @keyframes hit{0%{filter:none;transform:translateX(0)}30%{filter:brightness(2.4) saturate(0);transform:translateX(14px) rotate(8deg)}100%{filter:none;transform:translateX(0)}}
-.lunge{animation:lunge .6s cubic-bezier(.5,0,.6,1)!important}
-@keyframes lunge{0%{transform:translateX(0)}15%{transform:translateX(12%) scale(.92)}50%{transform:translateX(-115%) scale(1.35)}100%{transform:translateX(0)}}
+/* 怪兽受击（勇士打中时）：第 0 帧就是命中姿势（闪白 + 压扁 + 被打退），定格时停在这一帧；然后弹回。Boss 更重 */
+.sprite.hit{transform-origin:50% 100%;animation:monHit .5s cubic-bezier(.2,.8,.3,1)}
+.sprite.hit.heavy{animation:monHitB .65s cubic-bezier(.2,.8,.3,1)}
+.sprite.hit.crit{animation-duration:.6s}
+@keyframes monHit{0%{filter:brightness(3) saturate(0);transform:translateX(16px) scale(1.28,.7)}25%{filter:brightness(1.6) saturate(.4);transform:translateX(30px) scale(.84,1.2) rotate(6deg)}55%{filter:none;transform:translateX(10px) scale(1.08,.94)}78%{transform:translateX(2px) scale(.97,1.03)}100%{filter:none;transform:none}}
+@keyframes monHitB{0%{filter:brightness(3) saturate(0);transform:translateX(12px) scale(1.2,.78)}25%{filter:brightness(1.8) saturate(.3);transform:translateX(22px) scale(.88,1.14) rotate(4deg)}40%{transform:translateX(16px) scale(1.06,.95)}60%{filter:none;transform:translateX(6px) scale(.97,1.03)}100%{filter:none;transform:none}}
+.lunge{animation:lunge .5s cubic-bezier(.5,0,.6,1)!important}
+@keyframes lunge{0%{transform:translateX(0)}10%{transform:translateX(10%) scale(.92)}30%{transform:translateX(-115%) scale(1.35)}100%{transform:translateX(0)}}
+/* 勇士出手：冲到怪兽面前（--dash 由 JS 量出来），35% 处命中；拿剑挥砍带转身，空手是直拳 */
+.atk-slash{animation:heroSlash .48s cubic-bezier(.3,0,.4,1)}
+.atk-punch{animation:heroPunch .48s cubic-bezier(.3,0,.4,1)}
+@keyframes heroSlash{0%{transform:none}12%{transform:translateX(-10px) rotate(-10deg) scale(.95)}35%{transform:translateX(var(--dash,80px)) rotate(14deg) scale(1.08)}55%{transform:translateX(calc(var(--dash,80px)*.9)) rotate(6deg)}100%{transform:none}}
+@keyframes heroPunch{0%{transform:none}12%{transform:translateX(-8px) scale(.94,1.04)}35%{transform:translateX(var(--dash,80px)) scale(1.12,.94)}55%{transform:translateX(calc(var(--dash,80px)*.9))}100%{transform:none}}
 .attack{animation:attack .35s}
 @keyframes attack{0%,100%{transform:translateX(0)}50%{transform:translateX(30%) rotate(-8deg)}}
 .hurt{animation:hurt .6s!important}
@@ -206,6 +218,22 @@ img{-webkit-user-drag:none;pointer-events:none}
 .combo{position:absolute;top:66px;left:50%;transform:translateX(-50%);font:400 24px var(--f-ui);color:#ffcd3c;-webkit-text-stroke:5px var(--ink);paint-order:stroke fill;white-space:nowrap;z-index:5}
 .combo.pop{animation:cpop .4s}
 @keyframes cpop{0%{transform:translateX(-50%) scale(.5)}60%{transform:translateX(-50%) scale(1.3)}100%{transform:translateX(-50%) scale(1)}}
+/* 连击档位：3 连金光、5 连火焰、10 连彩虹（字、勇士光环、竞技场边框一起变） */
+.combo.c1{color:#ffe14d;text-shadow:0 0 12px #ffd000}
+.combo.c2{font-size:28px;color:#ff9a1f;text-shadow:0 0 14px #ff5a00,0 0 26px #ff9a1f}
+.combo.c3{font-size:32px;color:#fff;text-shadow:0 0 10px #ff4df0,0 0 22px #4dd2ff;animation:cpop .4s,rainbowT .6s linear infinite}
+@keyframes rainbowT{0%{color:#ff6b6b}25%{color:#ffe14d}50%{color:#5ad14f}75%{color:#4dd2ff}100%{color:#ff6b6b}}
+.arena[data-combo="1"] .hero .sprite{filter:drop-shadow(0 0 8px #ffe14d)}
+.arena[data-combo="2"] .hero .sprite{filter:drop-shadow(0 0 8px #ff9a1f) drop-shadow(0 0 18px #ff5a00)}
+.arena[data-combo="3"] .hero .sprite{filter:drop-shadow(0 0 10px #ff4df0) drop-shadow(0 0 22px #4dd2ff)}
+.arena[data-combo="2"]{box-shadow:inset 0 0 26px rgba(255,120,0,.75)}
+.arena[data-combo="3"]{animation:rainbowB .8s linear infinite}
+@keyframes rainbowB{0%{box-shadow:inset 0 0 30px #ff4df0}33%{box-shadow:inset 0 0 30px #ffe14d}66%{box-shadow:inset 0 0 30px #4dd2ff}100%{box-shadow:inset 0 0 30px #ff4df0}}
+/* 蓄力快满：道具按钮闪烁 +「快用冰冻！」（这时先把连击字收起来，免得叠在一起） */
+.item.nudge{animation:nudge .5s ease-in-out infinite;box-shadow:0 4px 0 var(--ink),0 0 0 4px #fff,0 0 18px 6px #4dd2ff}
+@keyframes nudge{50%{transform:scale(1.16)}}
+.urge{position:absolute;top:64px;left:50%;transform:translateX(-50%);z-index:5;padding:3px 12px;border-radius:14px;border:3px solid var(--ink);background:#e0f7ff;color:#0b5c8a;font:400 18px/1.3 var(--f-ui);white-space:nowrap;pointer-events:none;animation:pulse .5s infinite}
+.arena.urging .combo:not(.warn){visibility:hidden}
 .banner{position:absolute;inset:0;z-index:9;display:grid;place-items:center;text-align:center;pointer-events:none;padding:0 10px}
 .banner>div{animation:bannerIn 1.4s forwards}
 .banner .ribbon{font-size:26px}
@@ -218,6 +246,29 @@ img{-webkit-user-drag:none;pointer-events:none}
 .dmg.big{font-size:48px;color:#ff8a00}
 .dmg.me{left:10%;bottom:58%}
 @keyframes dmg{from{transform:translateY(0) scale(.6);opacity:1}to{transform:translateY(-50px) scale(1.2);opacity:0}}
+/* 打在怪兽身上的数字：大号描边，暴击更大更黄、带「暴击!」 */
+.dmg.hitn{display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-50%);animation:hitn .9s cubic-bezier(.2,1.4,.4,1) forwards;z-index:8}
+.dmg.hitn b{font:800 52px/1 var(--f-num);color:#fff;-webkit-text-stroke:7px var(--ink);paint-order:stroke fill;text-shadow:0 4px 0 var(--ink)}
+.dmg.hitn i{font:400 22px/1 var(--f-ui);font-style:normal;color:#fff;-webkit-text-stroke:5px #b4001e;paint-order:stroke fill;margin-bottom:-2px}
+.dmg.hitn.crit b{font-size:74px;color:#ffe14d;-webkit-text-stroke:8px #b4001e;text-shadow:0 5px 0 #5a0010,0 0 18px #ffb300}
+@keyframes hitn{0%{transform:translate(-50%,-50%) scale(1.9);opacity:1}18%{transform:translate(-50%,-50%) scale(.92)}28%{transform:translate(-50%,-50%) scale(1.05)}70%{opacity:1;transform:translate(-50%,-70%) scale(1)}100%{opacity:0;transform:translate(-50%,-110%) scale(.9)}}
+/* 刀光（颜色 = 武器品质）和拳击冲击波 */
+.slash{position:absolute;z-index:6;pointer-events:none;transform:translate(-50%,-50%)}
+.slash svg{display:block;width:100%;height:100%;overflow:visible}
+.slash path{fill:none;stroke-linecap:round;stroke-dasharray:130;stroke-dashoffset:130;animation:slashDraw .45s ease-out forwards}
+.slash .sg{stroke:var(--qc,#fff);stroke-width:10;filter:drop-shadow(0 0 5px var(--qc,#fff)) drop-shadow(0 0 12px var(--qc,#fff))}
+.slash .sc{stroke:#fff;stroke-width:3}
+.slash.crit .sg{stroke-width:12}
+.slash.crit path:nth-child(n+3){animation-delay:.04s}
+@keyframes slashDraw{0%{stroke-dashoffset:130;opacity:1}20%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}
+.punchfx{position:absolute;z-index:6;width:0;height:0;pointer-events:none}
+.punchfx .ei{position:absolute;left:0;top:0;font-size:64px;margin:-32px 0 0 -32px;vertical-align:0;animation:punchIn .42s ease-out forwards}
+.punchfx.crit .ei{font-size:86px;margin:-43px 0 0 -43px}
+.punchfx .ring{position:absolute;left:-44px;top:-44px;width:88px;height:88px;border-radius:50%;border:7px solid #fff;box-shadow:0 0 14px #ffe14d;animation:ring .42s ease-out forwards}
+@keyframes punchIn{0%{transform:scale(1.35);opacity:1}100%{transform:scale(.85) translateX(10px);opacity:0}}
+@keyframes ring{0%{transform:scale(.35);opacity:1}100%{transform:scale(1.8);opacity:0}}
+/* 命中定格：竞技场里的动作停住一下（伤害数字照常弹出） */
+.arena.hitstop .sprite,.arena.hitstop .slash path,.arena.hitstop .punchfx .ei,.arena.hitstop .punchfx .ring,.arena.hitstop .fx .ei{animation-play-state:paused!important}
 .toast{position:absolute;left:0;right:0;top:42%;z-index:8;display:flex;justify-content:center;pointer-events:none}
 .toast>div{display:flex;align-items:center;gap:8px;padding:8px 18px;border-radius:18px;border:3px solid var(--ink);background:#fff;color:var(--ink);font:400 24px var(--f-ui);box-shadow:0 5px 0 var(--ink);animation:toast 1.3s forwards}
 .toast .ei{font-size:40px}
@@ -244,13 +295,15 @@ img{-webkit-user-drag:none;pointer-events:none}
 .cd.on{animation:cdPop .95s ease-out forwards}
 @keyframes cdPop{0%{opacity:0;transform:translate(-50%,-50%) scale(2.4)}12%{opacity:1;transform:translate(-50%,-50%) scale(1)}75%{opacity:.95;transform:translate(-50%,-50%) scale(.95)}100%{opacity:0;transform:translate(-50%,-50%) scale(.8)}}
 #battle.quake{animation:quake .45s}
+#battle.quakeS{animation:quakeS .22s}
+@keyframes quakeS{0%,100%{transform:none}30%{transform:translate(-4px,2px)}65%{transform:translate(3px,-2px)}}
 @keyframes quake{0%,100%{transform:translate(0,0)}15%{transform:translate(-9px,5px)}30%{transform:translate(8px,-6px)}45%{transform:translate(-6px,-3px)}60%{transform:translate(5px,4px)}80%{transform:translate(-2px,2px)}}
 /* freeze: monster sealed in an ice block, frosted screen edges, falling snow */
 .iceblock{position:absolute;left:50%;bottom:-4%;width:118%;height:112%;transform:translateX(-50%);z-index:3;pointer-events:none;border-radius:18px;border:3px solid #e8fbff;
   background:linear-gradient(135deg,rgba(255,255,255,.75) 0 8%,rgba(180,235,255,.35) 8% 30%,rgba(255,255,255,.5) 30% 33%,rgba(150,220,255,.35) 33% 100%);
   box-shadow:inset 0 0 18px rgba(255,255,255,.9),0 0 22px rgba(125,211,252,.95);animation:iceIn .35s cubic-bezier(.2,1.6,.4,1)}
 @keyframes iceIn{from{transform:translateX(-50%) scale(.2);opacity:0}}
-.mon.frozen .sprite{animation:none!important}
+.mon.frozen .sprite:not(.hit){animation:none!important}
 .mon.frozen .sprite .ei{filter:hue-rotate(170deg) saturate(.45) brightness(1.3)!important}
 .frost{position:absolute;inset:0;z-index:7;pointer-events:none;opacity:0;transition:opacity .4s;
   background:radial-gradient(circle at 0 0,rgba(235,250,255,.95),transparent 28%),radial-gradient(circle at 100% 0,rgba(235,250,255,.95),transparent 28%),radial-gradient(circle at 0 100%,rgba(235,250,255,.9),transparent 26%),radial-gradient(circle at 100% 100%,rgba(235,250,255,.9),transparent 26%);
@@ -283,6 +336,17 @@ img{-webkit-user-drag:none;pointer-events:none}
 
 /* question card + answers */
 .qcard{position:relative;flex:none;min-height:88px;display:flex;align-items:center;justify-content:center;padding:12px 14px}
+/* 本题还剩多少时间（卡片底边的细条；怪兽蓄力在怪兽脚下） */
+.qtime{position:absolute;left:14px;right:14px;bottom:4px;height:5px;border-radius:3px;background:rgba(42,33,80,.12);overflow:hidden;pointer-events:none}
+.qtime i{display:block;height:100%;width:0;background:#5ad14f;border-radius:3px}
+.qtime i.low{background:#ff5d6c}
+#battle.boardmode .qtime{display:none}
+.qhint{position:absolute;right:6px;top:6px;width:40px;height:40px;border-radius:12px;animation:pulse 1s infinite}
+.qhint .ei{font-size:24px}
+/* 辅导弹窗：战斗画面中央，遮罩 + 卡片；战斗区不缩放 */
+.tutor{position:absolute;inset:0;z-index:25;display:flex;align-items:center;justify-content:center;padding:12px;background:rgba(16,12,40,.62)}
+.tutor .hint{width:100%;max-width:440px;max-height:100%}
+.tutor .hint.on{animation:pageIn .3s cubic-bezier(.2,1.4,.4,1)}
 .qtag{position:absolute;left:14px;top:-14px;z-index:2;font-size:14px;padding:2px 12px;border-radius:10px;border:2px solid var(--ink);background:var(--purple);color:#fff}
 .qtag.py{background:#ff6fae}
 .q{font:800 clamp(40px,11vw,56px)/1.1 var(--f-num);display:flex;align-items:center;justify-content:center;gap:.22em;flex-wrap:wrap;color:var(--ink)}
@@ -355,33 +419,18 @@ img{-webkit-user-drag:none;pointer-events:none}
 .lnk.done{background:linear-gradient(#8ef07f,#3fbf3a);color:#fff;opacity:.9}
 .lnk.bad{background:linear-gradient(#ff97a2,#f2475f);color:#fff}
 /* hint panel */
-.hint{flex:0 1 auto;min-height:0;overflow:auto;padding:12px 14px;font-size:16px;line-height:1.55}
+.hint{min-height:0;overflow:auto;padding:12px 14px;font-size:16px;line-height:1.55}
+.hint>.stepnav:only-child,.hint>.stepnav:last-child{margin-top:10px}
 .hint p{margin:0 0 4px}
 .hint b{font-family:var(--f-num);font-size:19px;font-weight:800}
 .hint .htitle{display:flex;align-items:center;gap:6px;font-size:18px;color:var(--red-d)}
 .hint .htitle .ei{font-size:24px}
 .hint .py{font-family:var(--f-py);font-weight:700;font-size:19px}
 .hint .ei{font-size:1.3em}
-#battle.hinting .arena{flex:0 0 112px;min-height:112px}
-#battle.hinting .sprite .ei{font-size:58px}
-#battle.hinting.boss .mon .sprite .ei{font-size:76px}
-#battle.hinting .items,#battle.hinting .combo{display:none}
 .stept{font-size:16px;line-height:1.6;margin:2px 0 6px}
 .stepnav{display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:8px}
 .stepno{margin-right:auto;white-space:nowrap;display:flex;align-items:center;gap:4px;font:800 16px var(--f-num);color:var(--red-d)}
 .stepno .ei{font-size:22px}
-#battle.hinting .hintbtn{display:none}
-#battle.hinting.wordmode .arena{flex:0 0 78px;min-height:78px}
-#battle.hinting.wordmode .sprite .ei{font-size:46px}
-#battle.hinting.wordmode .mon .bar{display:none}
-/* compact (hint) arena: names hidden, hearts pinned to the arena's top-left, damage numbers stay inside */
-#battle.hinting .tag{display:none}
-#battle.hinting .fighter{align-self:stretch;justify-content:flex-end}
-#battle.hinting .hearts{position:absolute;left:0;top:5px;padding:2px 5px}
-#battle.hinting .hearts .ei{font-size:15px}
-#battle.hinting .dmg,#battle.hinting .dmg.big{font-size:26px;bottom:auto;top:18%;animation-name:dmgS}
-@keyframes dmgS{from{transform:translateY(0) scale(.6);opacity:1}to{transform:translateY(-12px) scale(1.1);opacity:0}}
-#battle.hinting.wordmode .ans{min-height:54px}
 #battle.wordmode .hint{padding:10px 12px}
 .stepnav .btn{min-height:42px;font-size:17px;padding:4px 14px;border-radius:14px;white-space:nowrap}
 .stepnav .ibtn{width:42px;height:42px}
@@ -572,7 +621,21 @@ img{-webkit-user-drag:none;pointer-events:none}
 .droptag b{font:800 12px/1 var(--f-num)}
 .droptag.boss{background:linear-gradient(#ffe169,#ffb21a)}
 .droptag:empty{display:none}
-#battle.hinting .droptag{display:none}
+/* win page: stars → next hero; level-up bonus; level page; map note */
+.nexth{display:flex;align-items:center;justify-content:center;gap:3px;font-size:15px!important;white-space:nowrap}
+.nexth .ei{font-size:22px}
+.nexth b{font:800 17px/1 var(--f-num);color:var(--red-d)}
+.lvup .lvbonus{display:flex;align-items:center;gap:4px;font-size:20px}
+.lvup .lvbonus b{font:800 22px/1 var(--f-num);color:var(--red-d)}
+.lvup .lvnext{font-size:14px;color:var(--ink2)}
+.lvstats{display:flex;gap:10px;justify-content:center}
+.lvs{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px;border-radius:16px;border:3px solid var(--ink);background:#fff;font-size:16px}
+.lvs .ei{font-size:34px}
+.lvs b{font:800 26px/1 var(--f-num);color:var(--red-d)}
+.lvpage .pbody p .ei{font-size:20px}
+.mapnote{position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:4;display:flex;align-items:center;gap:6px;padding:4px 14px 4px 6px;border-radius:18px;border:3px solid var(--ink);background:#fff;color:var(--ink);font-size:17px;white-space:nowrap;box-shadow:0 4px 0 var(--ink);animation:toast 3.5s forwards;pointer-events:none}
+.mapnote .ei{font-size:28px}
+.mapnote b{font:800 18px/1 var(--f-num);color:var(--red-d)}
 /* flee */
 .fleeart{font-size:84px;line-height:1}
 /* bag: levels, salvage, ascend, synth */
@@ -696,6 +759,9 @@ img{-webkit-user-drag:none;pointer-events:none}
 .chev{display:block;width:14px;height:14px;border-left:5px solid var(--ink);border-bottom:5px solid var(--ink);transform:translateX(3px) rotate(45deg);border-radius:2px}
 .chev.r{transform:translateX(-3px) rotate(-135deg)}
 .ibtn:disabled{opacity:.35}
+/* 逃跑失败后的冷却：地图按钮变灰，中间是还剩几秒 */
+.ibtn.cool{opacity:1;filter:grayscale(1);background:#b9b4cc}
+.ibtn.cool::after{content:attr(data-left);position:absolute;inset:0;display:grid;place-items:center;font:800 26px/1 var(--f-num);color:#fff;-webkit-text-stroke:5px var(--ink);paint-order:stroke fill}
 .deco{position:absolute;line-height:0;pointer-events:none}
 .arena .deco{z-index:0;opacity:.9;filter:drop-shadow(0 4px 4px rgba(0,0,0,.2))}
 @keyframes merge{to{transform:translateX(var(--mx,0)) scale(.3);opacity:0}}
@@ -704,6 +770,6 @@ img{-webkit-user-drag:none;pointer-events:none}
   .lt{width:72px;height:72px}.lt>.ei{font-size:44px}
 }
 @media (prefers-reduced-motion: reduce){
-  .sprite:not(.hit):not(.lunge):not(.dead):not(.attack):not(.hurt):not(.shake),.node.current .ball,.lt::before,.chest .ei,.card,.gcard,.gcard::after,.gt,.gup{animation:none!important}
+  .sprite:not(.hit):not(.lunge):not(.dead):not(.attack):not(.atk-slash):not(.atk-punch):not(.hurt):not(.shake),.node.current .ball,.lt::before,.chest .ei,.card,.gcard,.gcard::after,.gt,.gup{animation:none!important}
 }
 </style>
