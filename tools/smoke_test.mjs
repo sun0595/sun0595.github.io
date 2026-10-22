@@ -298,6 +298,21 @@ async function playAll(view) {
     if (!(await p.evaluate(id => !!document.querySelector(`.gt.picked[data-id="${id}"]`), id13))) problems.push(`[${view.name}] 合成 page 2 should let the 13th piece be picked`);
   }
   await p.evaluate(() => { for (let i = 0; i < 15; i++) removeGear('p15_' + i); });
+  // 一键合成（家长第三轮）：先弹出「将用 N 件 x 色装备合成 M 件 y 色装备」，确认后逐级合完，穿着的不动，列出得到的装备
+  await p.evaluate(() => { for (let i = 0; i < 7; i++) addGear({ id: 'aw' + i, slot: 'weapon', quality: 'white', name: '测试·剑' + i, e: '🗡️', lv: 1, exp: 0, affixes: [{ id: 'atk', val: 1 }] });
+    for (let i = 0; i < 2; i++) addGear({ id: 'ab' + i, slot: 'helmet', quality: 'blue', name: '测试·盔' + i, e: '🪖', lv: 1, exp: 0, affixes: [{ id: 'atk', val: 1 }] }); });
+  await tap('.qtab[data-q="white"]'); await p.waitForTimeout(200); await shot('09i-bag-autosynth-before');
+  const as0 = await p.evaluate(() => ({ plan: __t.synthPlan(), worn: Object.values(__t.S.equipped).filter(Boolean).map(g => g.id).sort().join(), bag: __t.S.bag.length }));
+  await tap('#sAuto'); await p.waitForTimeout(300); await shot('09j-bag-autosynth-confirm');
+  const asTxt = await p.textContent('.synplan').catch(() => '');
+  const want = as0.plan.map(x => `将用${x.use}件${({ white: '白', blue: '蓝', pink: '粉', purple: '紫', orange: '橙' })[x.q]}色装备合成${x.make}件`);
+  if (!as0.plan.length || as0.plan[0].q !== 'white' || want.some(w => !asTxt.replace(/\s+/g, '').includes(w))) problems.push(`[${view.name}] 一键合成 should first say 「将用 N 件 x 色装备合成 M 件 y 色装备」 for every step: ${JSON.stringify({ plan: as0.plan, asTxt })}`);
+  await tap('#aGo'); await p.waitForTimeout(500); await shot('09k-bag-autosynth-done');
+  const as1 = await p.evaluate(() => { const worn = new Set(Object.values(__t.S.equipped).filter(Boolean).map(g => g.id));
+    const free = q => __t.S.bag.filter(g => g && g.quality === q && !worn.has(g.id)).length;
+    return { left: ['white', 'blue', 'pink', 'purple', 'orange'].map(free), worn: [...worn].sort().join(), bag: __t.S.bag.length, got: document.querySelectorAll('#autoGot .gt').length }; });
+  const used = as0.plan.reduce((a, x) => a + x.use - x.make, 0);
+  if (as1.left.some(n => n >= 3) || as1.worn !== as0.worn || as1.bag !== as0.bag - used || !as1.got) problems.push(`[${view.name}] 一键合成 should merge every 3 free pieces of a colour upwards (red stays), keep worn gear and list what it made: ${JSON.stringify({ as0, as1, used })}`);
   await tap('#sBack'); await p.waitForTimeout(300);
   // lots of gear: the slot list pages (8 per page) instead of scrolling
   await p.evaluate(() => { for (let i = 0; i < 11; i++) addGear(Object.assign(rollGear(20, i % 3 === 0), { slot: 'armor', e: ['🥋', '🦺', '👕', '🧥'][i % 4], id: 'many_' + i })); });
@@ -326,6 +341,12 @@ async function playAll(view) {
     if (!lk.qqq || lk.name || lk.skill || !lk.sil || !lk.silArt || !/brightness\(0\)/.test(lk.filter) || !lk.need) problems.push(`[${view.name}] a locked hero should only show a silhouette, 「？？？」 and how to unlock it: ${JSON.stringify(lk)}`);
   }
   await tap('#pgBack'); await tap('#parentBtn'); await p.waitForTimeout(300); await shot('11-parent');
+  // 设置开关行（家长第三轮）：文字和开关垂直居中、左右边距一样、开关都靠右对齐，整行在面板里
+  const tgl = await p.evaluate(() => { const pb = document.getElementById('pbody').getBoundingClientRect();
+    return [...document.querySelectorAll('#pbody .toggle')].map(t => { const r = t.getBoundingClientRect(), l = t.querySelector('.tl').getBoundingClientRect(), c = (t.querySelector('.sw') || t.querySelector('.seg3')).getBoundingClientRect();
+      return { txt: t.querySelector('.tl').textContent, dy: Math.round(Math.abs((l.top + l.bottom) / 2 - (c.top + c.bottom) / 2) * 10) / 10, padL: Math.round(l.left - r.left), padR: Math.round(r.right - c.right), right: Math.round(c.right), inside: r.left >= pb.left - 1 && r.right <= pb.right + 1 }; }); });
+  const tglBad = tgl.filter(t => t.dy > 1.5 || Math.abs(t.padL - t.padR) > 1 || t.right !== tgl[0].right || !t.inside);
+  if (tgl.length < 5 || tglBad.length) problems.push(`[${view.name}] settings rows: text and switch should be vertically centred, same left / right margin, switches right-aligned, inside the panel: ${JSON.stringify(tglBad.length ? tglBad : tgl)}`);
   if (!await p.evaluate(() => /部分美术由 AI 生成/.test(document.getElementById('pbody').textContent))) problems.push(`[${view.name}] the parent page should say 「部分美术由 AI 生成」 at the bottom`);
   await tap('.tab[data-t="rep"]'); await shot('12-report'); await tap('#pgBack');
   await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.openAll = true; s.mapWorld = 2; localStorage.setItem(k, JSON.stringify(s)); }, V1);
@@ -769,7 +790,13 @@ async function playAll(view) {
     const bcs = getComputedStyle(band), [dw, dh] = bcs.backgroundSize.split(' ').map(parseFloat), [px, py] = [parseFloat(bcs.backgroundPositionX), parseFloat(bcs.backgroundPositionY)];
     const R = __t.ART_ROADS[id].map(([fx, fy]) => [br.left + px + fx * dw, br.top + py + fy * dh]);
     const segD = (p, a, b) => { const vx = b[0] - a[0], vy = b[1] - a[1], t = Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / (vx * vx + vy * vy || 1))); return Math.hypot(p[0] - a[0] - t * vx, p[1] - a[1] - t * vy); };
-    const offRoad = balls.map((b, l) => { const c = [b.x + b.width / 2, b.y + b.height / 2]; let d = 1e9; for (let i = 1; i < R.length; i++) d = Math.min(d, segD(c, R[i - 1], R[i])); return d > 3 ? (l + 1) + ':' + Math.round(d) : null; }).filter(Boolean);
+    // 下面有过渡图的世界：第 1、2 关站在过渡图的小路上（TRANS_LV，按过渡图背景的大小和位置换算），不在这段原画的路上
+    const tr = document.querySelector(`.band.trans[data-t="${w - 1}"]`), tcs = tr && getComputedStyle(tr), trk = tr && __t.WORLDS_V2[w - 1].id + '_' + __t.WORLDS_V2[w].id;
+    const onTr = l => { const [bw, bh] = tcs.backgroundSize.split(' ').map(parseFloat), r = tr.getBoundingClientRect(), [fx, fy] = __t.TRANS_LV[trk][l]; return [r.left + parseFloat(tcs.backgroundPositionX) + fx * bw, r.top + parseFloat(tcs.backgroundPositionY) + fy * bh]; };
+    const offRoad = balls.map((b, l) => { const c = [b.x + b.width / 2, b.y + b.height / 2]; let d = 1e9;
+      if (tr && __t.TRANS_LV[trk] && l < __t.TRANS_LV[trk].length) { const t = onTr(l); d = Math.hypot(c[0] - t[0], c[1] - t[1]); }
+      else for (let i = 1; i < R.length; i++) d = Math.min(d, segD(c, R[i - 1], R[i]));
+      return d > 3 ? (l + 1) + ':' + Math.round(d) : null; }).filter(Boolean);
     const framed = [...Array(15)].map((_, l) => getComputedStyle(el(l).querySelector('.ball'))).filter(cs => parseFloat(cs.borderTopWidth) > 0 || cs.backgroundImage !== 'none' || cs.borderRadius === '50%').length;
     return { offRoad, framed, nim: im.naturalWidth, band: document.querySelector(`.band[data-w="${w}"]`).classList.contains('art'), gap: Math.round(gap), covered, bossTop: ns[14].top <= Math.min(...ns.map(r => r.top)) + 1,
       inside: ns.every(r => r.left >= box.left - 1 && r.right <= box.right + 1), art: [...Array(15)].map((_, l) => !!document.querySelector(`.node[data-w="${w}"][data-l="${l}"] img.art`)).filter(Boolean).length };
@@ -811,7 +838,7 @@ async function playAll(view) {
   const seamCheck = () => p.evaluate(() => {
     const n = __t.WORLDS_V2.length, S = __t.MAP_SEAM, layers = [];
     const band = w => { const b = document.querySelector(`.band[data-w="${w}"]`), cs = getComputedStyle(b), [dw, dh] = cs.backgroundSize.split(' ').map(parseFloat), px = parseFloat(cs.backgroundPositionX), rd = __t.ART_ROADS[__t.WORLDS_V2[w].id];
-      const y = b.offsetHeight - S; let inX = null;
+      const y = b.offsetHeight - (w > 0 && document.querySelector(`.band.trans[data-t="${w - 1}"]`) ? __t.TRANS_SEAM : S); let inX = null;
       for (let i = 1; i < rd.length && inX === null; i++) if (rd[i][1] * dh <= y) { const a = rd[i - 1], c = rd[i], t = (a[1] * dh - y) / ((a[1] - c[1]) * dh || 1); inX = px + (a[0] + (c[0] - a[0]) * t) * dw; }
       return { name: 'w' + (w + 1), top: b.offsetTop, h: b.offsetHeight, inX, outX: px + rd[rd.length - 1][0] * dw, fade: (cs.maskImage || cs.webkitMaskImage || 'none') !== 'none' }; };
     for (let w = 0; w < n; w++) {
@@ -829,9 +856,29 @@ async function playAll(view) {
   if (nTrans !== 7) problems.push(`[${view.name}] all 7 transition pictures (trans_*) should be on the map, found ${nTrans}`);
   console.log('   seams', seams.map(x => x.at + ':' + x.dx).join(' '));
   const seamAt = async (top, name) => { await p.evaluate(t => { const s = document.getElementById('lscroll'); s.scrollTop = t - s.clientHeight / 2; }, top); await p.waitForTimeout(300); await shot(name); };
-  for (const [t, name] of [[0, '43-map-trans-1-2'], [5, '43-map-trans-6-7']]) {
+  for (const [t, name] of [[0, '43-map-trans-1-2'], [1, '43-map-trans-2-3'], [5, '43-map-trans-6-7']]) {
     const tt = await p.evaluate(t => { const e = document.querySelector(`.band.trans[data-t="${t}"]`); return e ? [e.offsetTop, e.offsetHeight] : null; }, t);
     if (tt) { await seamAt(tt[0] + tt[1] - 40, name + '-low'); await seamAt(tt[0] + 40, name + '-high'); }
+  }
+  // 大关衔接（家长第三轮：衔接处一整屏空白）：过渡段约半屏，上面站着下一个世界的第 1、2 关；每个衔接处居中截图，
+  // 截图里不能有超过 300px 高的纯色 / 空白区域（逐行看颜色差），整张地图上相邻两关的距离也不超过 300px
+  const transInfo = await p.evaluate(() => [...document.querySelectorAll('.band.trans')].map(e => { const t = +e.dataset.t, top = e.offsetTop, h = e.offsetHeight;
+    const on = [...document.querySelectorAll(`.node[data-w="${t + 1}"]`)].filter(n => n.offsetTop > top && n.offsetTop < top + h).length;
+    return { t, top, h, on, bg: getComputedStyle(e).backgroundImage.startsWith('url("blob:') }; }));
+  const transBad = transInfo.filter(x => x.h > 0.75 * p.viewportSize().height || x.on < 1 || !x.bg);
+  if (transBad.length) problems.push(`[${view.name}] each world transition should be about half a screen, show its picture and carry levels of the next world: ${JSON.stringify(transBad)}`);
+  const gaps = await p.evaluate(() => { const ys = []; for (let w = 0; w < __t.WORLDS_V2.length; w++) for (let l = 0; l < 15; l++) ys.push([w + 1 + '-' + (l + 1), document.querySelector(`.node[data-w="${w}"][data-l="${l}"]`).offsetTop]);
+    return ys.slice(1).map((y, i) => [y[0], ys[i][1] - y[1]]).filter(([, d]) => Math.abs(d) > 350); });
+  if (gaps.length) problems.push(`[${view.name}] the map should have no stretch over 350px without a level (the world sign sits in the biggest gaps): ${JSON.stringify(gaps)}`);
+  const flatRun = async () => { const png = (await p.screenshot({ clip: await p.evaluate(() => { const r = document.getElementById('lscroll').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; }) })).toString('base64');
+    return p.evaluate(async b64 => { const im = new Image(); im.src = 'data:image/png;base64,' + b64; await im.decode(); const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+      const g = c.getContext('2d'); g.drawImage(im, 0, 0); const d = g.getImageData(0, 0, c.width, c.height).data, k = im.width / document.getElementById('lscroll').clientWidth; let run = 0, best = 0;
+      for (let y = 0; y < c.height; y++) { let s = 0, s2 = 0, n = 0; for (let x = 0; x < c.width; x += 3) { const i = (y * c.width + x) * 4, v = (d[i] + d[i + 1] + d[i + 2]) / 3; s += v; s2 += v * v; n++; }
+        const sd = Math.sqrt(Math.max(0, s2 / n - (s / n) ** 2)); run = sd < 8 ? run + 1 : 0; best = Math.max(best, run); }
+      return Math.round(best / k); }, png); };
+  for (const x of transInfo) {
+    const name = `44-map-seam-${x.t + 1}-${x.t + 2}`; await seamAt(x.top + x.h / 2, name);
+    const fr = await flatRun(); if (fr > 300) problems.push(`[${view.name}] ${name}: a plain / empty area ${fr}px tall at the world seam`);
   }
   // 没有过渡图的接缝：两段地图直接叠化（拿掉 trans_add_sub 试一下，再放回去）
   const keepTr = await p.evaluate(() => __t.art('trans_add_sub'));
@@ -897,7 +944,8 @@ async function playAll(view) {
   // 勇士原画：每个勇士的战斗图（hero2_*；小勇士按盔甲品质）。人形勇士（小勇士、忍者、宇航员、国王）手里有武器盾牌原画，其余不叠
   await p.evaluate(() => { __t.toMap(); for (const w of __t.WORLDS_V2) for (let l = 1; l <= 15; l++) __t.S.lv.stars[w.id + '-' + l] = 3; __t.S.bestQ = 'red'; __t.S.timer = false;
     equipGear({ id: 'hw', slot: 'weapon', quality: 'orange', name: '测试·剑', e: '🗡️', affixes: [] }); equipGear({ id: 'hs', slot: 'shield', quality: 'blue', name: '测试·盾', e: '🛡️', affixes: [] }); });
-  const HERO_FILES = ['', 'hero2_ninja', 'hero2_robot', 'hero2_astronaut', 'hero2_trex', 'hero2_dragon', 'hero2_unicorn', 'hero2_king'], HANDS = [1, 1, 0, 1, 0, 0, 0, 1];
+  // 家长第三轮：非人形勇士（机器人、霸王龙、神龙、独角兽）也拿武器、盾牌（独角兽是悬浮的）
+  const HERO_FILES = ['', 'hero2_ninja', 'hero2_robot', 'hero2_astronaut', 'hero2_trex', 'hero2_dragon', 'hero2_unicorn', 'hero2_king'], HANDS = [1, 1, 1, 1, 1, 1, 1, 1];
   for (let i = 0; i < 8; i++) {
     await p.evaluate(i => { __t.S.hero = i; __t.renderMap(); __t.startLevel(0, 1); }, i); await p.waitForTimeout(1700);
     await shot('70-hero-' + i + '-' + (HERO_FILES[i] || 'hero_base').replace('hero2_', ''));
@@ -907,6 +955,16 @@ async function playAll(view) {
     await leaveBattle(); await p.waitForTimeout(200);
     const mv = await p.evaluate(f => { const im = document.querySelector('#heroBtn img.art'); return !!im && (!f || im.getAttribute('src') === __t.art(f)); }, HERO_FILES[i]);
     if (!mv) problems.push(`[${view.name}] the map avatar should show hero ${i}'s picture`);
+  }
+  // 每个勇士穿一整套紫装打怪：战斗里要找得到武器或盾牌图层，脚下有紫色的盔甲光环
+  await p.evaluate(() => { for (const [id, slot, e] of [['pw', 'weapon', '🗡️'], ['ps', 'shield', '🛡️'], ['pa', 'armor', '🥋'], ['ph', 'helmet', '🪖']]) equipGear({ id, slot, quality: 'purple', name: '测试·紫', e, affixes: [] }); });
+  for (let i = 0; i < 8; i++) {
+    await p.evaluate(i => { __t.S.hero = i; __t.renderMap(); __t.startLevel(0, 1); }, i); await p.waitForTimeout(1700);
+    await shot('71-hero-purple-' + i + '-' + (HERO_FILES[i] || 'hero_base').replace('hero2_', ''));
+    const gv = await p.evaluate(() => { const av = document.querySelector('#heroSprite .av.lay'), vis = e => { const r = e && e.getBoundingClientRect(); return !!r && r.width > 4 && r.height > 4; };
+      return { gear: [...(av ? av.querySelectorAll('.hand') : [])].filter(vis).length, purple: [...(av ? av.querySelectorAll('.hand') : [])].every(h => h.getAttribute('src') === __t.art(h.classList.contains('rh') ? 'weapon_purple' : 'shield_purple')), aura: !!av?.querySelector('.aura.q-purple') }; });
+    if (!gv.gear || !gv.purple || !gv.aura) problems.push(`[${view.name}] hero ${i} in purple gear should show the weapon / shield layer and a purple armour aura in battle: ${JSON.stringify(gv)}`);
+    await leaveBattle(); await p.waitForTimeout(200);
   }
   await p.evaluate(() => { __t.S.hero = 0; __t.S.timer = true; __t.renderMap(); });
   if (await p.evaluate(k => localStorage.getItem(k), BETA) !== null) problems.push(`[${view.name}] 正式版 wrote the 试玩版 save "${BETA}"`);
