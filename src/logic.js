@@ -4,7 +4,7 @@ const MAIN_KEY = "math-hero-v1";  // 正式版存档，kept so existing progress
 // on its first run it copies the 正式版 save once, after that it only reads/writes "math-hero-beta".
 const KEY = IS_BETA ? "math-hero-beta" : MAIN_KEY;
 if(IS_BETA) try { if(localStorage.getItem(KEY)===null){ const v1 = localStorage.getItem(MAIN_KEY); if(v1!==null) localStorage.setItem(KEY, v1); } } catch(e){}
-const DEFAULT = {stars:{}, hero:0, voice:true, sound:true, timer:true, py:0.25, openAll:false, voiceName:"", rate:0.9, stats:{}, mistakes:[], stickers:{}, medals:{}, tier:{}, shiny:{}, items:{heal:1,time:1,ice:1}, bag:[], equipped:{weapon:null,helmet:null,armor:null,shield:null}, chests:0, daily:{date:"",n:0}, exp:0, heroLv:1, stones:0, spareExp:0};
+const DEFAULT = {stars:{}, hero:0, voice:true, sound:true, timer:true, py:0.25, openAll:false, voiceName:"", rate:0.9, stats:{}, mistakes:[], stickers:{}, medals:{}, tier:{}, shiny:{}, items:{heal:1,cut:1,swap:1}, bag:[], equipped:{weapon:null,helmet:null,armor:null,shield:null}, chests:0, daily:{date:"",n:0}, exp:0, heroLv:1, stones:0, spareExp:0};
 let S;
 try { S = Object.assign({}, DEFAULT, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch(e){ S = Object.assign({}, DEFAULT); }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
@@ -19,6 +19,17 @@ function ac(){
     return actx;
   }catch(e){ return null; }
 }
+/* 所有音效都经过同一个总出口：整体音量 SFX_VOL，再过一道低通 SFX_LP Hz，削掉方波 / 锯齿波的高频尖声（家长 10-22：新版音效刺耳） */
+const SFX_VOL = 0.55, SFX_LP = 2600;
+let sfxOut = null;
+function out(a){
+  if(!sfxOut || sfxOut.context !== a){
+    const g = a.createGain(), f = a.createBiquadFilter();
+    g.gain.value = SFX_VOL; f.type = "lowpass"; f.frequency.value = SFX_LP; f.Q.value = 0.5;
+    g.connect(f); f.connect(a.destination); sfxOut = g;
+  }
+  return sfxOut;
+}
 function tone(freqs, dur, type, vol, delay){
   const a = ac(); if(!a) return;
   const t0 = a.currentTime + (delay||0);
@@ -27,7 +38,7 @@ function tone(freqs, dur, type, vol, delay){
     o.type = type||"square"; o.frequency.value = f;
     g.gain.setValueAtTime(vol||0.07, t0+i*dur);
     g.gain.exponentialRampToValueAtTime(0.001, t0+(i+1)*dur);
-    o.connect(g); g.connect(a.destination);
+    o.connect(g); g.connect(out(a));
     o.start(t0+i*dur); o.stop(t0+(i+1)*dur+0.02);
   });
 }
@@ -37,7 +48,7 @@ function noise(dur, vol, freq){
   for(let i=0;i<len;i++) d[i] = (Math.random()*2-1)*(1-i/len);
   const src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
   src.buffer = buf; f.type = "lowpass"; f.frequency.value = freq||900; g.gain.value = vol||0.4;
-  src.connect(f); f.connect(g); g.connect(a.destination); src.start();
+  src.connect(f); f.connect(g); g.connect(out(a)); src.start();
 }
 function slide(f1, f2, dur, type, vol){
   const a = ac(); if(!a) return;
@@ -45,7 +56,7 @@ function slide(f1, f2, dur, type, vol){
   o.type = type||"sawtooth";
   o.frequency.setValueAtTime(f1,t); o.frequency.exponentialRampToValueAtTime(f2,t+dur);
   g.gain.setValueAtTime(vol||0.08,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
-  o.connect(g); g.connect(a.destination); o.start(t); o.stop(t+dur+0.02);
+  o.connect(g); g.connect(out(a)); o.start(t); o.stop(t+dur+0.02);
 }
 const sfx = {
   right: ()=>tone([660,880],.08,"square",.06),
@@ -1524,7 +1535,10 @@ const rageLevel = () => Math.min(RAGE.length-1, Math.floor(daily().n/15));
   const ns = {}; for(const k in S.stars){ const m = k.match(/^(\d+)-(\d+)$/); if(m && OLD[+m[1]]){ ns[OLD[+m[1]]+"-"+m[2]] = S.stars[k]; changed = true; } else ns[k] = S.stars[k]; }
   const st = {}; for(const k in S.stats){ if(/^\d+$/.test(k) && OLD[+k]){ st[OLD[+k]] = S.stats[k]; changed = true; } else st[k] = S.stats[k]; }
   S.stars = ns; S.stats = st; S.stickers = S.stickers || {}; S.medals = S.medals || {};
-  S.tier = S.tier || {}; S.shiny = S.shiny || {}; S.items = S.items || {heal:1,time:1,ice:1};
+  S.tier = S.tier || {}; S.shiny = S.shiny || {}; S.items = S.items || {heal:1,cut:1,swap:1};
+  // 道具重做：旧存档的冰冻 → 去错、加时 → 换题，各 1:1（只折算一次）
+  if(!S.itemsV3){ S.items.cut = (S.items.cut||0) + (S.items.ice||0); S.items.swap = (S.items.swap||0) + (S.items.time||0);
+    if("ice" in S.items) S.items.ice = 0; if("time" in S.items) S.items.time = 0; S.itemsV3 = true; changed = true; }
   // a level already cleared with 3 stars counts as a mastered gold tier
   for(const k in S.stars) if(S.stars[k]===3 && !(k in S.tier)){ S.tier[k] = 1; changed = true; }
 
@@ -1632,6 +1646,14 @@ const wpPool = w => (w>=4 ? WP_MORE : WP_EASY).filter(k=>WP[k]).map(k=>()=>WP[k]
   .concat(WP_NEW.filter(([k,h,a,b])=>WP[k] && w>=a && (b==null || w<b)).map(([k,h])=>()=>WP[k](h)));
 const WP_RATE = 0.12;
 const planFn = it => () => G[it.g](...(it.args||[]));
+/* 道具「换题」：同类型降一档（两位数 → 一位数，进位 → 不进位，填空 → 直接算，整百 → 整十 …），最低一档就还是它自己 */
+const EASIER = {add:()=>({g:"add",args:[5]}), sub:()=>({g:"sub",args:[5]}),
+  missAdd:it=>({g:"add",args:it.args}), missSub:it=>({g:"sub",args:it.args}), make10:()=>({g:"add",args:[10]}),
+  carryAny:()=>({g:"add",args:[10]}), teenNoBorrow:()=>({g:"sub",args:[10]}), borrowAny:()=>({g:"sub",args:[10]}),
+  addTen:()=>({g:"add",args:[10]}), subTen:()=>({g:"sub",args:[10]}), addHundred:()=>({g:"addTen"}), subHundred:()=>({g:"subTen"}),
+  add1NoCarry:()=>({g:"addTen"}), add1Carry:()=>({g:"add1NoCarry"}), sub1NoBorrow:()=>({g:"subTen"}), sub1Borrow:()=>({g:"sub1NoBorrow"}),
+  add2NoCarry:()=>({g:"add1NoCarry"}), sub2NoBorrow:()=>({g:"sub1NoBorrow"})};
+const easierIt = it => EASIER[it.g] ? EASIER[it.g](it) : it;
 /* 一关的全部信息。怪兽血量 = 10 + floor(全局关卡序号 / 10)，Boss 再 +5（星级档位另加，见 ui.js startLevel）。
    blend（拼读）关整关都出拼读题 blendQ（连闯里仍用 L.math 出计算题，见 ui.js startLevel）。 */
 function levelDef(w,l){
@@ -1642,7 +1664,10 @@ function levelDef(w,l){
   if(mode==="blend") g = blendQ;
   else if(mode==="battle" && w>=2){ const pool = wpPool(w); g = () => Math.random()<WP_RATE ? pick(pool)() : math(); }
   const i = gIndex(w,l);
-  return {w, l, m:lv.emoji, n:lv.name, boss:!!lv.boss, mode, g, math, hp:10 + Math.floor(i/10) + (lv.boss?5:0)};
+  // 换题用：应用题换一道简单的应用题，拼音 / 拼读题换一道别的，计算题按 EASIER 降一档
+  const easyMath = mix(...plan.mix.map(it=>planFn(easierIt(it))));
+  const easy = q => q && q.kind==="word" ? WP[pick(WP_EASY.filter(k=>WP[k]))]() : q && q.kind==="py" ? (mode==="blend" ? blendQ() : pyQ()) : easyMath();
+  return {w, l, m:lv.emoji, n:lv.name, boss:!!lv.boss, mode, g, math, easy, hp:10 + Math.floor(i/10) + (lv.boss?5:0)};
 }
 /* 算术消除用的出题器：只要"算式 = ?"这种直接算的题（不要填空题），而且至少 6 个得数各有 2 道不同算式，
    这样 makeMatchBoard 永远不会走"补 20 以上加法"的保底。先试本关 mix 里得数最多的那个，不够就用整关 mix，
@@ -1666,7 +1691,9 @@ function matchGenFor(w,l){
   }
   return null;
 }
-const ITEMS = {heal:{e:"💖",tip:"💖 加一颗心"}, time:{e:"⏳",tip:"⏳ 多 8 秒时间"}, ice:{e:"🧊",tip:"🧊 冻住怪兽 6 秒"}};
+/* 道具（家长 10-22 重做）：加心 +1；去错 = 去掉这题一个错误选项（消除 / 连连看里高亮一对正确的）；换题 = 换一道同类型更简单的。
+   旧的冰冻 / 加时在 migrate() 里 1:1 折算成去错 / 换题（S.items.ice / time 留着但清零） */
+const ITEMS = {heal:{e:"💖",n:"加心",tip:"💖 加一颗心"}, cut:{e:"🧹",n:"去错",tip:"去掉一个错误答案"}, swap:{e:"🔄",n:"换题",tip:"换一道简单点的题"}};
 // 获得过的最高品质记在 S.bestQ（品质 key，"" = 还没有）；金色光环 = 获得过橙色装备（旧存档集齐稀有贴纸的也保留）
 const qRank = k => ["white","blue","pink","purple","orange","red"].indexOf(k);
 const hasBest = k => qRank(S.bestQ||"") >= qRank(k);
@@ -2123,10 +2150,10 @@ const HERO_EXP_BASE_NEED = 50;  // 1 级升 2 级
 const HERO_EXP_NEED_STEP = 25;  // 每高一级，升级经验 +25
 const DROP_SLOTS = ["weapon", "helmet", "armor", "shield"];
 const DROP_CHANCE_BY_WORLD = [0.20, 0.21, 0.23, 0.24, 0.26, 0.27, 0.29, 0.30];
-const ITEM_DROP_RATE = 0.25;   // 道具在战斗里更有用了（冰冻、加时、加心），掉得也多一点
+const ITEM_DROP_RATE = 0.25;   // 道具在战斗里更有用了（加心、去错、换题），掉得也多一点
 const ITEM_CAP = 5;
 const ITEM_OVERFLOW_EXP = 10;   // 道具满了，换成这么多装备经验
-const ITEM_KEYS = ["heal", "time", "ice"];
+const ITEM_KEYS = ["heal", "cut", "swap"];
 const STONE_RATE = 0.10;
 const BOSS_STONE_RATE = 0.50;
 const GEAR_EXP_GAIN = 10;       // 普通关，身上每件装备
@@ -2379,7 +2406,7 @@ function applyDrops(drops){
   }
   if(drops.gear){ addGear(drops.gear); result.gear = drops.gear; }
   if(drops.item && ITEM_KEYS.includes(drops.item)){
-    S.items = S.items || {heal:0, time:0, ice:0};
+    S.items = S.items || {heal:0, cut:0, swap:0};
     if((S.items[drops.item] || 0) >= ITEM_CAP){
       result.itemNote = "已满，换成经验";
       result.overflowExp = distributeGearExp(ITEM_OVERFLOW_EXP);

@@ -180,13 +180,11 @@ const chev = r => '<span class="chev'+(r?" r":"")+'"></span>';
 // 返回：原画箭头（icon_back），没有就用画出来的箭头
 const backIcon = () => art("icon_back") ? artTag(art("icon_back"), "ei art icon", chev()) : chev();
 const starImg = (on, tier) => '<span class="'+(on?"":"off")+'"'+(on && tier && TIERS[tier].f ? ' style="filter:'+TIERS[tier].f+'"' : '')+'>'+img("⭐")+'</span>';
-sfx.freeze = ()=>{ tone([1800,2400,3000],.05,"sine",.08); noise(.35,.25,7000); };
-sfx.shatter = ()=>{ noise(.4,.5,5000); tone([2600,1900,1300],.05,"triangle",.07); };
-// 打击感：挥砍（风声 + 金属）、拳击（闷响）、怪兽受击（重击，Boss 更低更重）、连击档位（3 / 5 / 10 连越来越高越亮）
-sfx.slash = ()=>{ noise(.12,.35,4200); tone([1400,2100],.04,"triangle",.06); };
-sfx.punch = ()=>{ noise(.1,.5,900); tone([160,90],.06,"square",.12); };
-sfx.thud = heavy=>{ noise(heavy?.35:.22, heavy?.9:.6, heavy?600:1100); tone(heavy?[90,55]:[140,80],.08,"square",.13); };
-sfx.combo = t=>{ const base = [0,660,880,1046][t]||660; tone([base,base*1.25,base*1.5].concat(t>=2?[base*2]:[]),.06,t>=3?"sawtooth":"triangle",.09); if(t>=3) noise(.3,.25,6000); };
+// 打击感（家长 10-22：要柔和，回到 PR #32 之前的音色）：正弦 / 三角波、低频、小音量，不用方波和锯齿波；连击档位越来越高
+sfx.slash = ()=>{ noise(.1,.16,1600); tone([520,690],.045,"triangle",.045); };
+sfx.punch = ()=>{ noise(.08,.2,650); tone([190,130],.055,"sine",.08); };
+sfx.thud = heavy=>{ noise(heavy?.24:.15, heavy?.32:.22, heavy?520:800); tone(heavy?[110,72]:[150,100],.07,"sine",.09); };
+sfx.combo = t=>{ const base = [0,523,587,659][t]||523; tone([base,base*1.25,base*1.5].concat(t>=2?[base*2]:[]),.07,"sine",.07); };
 
 /* ================= map: one long map, scrolled up and down =================
    Like the parents' reference sketch: each world is a floating island stacked on the one below
@@ -212,6 +210,15 @@ function nodePos(l){
    the road's end. Every band is only as tall as its road needs for MAP_GAP px between monsters (between ART_H_MIN and
    ART_H_MAX), so all worlds are equally dense. No road listed → the usual rows of three. */
 const ART_H_MIN = 860, ART_H_MAX = 1600, ART_SIGN = 150, MAP_GAP = 10;
+/* 世界之间的接缝（家长 10-22：地图要连贯）：
+   - 上下两段原画重叠 MAP_SEAM px，下面那段的顶部在这段里渐变成透明，露出上面那段的底部（叠化）；
+     世界牌放在所有地图段上面的一层（.wsign.ov），不会被接缝盖住。
+   - 原画比地图宽（cover 按高度铺满），每段左右平移（MAPL.ox），让这段小路的入口 x 对准下面那段小路的出口（Boss 处）的 x；
+     平移不能让小路上的关卡出画（留 MAP_EDGE px），对不齐时尽量靠近。
+   - 有过渡图 trans_<下面世界>_<上面世界>（铺满宽度，小路从下穿到上）就插在两段之间，两头也各叠化 MAP_SEAM px。 */
+const MAP_SEAM = 160, MAP_EDGE = 34, TRANS_H = 180;
+// 过渡图里小路的 x（图宽的比例）：[底部进来的地方, 顶部出去的地方]，按原画量的
+const TRANS_ROADS = {add_sub:[0.45,0.48], sub_ten:[0.45,0.6], ten_ice:[0.5,0.5], ice_tens:[0.55,0.55], tens_hundreds:[0.48,0.5], hundreds_digit1:[0.57,0.48], digit1_digit2:[0.55,0.5]};
 const ART_ROADS = {
   // 森林：按原画里沙土小路的像素中线量出来（每只怪兽都站在路上），S 形绕两个弯，Boss 在山洞口
   add: [[0.373,0.99],[0.398,0.94],[0.463,0.915],[0.542,0.89],[0.602,0.865],[0.631,0.84],[0.636,0.815],[0.617,0.79],[0.565,0.765],[0.476,0.74],[0.379,0.715],[0.321,0.69],[0.31,0.665],[0.33,0.64],[0.379,0.615],[0.454,0.59],[0.546,0.565],[0.62,0.54],[0.662,0.515],[0.672,0.49],[0.653,0.465],[0.592,0.44],[0.5,0.415],[0.426,0.39],[0.402,0.365],[0.413,0.34],[0.449,0.315],[0.494,0.29],[0.52,0.275]],
@@ -247,12 +254,17 @@ let MAPL = null;
 /* the 15 levels on world id's painted road in a W × H band: [x, y] px in the band, or null if they do not fit with
    `gap` px between monsters. Each level goes at the first spot up the road that clears every level before it (nodeClear);
    the largest gap that still leaves room for the Boss at the road's end wins, so the levels come out evenly spaced. */
-function roadLevels(id, W, H, gap){
-  const road = ART_ROADS[id], sz = ART_SIZE["map_"+id];
-  const k = Math.max(W/sz[0], H/sz[1]), dw = sz[0]*k, dh = sz[1]*k, ox = (dw-W)/2, oy = (dh-H)/2;
+// how the picture covers a W × H band: size dw × dh, cropped ox (left, ox0 = centred) / oy
+function artGeo(id, W, H){
+  const sz = ART_SIZE["map_"+id], k = Math.max(W/sz[0], H/sz[1]), dw = sz[0]*k, dh = sz[1]*k;
+  return {dw, dh, ox0:(dw-W)/2, oy:(dh-H)/2};
+}
+function roadLevels(id, W, H, gap, ox, sign){
+  const road = ART_ROADS[id], g = artGeo(id, W, H), dw = g.dw, dh = g.dh, oy = g.oy, SG = sign==null ? ART_SIGN : sign;
+  if(ox==null) ox = g.ox0;
   let P = road.map(([fx,fy])=>[fx*dw-ox, fy*dh-oy]);
-  const i0 = P.findIndex(p=>p[1] <= H-ART_SIGN);          // start above the world sign
-  if(i0>0){ const [a,b] = [P[i0-1], P[i0]], t = (a[1]-(H-ART_SIGN))/(a[1]-b[1]); P = [[a[0]+(b[0]-a[0])*t, H-ART_SIGN]].concat(P.slice(i0)); }
+  const i0 = P.findIndex(p=>p[1] <= H-SG);          // start above the world sign
+  if(i0>0){ const [a,b] = [P[i0-1], P[i0]], t = (a[1]-(H-SG))/(a[1]-b[1]); P = [[a[0]+(b[0]-a[0])*t, H-SG]].concat(P.slice(i0)); }
   const cum = [0]; for(let i=1;i<P.length;i++) cum.push(cum[i-1] + Math.hypot(P[i][0]-P[i-1][0], P[i][1]-P[i-1][1]));
   const L = cum[cum.length-1], at = d => { let i = 1; while(i<P.length-1 && cum[i]<d) i++; const t = (d-cum[i-1])/((cum[i]-cum[i-1])||1); return [P[i-1][0]+(P[i][0]-P[i-1][0])*t, P[i-1][1]+(P[i][1]-P[i-1][1])*t]; };
   const end = at(L), top = end[1] - (BOSS_D-NODE_D)/2;   // no level may stick out above the Boss
@@ -266,25 +278,65 @@ function roadLevels(id, W, H, gap){
   return best;
 }
 // the shortest band (10 px steps) whose road fits the 15 levels MAP_GAP apart
-function roadBandH(id, W){
-  if(!roadLevels(id, W, ART_H_MAX, MAP_GAP)) return ART_H_MAX;
+function roadBandH(id, W, sign){
+  const fit = H => roadLevels(id, W, H, MAP_GAP, null, sign);
+  if(!fit(ART_H_MAX)) return ART_H_MAX;
   let lo = ART_H_MIN, hi = ART_H_MAX;
-  if(roadLevels(id, W, lo, MAP_GAP)) return lo;
-  while(hi-lo > 10){ const m = Math.round((lo+hi)/2); if(roadLevels(id, W, m, MAP_GAP)) hi = m; else lo = m; }
+  if(fit(lo)) return lo;
+  while(hi-lo > 10){ const m = Math.round((lo+hi)/2); if(fit(m)) hi = m; else lo = m; }
   return hi;
 }
+// where the road crosses height y (px from the band's top; the road runs bottom → top), in picture px
+function roadXAt(id, g, y){
+  const P = ART_ROADS[id].map(([fx,fy])=>[fx*g.dw, fy*g.dh-g.oy]);
+  for(let i=1;i<P.length;i++) if(P[i][1] <= y){ const [a,b] = [P[i-1], P[i]], t = a[1]===b[1] ? 0 : (a[1]-y)/(a[1]-b[1]); return a[0]+(b[0]-a[0])*Math.max(0,Math.min(1,t)); }
+  return P[P.length-1][0];
+}
+/* sideways shift of a band's picture: its road comes out of the seam below (the top of the cross-fade, MAP_SEAM above its
+   bottom) at inX — where the road below ends (the Boss of the world below, or the top of a transition picture) — and its
+   road's end (the Boss) sits at outX, where the transition picture above starts its road. With both, the shift splits the
+   difference. Only the part of the road the levels stand on (above the sign) has to stay MAP_EDGE inside the screen. */
+function bandShift(id, W, H, inX, outX, sign){
+  const g = artGeo(id, W, H), rd = ART_ROADS[id], xs = rd.filter(([,fy])=>fy*g.dh-g.oy <= H-sign).map(([fx])=>fx*g.dw);
+  const lo = Math.max(0, Math.max(...xs) - W + MAP_EDGE), hi = Math.min(g.dw - W, Math.min(...xs) - MAP_EDGE);
+  const wants = [];
+  if(inX!=null) wants.push(roadXAt(id, g, H - MAP_SEAM) - inX);
+  if(outX!=null) wants.push(rd[rd.length-1][0]*g.dw - outX);
+  const want = wants.length ? wants.reduce((a,b)=>a+b)/wants.length : g.ox0;
+  return lo > hi ? Math.max(0, Math.min(g.dw - W, g.ox0)) : Math.max(lo, Math.min(hi, want));
+}
+// where the road leaves the top (out) / enters the bottom (in) of the transition picture between world w and w+1, px
+const transX = (w, W, end) => { const t = TRANS_ROADS[WORLDS_V2[w].id+"_"+WORLDS_V2[w+1].id]; return (t ? t[end==="top"?1:0] : 0.5) * W; };
 const LAYOUT_CACHE = {};
+const transName = w => "trans_"+WORLDS_V2[w].id+"_"+WORLDS_V2[w+1].id;   // between world w and the one above it
 function layoutMap(W){
-  const n = WORLDS_V2.length, hs = [], tops = [], pos = {}, artBand = [], key = W+":"+WORLDS_V2.map(x=>art("map_"+x.id)?1:0).join("");
+  const n = WORLDS_V2.length, hs = [], tops = [], pos = {}, artBand = [], ox = [], sign = [], trans = [];
+  const key = W+":"+WORLDS_V2.map((x,w)=>(art("map_"+x.id)?1:0)+(w<n-1 && art(transName(w))?"t":"")).join("");
   if(LAYOUT_CACHE[key]) return LAYOUT_CACHE[key];
   const roadOK = w => artBand[w] && ART_ROADS[WORLDS_V2[w].id] && ART_SIZE["map_"+WORLDS_V2[w].id];
-  for(let w=0; w<n; w++){ artBand[w] = !!art("map_"+WORLDS_V2[w].id); hs[w] = !artBand[w] ? SEG_H : roadOK(w) ? roadBandH(WORLDS_V2[w].id, W) : ART_H_MAX; }
-  let y = 0; for(let w=n-1; w>=0; w--){ tops[w] = y; y += hs[w]; }
+  for(let w=0; w<n; w++) artBand[w] = !!art("map_"+WORLDS_V2[w].id);
+  const seamBelow = w => w>0 && artBand[w] && (artBand[w-1] || trans[w-1]);
+  for(let w=0; w<n-1; w++) if(artBand[w] && artBand[w+1] && art(transName(w))){ const sz = ART_SIZE[transName(w)]; trans[w] = {name:transName(w), h: sz ? Math.round(W*sz[1]/sz[0]) : TRANS_H}; }
+  for(let w=0; w<n; w++){ sign[w] = ART_SIGN; hs[w] = !artBand[w] ? SEG_H : roadOK(w) ? roadBandH(WORLDS_V2[w].id, W, sign[w]) : ART_H_MAX; }
   for(let w=0; w<n; w++){
-    if(roadOK(w)) roadLevels(WORLDS_V2[w].id, W, hs[w]).forEach(([x,yy],l) => { pos[w+"-"+l] = [Math.round(x/W*1000)/10, Math.round(tops[w]+yy)]; });
+    if(!roadOK(w)) continue;
+    const id = WORLDS_V2[w].id, below = w>0 && roadOK(w-1) ? WORLDS_V2[w-1].id : null;
+    const inX = w>0 && trans[w-1] ? transX(w-1, W, "top") : below ? ART_ROADS[below][ART_ROADS[below].length-1][0]*artGeo(below, W, hs[w-1]).dw - ox[w-1] : null;
+    const outX = w<n-1 && trans[w] ? transX(w, W, "bottom") : null;
+    ox[w] = bandShift(id, W, hs[w], inX, outX, sign[w]);
+  }
+  // stack from the top world down; painted neighbours overlap by MAP_SEAM
+  let y = 0;
+  for(let w=n-1; w>=0; w--){
+    tops[w] = y; y += hs[w];
+    if(w>0 && trans[w-1]){ y -= MAP_SEAM; trans[w-1].top = y; y += trans[w-1].h - MAP_SEAM; }
+    else if(w>0 && seamBelow(w)) y -= MAP_SEAM;
+  }
+  for(let w=0; w<n; w++){
+    if(roadOK(w)) roadLevels(WORLDS_V2[w].id, W, hs[w], null, ox[w], sign[w]).forEach(([x,yy],l) => { pos[w+"-"+l] = [Math.round(x/W*1000)/10, Math.round(tops[w]+yy)]; });
     else for(let l=0;l<NLV;l++){ const [x,yb] = nodePos(l); pos[w+"-"+l] = [x, tops[w] + hs[w] - yb]; }
   }
-  return LAYOUT_CACHE[key] = {W, tops, hs, artBand, total: y + (artBand[0] ? 0 : MAP_OVER + 20), pos};
+  return LAYOUT_CACHE[key] = {W, tops, hs, artBand, ox, sign, trans, seam: w => w<n-1 && artBand[w] && (trans[w] || seamBelow(w+1)), total: y + (artBand[0] ? 0 : MAP_OVER + 20), pos};
 }
 const nodeX = (w,l) => MAPL.pos[w+"-"+l][0];
 // y (px from the top of the whole map) of a level's centre
@@ -337,12 +389,12 @@ function renderMap(focus, width){
     + '<button class="ibtn" id="soundBtn" aria-label="声音">'+img(S.sound||S.voice?"🔊":"🔇")+'</button>'
     + '<button class="ibtn" id="parentBtn" aria-label="家长设置">'+img("⚙️")+'</button></div>';
   // 今天进度 | 下一个勇士 | 📍当前关 (kept off the map so it never covers a level)
-  html += '<div class="nexthero">'+dayTag+'<span class="nh">'+(next ? img(next.e)+'再拿 <span class="num">'+(next.need-ts)+'</span>'+img("⭐")+'解锁「'+next.n+'」' : img("🏆")+'勇士全解锁！')+'</span>'
+  html += '<div class="nexthero">'+dayTag+'<span class="nh">'+(next ? '<span class="sil">'+heroPic(HEROES.indexOf(next))+'</span>再拿 <span class="num">'+(next.need-ts)+'</span>'+img("⭐")+'解锁新勇士' : img("🏆")+'勇士全解锁！')+'</span>'
     + '<button class="btn white wcur" id="goCur">'+img("📍")+'当前关</button></div>';
   // the map's inner width (map padding 2×12, frame 2×4) decides where levels land on painted roads
   MAPL = layoutMap(width || ($("lscroll") && $("lscroll").clientWidth) || Math.max(200, ($("map").clientWidth || 375) - 32));
   const total = MAPL.total;   // includes room under the bottom island for its cliff
-  let segs = "", nodes = "", pts = [];
+  let segs = "", signs = "", nodes = "", pts = [];
   for(let wi=WORLDS_V2.length-1; wi>=0; wi--){
     const w = WORLDS_V2[wi], top = MAPL.tops[wi], bh = MAPL.hs[wi], bg = art("map_"+w.id);
     // scenery along both edges of the island, between the rows of levels
@@ -350,9 +402,13 @@ function renderMap(focus, width){
     const deco = bg ? "" : [0,1,2,3,4].map(r=>[0,1].map(side=>{ const [e,,,sz] = dl[(r*2+side+wi)%dl.length], y = SEG_H - MAP_PAD_B - r*MAP_ROW + 36 + side*18;
       return '<span class="deco" style="'+(side?'right':'left')+':'+(6+(r%2)*3)+'%;top:'+y+'px;font-size:'+Math.round(Math.min(sz,64)*.8)+'px">'+img(e)+'</span>'; }).join("")).join("");
     const bossDone = starOf(wi, NLV-1)>0;
-    segs += '<div class="band'+(bg?" art":"")+'" data-w="'+wi+'" style="top:'+top+'px;height:'+bh+'px">'+(bg?'':'<div class="cliff" data-w="'+wi+'"></div>')+deco
-      + '<div class="wsign'+(worldOpen(wi)?"":" locked")+'"><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><span class="wsub2"><small>'+w.sub+'</small>'
-      + (bossDone ? '<button class="btn white wrun" data-w="'+wi+'">'+img("🏅")+'连闯</button>' : '')+'</span></div></div>';
+    // the band's top fades into whatever is above it (the next world or a transition picture)
+    segs += '<div class="band'+(bg?" art":"")+(MAPL.seam(wi)?" fade":"")+'" data-w="'+wi+'" style="top:'+top+'px;height:'+bh+'px;--seam:'+MAP_SEAM+'px">'+(bg?'':'<div class="cliff" data-w="'+wi+'"></div>')+deco+'</div>';
+    // the sign at the band's bottom goes on a layer above all bands, so a seam fading over it never hides it
+    signs += '<div class="wsign ov'+(worldOpen(wi)?"":" locked")+'" data-w="'+wi+'" style="top:'+(top+bh)+'px"><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><span class="wsub2"><small>'+w.sub+'</small>'
+      + (bossDone ? '<button class="btn white wrun" data-w="'+wi+'">'+img("🏅")+'连闯</button>' : '')+'</span></div>';
+    const tr = wi>0 && MAPL.trans[wi-1];
+    if(tr) segs += '<div class="band trans fade" data-t="'+(wi-1)+'" style="top:'+tr.top+'px;height:'+tr.h+'px;--seam:'+MAP_SEAM+'px;background-image:url(&quot;'+art(tr.name)+'&quot;)"></div>';
   }
   for(let wi=0; wi<WORLDS_V2.length; wi++) WORLDS_V2[wi].levels.forEach((L,li)=>{
     const lo = levelOpen(wi,li), st = starOf(wi,li), m = mastery(wi,li), x = nodeX(wi,li), y = nodeY(wi,li), mode = L.boss ? "battle" : LEVEL_MODES[wi].modes[li];
@@ -376,18 +432,19 @@ function renderMap(focus, width){
   // the drawn road skips painted islands: their picture has its own road, and their Boss stands at its end
   const runs = [[]]; pts.forEach((p,i)=>{ if(i && pts[i-1][2]) runs.push([]); runs[runs.length-1].push(p); });
   const road = runs.filter(r=>r.length>1).map(roadD).join(" ");
-  html += '<div class="wview"><div class="lscroll" id="lscroll"><div class="lmap" style="height:'+total+'px">'+segs
+  html += '<div class="wview"><div class="lscroll" id="lscroll"><div class="lmap" style="height:'+total+'px">'+segs+signs
     + '<svg class="wpath" viewBox="0 0 100 '+total+'" preserveAspectRatio="none" style="height:'+total+'px"><g fill="none" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"><path d="'+road+'" stroke="rgba(120,80,30,.35)" stroke-width="30" vector-effect="non-scaling-stroke"/><path d="'+road+'" stroke="#f6e4bd" stroke-width="22" vector-effect="non-scaling-stroke"/><path d="'+road+'" stroke="#fff" stroke-opacity=".9" stroke-width="5" stroke-dasharray="0.1 14" vector-effect="non-scaling-stroke"/></g></svg>'
     + nodes+'</div></div>'
     + (IS_BETA?'<span class="pill beta" id="betaTag">试玩版</span>':'')+'</div>';
   const mp = $("map"); mp.innerHTML = html;
   // band backgrounds are set as properties (the data: URLs contain quotes)
-  mp.querySelectorAll(".band").forEach(el=>{ const wi = +el.dataset.w, id = WORLDS_V2[wi].id, bg = art("map_"+id);
+  mp.querySelectorAll(".band[data-w]").forEach(el=>{ const wi = +el.dataset.w, id = WORLDS_V2[wi].id, bg = art("map_"+id);
     const strip = () => { el.classList.remove("art"); el.style.backgroundImage = stripURL(id);
       if(!el.querySelector(".cliff")) el.insertAdjacentHTML("afterbegin", '<div class="cliff"></div>');
       el.querySelector(".cliff").style.backgroundImage = cliffURL(id); };
     if(!bg) return strip();
     el.style.backgroundImage = 'url("'+bg+'")';
+    if(MAPL.ox[wi]!=null){ const g = artGeo(id, MAPL.W, MAPL.hs[wi]); el.style.backgroundSize = g.dw.toFixed(1)+"px "+g.dh.toFixed(1)+"px"; el.style.backgroundPosition = (-MAPL.ox[wi]).toFixed(1)+"px "+(-g.oy).toFixed(1)+"px"; }
     const t = new Image(); t.onerror = strip; t.src = bg; });
   const sc = $("lscroll");
   // first render can be measured before the layout settles: redo once if the real width differs
@@ -455,14 +512,21 @@ function openLevel(){
 }
 // 装备解锁的勇士：获得过这个品质（或更高）的装备
 const gearNeed = k => '获得过<b style="color:'+GEAR_QUALITY_MAP[k].col+'">'+GEAR_QUALITY_MAP[k].name+'色</b>或更好的装备';
-// 勇士选择页的头像：小勇士有原画（hero_base）就用原画，其他勇士是 3D 图
-const heroPic = i => i===0 && art("hero_base") ? artTag(art("hero_base"), "ei art", img(HEROES[0].e)) : img(HEROES[i].e);
+/* 勇士原画：小勇士按身上盔甲的品质换整套外观（hero_<品质>，没穿是 hero_base）；其他勇士各一张 hero2_<名字>。
+   人形勇士（小勇士、忍者、宇航员、装备国王）手里拿武器、盾牌原画；机器人、霸王龙、神龙、独角兽不叠。没有原画就是 3D 图 */
+const HERO_ART = ["", "hero2_ninja", "hero2_robot", "hero2_astronaut", "hero2_trex", "hero2_dragon", "hero2_unicorn", "hero2_king"];
+const HERO_HANDS = [true, true, false, true, false, false, false, true];
+const heroArtFor = (i, eq) => i===0 ? ((eq && eq.armor && art("hero_"+eq.armor.quality)) || art("hero_base")) : art(HERO_ART[i]);
+// 勇士选择页的头像（没解锁的在选择页里涂成剪影）
+const heroPic = i => { const u = heroArtFor(i, null); return u ? artTag(u, "ei art", img(HEROES[i].e)) : img(HEROES[i].e); };
 function openHeroes(){
   let view = S.hero;
   const render = first => {
     const h = HEROES[view], un = heroUnlocked(view);
-    const body = '<div class="herostage" style="--hcol:'+h.col+'">'+heroPic(view)+'<div><b>'+h.n+'</b><p>'+img(h.shot)+' '+h.skill+'</p>'
-        + (un ? '' : '<p class="lockline">'+img("🔒")+' '+(h.gear ? gearNeed(h.gear) : '需要 '+h.need+' 颗 '+img("⭐"))+'</p>')+'</div></div>'
+    // 没解锁的勇士：只给剪影、「？？？」和解锁条件，名字、技能都不露（家长 10-22）
+    const body = (un ? '<div class="herostage" style="--hcol:'+h.col+'">'+heroPic(view)+'<div><b>'+h.n+'</b><p>'+img(h.shot)+' '+h.skill+'</p></div></div>'
+        : '<div class="herostage locked"><span class="sil">'+heroPic(view)+'</span><div><b class="qqq">？？？</b>'
+          + '<p class="lockline">'+img("🔒")+' '+(h.gear ? gearNeed(h.gear) : '需要 '+h.need+' 颗 '+img("⭐"))+'</p></div></div>')
       + '<div class="heroes">'+HEROES.map((x,i)=>'<button class="hcard'+(i===S.hero?" sel":"")+(heroUnlocked(i)?"":" lock")+(i===view?" view":"")+'" data-i="'+i+'">'+heroPic(i)+(heroUnlocked(i)?"":'<span class="lk">'+img("🔒")+'</span>')+'</button>').join("")+'</div>'
       + '<p>'+img("✨")+' 金色光环：所有勇士暴击多打 1 滴血'+(goldAura() ? '（已获得）' : '<br><small>拿到橙色或更好的装备就能获得</small>')+'</p>'
       + '<button class="btn green" id="hGo">'+img("⚔️")+' 出发！</button>';
@@ -470,7 +534,7 @@ function openHeroes(){
     $("pbody").querySelectorAll(".hcard").forEach(b=>b.onclick=()=>{
       view = +b.dataset.i;
       if(heroUnlocked(view)){ S.hero = view; save(); sfx.right(); say(HEROES[view].n+"，"+HEROES[view].skill); }
-      else { sfx.click(); say(HEROES[view].gear ? "拿到"+GEAR_QUALITY_MAP[HEROES[view].gear].name+"色装备，就能解锁"+HEROES[view].n : "再拿"+(HEROES[view].need-totalStars())+"颗星，就能解锁"+HEROES[view].n); }
+      else { sfx.click(); say(HEROES[view].gear ? "拿到"+GEAR_QUALITY_MAP[HEROES[view].gear].name+"色装备，就能解锁这个勇士" : "再拿"+(HEROES[view].need-totalStars())+"颗星，就能解锁这个勇士"); }
       render(false);
     });
     $("hGo").onclick = ()=>closePage();
@@ -495,13 +559,15 @@ const isWorn = g => !!g && !!S.equipped[g.slot] && S.equipped[g.slot].id===g.id;
 // placeholder look until the real art arrives: hero emoji with the four pieces stacked on head / hands / chest
 // 小勇士 with original art: the armour's quality picks the whole look (hero_<品质>, else hero_base); weapon / shield
 // pictures sit in the hands if they exist. Other heroes, or no art at all: the 3D emoji with the gear icons around it.
-function heroArtURL(eq){ if(hero()!==HEROES[0]) return null; return (eq.armor && art("hero_"+eq.armor.quality)) || art("hero_base"); }
+function heroArtURL(eq){ return heroArtFor(HEROES.indexOf(hero()), eq); }
 const heroFace = () => { const u = heroArtURL(S.equipped); return u ? artTag(u, "ei art", img(hero().e)) : img(hero().e); };
 function avatarHTML(eq){
   const base = heroArtURL(eq);
   if(base){
-    const hand = (slot, side) => eq[slot] && art(slot+"_"+eq[slot].quality) ? artTag(art(slot+"_"+eq[slot].quality), "hand "+side+" q-"+eq[slot].quality, "", "--qc:"+qCol(eq[slot])) : "";
-    const look = eq.armor && art("hero_"+eq.armor.quality) ? eq.armor.quality : "base";   // fists sit a little differently per look
+    const hi = HEROES.indexOf(hero()), hands = HERO_HANDS[hi];
+    const hand = (slot, side) => hands && eq[slot] && art(slot+"_"+eq[slot].quality) ? artTag(art(slot+"_"+eq[slot].quality), "hand "+side+" q-"+eq[slot].quality, "", "--qc:"+qCol(eq[slot])) : "";
+    // fists sit a little differently per look (小勇士的盔甲品质，或别的勇士 h1…h7)
+    const look = hi ? "h"+hi : eq.armor && art("hero_"+eq.armor.quality) ? eq.armor.quality : "base";
     return '<span class="av lay a-'+look+'">'+artTag(base, "ei art", img(hero().e))+hand("weapon","rh")+hand("shield","lh")+'</span>';
   }
   return '<span class="av">'+img(hero().e)+SLOT_KEYS.map(k=>eq[k] ? '<span class="ag '+k+' q-'+eq[k].quality+'" style="--qc:'+qCol(eq[k])+'">'+img(eq[k].e)+'</span>' : '').join("")+'</span>';
@@ -634,7 +700,8 @@ function openParent(tab){
         + tg("tOpen","全部关卡直接开放",S.openAll)
         + tg("tVoice","语音读题",S.voice)
         + tg("tSound","音效",S.sound)+'</div>'
-        + '<button class="btn red" id="mReset" style="font-size:18px">'+(confirmReset?"再点一次，确认清空全部进度":"清空进度，重新开始")+'</button>';
+        + '<button class="btn red" id="mReset" style="font-size:18px">'+(confirmReset?"再点一次，确认清空全部进度":"清空进度，重新开始")+'</button>'
+        + '<p class="muted credit"><small>部分美术由 AI 生成</small></p>';
     } else if(tab==="voice"){
       body += VOICES.length
         ? '<select class="vsel" id="voiceSel"><option value="">自动挑选（'+VOICES[0].name+'）</option>'+VOICES.map(v=>'<option value="'+v.name.replace(/"/g,"&quot;")+'"'+(v.name===S.voiceName?" selected":"")+'>'+v.name+'</option>').join("")+'</select>'
@@ -692,7 +759,7 @@ function startLevel(w,l,run){
   // 消除 / 连连看：怪兽血量固定（BOARD_HP），连击打得快就能提前打倒；慢慢配完最后一对也一定赢
   const hp = BOARD_HP[mode] || L.hp + 2*diff;
   B = {w,l,W:Wd,L,h,mode,board:null,sel:null,diff,run:run||null,hp,maxHp:hp,rage,dmg:RAGE[rage].dmg,maxH,hearts:run?run.hearts:maxH,combo:0,q:null,busy:true,charge:0,qt:0,over:false,recent:[],enraged:false,hintOpen:false,step:0,lastTick:0,wrongThisQ:false,
-       gs, shield:(h.shield||0)+gs.shield, lucky:(h.lucky||0)+gs.lucky, frozenUntil:0, fleeUntil:0, lvAtk:lb.atk, urged:false};
+       gs, shield:(h.shield||0)+gs.shield, lucky:(h.lucky||0)+gs.lucky, fleeUntil:0, lvAtk:lb.atk, urged:false};
   const cur = B, bt = $("battle");
   setArenaBg(Wd.id);
   bt.classList.toggle("boss", !!L.boss); bt.classList.remove("enraged");
@@ -706,8 +773,7 @@ function startLevel(w,l,run){
   $("heroSprite").className = "sprite"; $("heroSprite").innerHTML = avatarHTML(S.equipped); $("heroName").innerHTML = emo((S.crown?"👑":"")+h.n);
   $("shield").hidden = !B.shield; $("shield").className = "shield";
   const ms = $("monSprite"); ms.className = "sprite"; ms.innerHTML = monImg(w,l);
-  $("monGrow").style.transform = ""; $("monBox").classList.remove("angry","frozen");
-  $("iceBlock").hidden = true; $("iceChip").hidden = true; $("frost").classList.remove("on");
+  $("monGrow").style.transform = ""; $("monBox").classList.remove("angry");
   $("monName").textContent = (diff?TIERS[diff].n+"·":"")+L.n;
   $("monName").style.boxShadow = diff ? "0 0 0 2px "+TIERS[diff].c : "";
   // what this monster may drop: 「🪖 头盔 20%」, a Boss always drops gear
@@ -716,7 +782,7 @@ function startLevel(w,l,run){
   $("dropTag").classList.toggle("boss", !!(md && md.boss));
   $("chargeWrap").hidden = !S.timer;
   $("combo").textContent = ""; $("qTag").hidden = true;
-  $("tutor").hidden = true; $("answers").innerHTML = ""; $("qText").innerHTML = ""; $("qcard").className = "qcard panel"; $("qTime").style.width = "0%";
+  $("tutor").hidden = true; $("answers").innerHTML = ""; $("qText").innerHTML = ""; $("qcard").className = "qcard panel";
   $("arena").dataset.combo = "0"; $("arena").classList.remove("hitstop","urging"); fleeTick();
   drawHearts(); drawHP(); drawCharge(); renderItems();
   let delay;
@@ -788,67 +854,39 @@ function qTime(){
   return (base + B.gs.time) * (1 + slow/100);
 }
 /* 战斗手感（家长试玩反馈：要像成熟手游）。数字都在这里调：
-   - 怪兽蓄力：蓄满 CHARGE_SEC[狂暴档] 秒就打一下（勇士 / 装备的时间加成按同样比例拉长）。一题的限时（15 秒，狂暴 10 / 8 / 6）
-     里最多蓄力打 1 次，到时间再打 1 次（超时），所以「一题内挨 1～2 下」；答对一题，怪兽被打断，蓄力清零。
-   - 道具：冰冻 FREEZE_SEC 秒（蓄力和限时都停）；加时 +TIME_ITEM_SEC 秒（蓄力也往回退这么多）；加心 +1。蓄力过 URGE_AT 道具按钮闪烁提示。
+   - 怪兽蓄力 = 本题限时（家长 10-22：只留一条计时条，在怪兽血条正下方）：一题 15 秒（狂暴 10 / 8 / 6），蓄满怪兽就打一下；
+     答对一题，怪兽被打断，蓄力清零；答错立刻挨一下，蓄力也重来。
+   - 道具：加心 +1；去错（4 选 1 变 3 选 1，消除 / 连连看里亮出一对正确的）；换题（同类型简单一档）。蓄力过 URGE_AT 道具按钮闪烁提示。
    - 打击：命中瞬间定格 HITSTOP_MS（暴击 / Boss 更久）；连击 COMBO_TIERS = 3 / 5 / 10 三档光效和音效。
    - 逃跑失败后 FLEE_LOCK_SEC 秒内地图按钮变灰。 */
-const CHARGE_SEC = [8, 5.5, 4.5, 3.5];
-const FREEZE_SEC = 6, TIME_ITEM_SEC = 8, URGE_AT = 0.7;
+const URGE_AT = 0.7;
 const HITSTOP_MS = 90, HITSTOP_CRIT = 120, HITSTOP_BOSS = 30;   // Boss 受击再多定格 30ms
 const COMBO_TIERS = [3, 5, 10];
 const FLEE_LOCK_SEC = 5;
-// 一次蓄力要几秒：和本题限时同比例（应用题、消除、⏳ 装备、宇航员减速都会拉长）
-const chargeTime = () => CHARGE_SEC[B.rage] * qTime() / RAGE[B.rage].t;
+// 一次蓄力要几秒 = 本题限时（应用题、消除、⏳ 装备、宇航员减速都会拉长）
+const chargeTime = () => qTime();
 const comboTier = n => COMBO_TIERS.filter(x=>n>=x).length;
 const thinking = () => B && B.hintOpen && B.q && B.q.kind==="word";
-const frozen = () => B && B.frozenUntil > performance.now();
 function drawCharge(){
   if(!B) return;
-  const c = Math.min(1,B.charge), fz = frozen();
+  const c = Math.min(1,B.qt);
   $("chargeFill").style.width = c*100+"%";
-  $("chargeWrap").classList.toggle("hot", c>.65 && !fz);
-  $("chargeWrap").classList.toggle("ice", fz);
-  $("qTime").style.width = Math.min(100, (1-B.qt)*100)+"%";
-  $("qTime").classList.toggle("low", B.qt>.66);
+  $("chargeWrap").classList.toggle("hot", c>.65);
   $("monGrow").style.transform = "scale("+(1+c*.35)+")";
-  $("monBox").classList.toggle("angry", S.timer && c>.65 && !B.over && !fz);
-  $("monBox").classList.toggle("frozen", fz && !B.over);
-  if(fz){
-    const left = Math.ceil((B.frozenUntil-performance.now())/1000);
-    if(B.iceLeft!==left){ B.iceLeft = left; $("iceChip").innerHTML = img("🧊")+left; }
-  } else if(!$("iceBlock").hidden) unfreeze();
+  $("monBox").classList.toggle("angry", S.timer && c>.65 && !B.over);
   urgeItems(c);
 }
-// 蓄力快满了：能用的道具按钮闪烁，并提示「快用冰冻！」（第一次还会读出来）
+// 蓄力快满了：能用的道具按钮闪烁，并提示「快用去错！」（第一次还会读出来）
 function urgeItems(c){
-  const on = S.timer && !B.over && !B.busy && !B.hintOpen && c>=URGE_AT && !frozen();
-  const k = !on ? null : (S.items.ice||0)>0 ? "ice" : (S.items.time||0)>0 ? "time" : null;
+  const on = S.timer && !B.over && !B.busy && !B.hintOpen && c>=URGE_AT;
+  const k = !on ? null : ["cut","swap"].find(x=>(S.items[x]||0)>0 && itemUsable(x)) || null;
   $("arena").classList.toggle("urging", !!k);
   $("items").querySelectorAll(".item").forEach(b=>b.classList.toggle("nudge", b.dataset.it===k));
   const u = $("urge");
   if(!k){ u.hidden = true; return; }
-  const text = k==="ice" ? "快用冰冻！" : "快用加时！";
+  const text = "快用"+ITEMS[k].n+"！";
   if(u.hidden || u.textContent!==text){ u.textContent = text; u.hidden = false; }
   if(!B.urged){ B.urged = true; say(text); }
-}
-function freeze(){
-  B.frozenUntil = performance.now()+FREEZE_SEC*1000; B.iceLeft = null;
-  $("iceBlock").hidden = false; $("iceChip").hidden = false; restart($("iceBlock"),"on");
-  $("frost").classList.add("on"); $("chargeWrap").classList.add("ice");
-  sfx.freeze(); tint("#bfefff");
-  const a = $("arena"), H = a.clientHeight;
-  for(let i=0;i<18;i++){
-    const s = document.createElement("span"); s.className = "snow"; s.innerHTML = img("❄️");
-    s.style.left = (Math.random()*100)+"%";
-    s.style.setProperty("--sx", ((Math.random()-.5)*80)+"px"); s.style.setProperty("--sh", H+"px");
-    s.style.animationDuration = (2+Math.random()*2)+"s"; s.style.animationDelay = (Math.random()*(FREEZE_SEC-2))+"s";
-    a.appendChild(s); setTimeout(()=>s.remove(), FREEZE_SEC*1000+500);
-  }
-}
-function unfreeze(){
-  $("iceBlock").hidden = true; $("iceChip").hidden = true; $("frost").classList.remove("on");
-  if(B && !B.over){ sfx.shatter(); burst(12, ["🧊","❄️"]); renderItems(); }
 }
 function bigCount(n){
   const cd = $("cd"); cd.textContent = n; restart(cd,"on");
@@ -858,12 +896,11 @@ function bigCount(n){
 function loop(t){
   const dt = Math.min(0.1,(t-lastT)/1000); lastT = t;
   if(B && !B.over){
-    if(S.timer && !B.busy && B.q && $("modal").hidden && !B.hintOpen && !frozen()){
-      B.qt += dt/qTime(); B.charge += dt/chargeTime();
+    if(S.timer && !B.busy && B.q && $("modal").hidden && !B.hintOpen){
+      B.qt += dt/qTime(); B.charge = B.qt;
       const left = Math.ceil(qTime()*(1-B.qt));
       if(left<=5 && left>=1 && left!==B.lastTick){ B.lastTick = left; bigCount(left); }
       if(B.qt>=1){ B.qt = 0; B.charge = 0; B.lastTick = 0; monsterAttack("timeout"); }
-      else if(B.charge>=1){ B.charge = 0; monsterAttack("charge"); }
     }
     drawCharge(); fleeTick();
     rafId = requestAnimationFrame(loop);
@@ -876,29 +913,83 @@ function fleeTick(){
   const txt = lock ? String(left) : "";
   if(bb.dataset.left!==txt) bb.dataset.left = txt;
 }
+/* 道具图标：加心用原画药水（icon_potion），去错 / 换题用同风格的糖果 SVG（cs()，见文件开头的 ICON_SVG） */
+const ITEM_SVG = {
+  // 去错：一张答案卡，被红色粗 × 划掉
+  cut: cs('<rect x="5" y="5" width="30" height="35" rx="7" fill="'+CC.w+'"/><path class="ln" d="M13 15 H27 M13 22 H23" fill="none" stroke-width="3.5"/>'
+    + csLine("M24 26 L42 44 M42 26 L24 44", CC.r, 6)),
+  // 换题：一张蓝色题卡，两条绿色箭头绕着它转
+  swap: cs('<rect x="14" y="12" width="20" height="24" rx="5" fill="'+CC.lb+'"/><path class="ln" d="M20 20 H28 M20 26 H26" fill="none" stroke-width="3"/>'
+    + csLine("M8 27 Q6 8 25 6", CC.g, 5)+csLine("M40 21 Q42 40 23 42", CC.g, 5)
+    + '<path d="M23 0 L33 6 L23 12 Z" fill="'+CC.g+'" stroke-width="3"/><path d="M25 48 L15 42 L25 36 Z" fill="'+CC.g+'" stroke-width="3"/>')
+};
+const itemImg = k => ITEM_SVG[k] || img(ITEMS[k].e);
+// 这一刻用得上吗：加心要没满；去错要有能去掉的错误选项（或棋盘上还有没配的）；换题只在答题时
+function itemUsable(k){
+  if(!B || B.over) return false;
+  if(k==="heal") return B.hearts<B.maxH;
+  if(B.busy || !B.q) return false;
+  if(k==="cut") return B.mode==="match" || B.mode==="link" ? !!(B.board && hintPair()) : !!$("answers").querySelector(".ans:not(.gone):not(.wrong):not([data-v='"+String(B.q.answer).replace(/'/g,"\\'")+"'])") && $("answers").querySelectorAll(".ans:not(.gone):not(.wrong)").length>2;
+  if(k==="swap") return !BOARD_TIME[B.mode] && !!B.L.easy;
+  return false;
+}
 function renderItems(){
   if(!B) return;
   $("items").innerHTML = Object.keys(ITEMS).map(k=>{
     const n = S.items[k]||0;
-    const useless = (k==="heal" && B.hearts>=B.maxH) || (k!=="heal" && !S.timer) || (k==="ice" && frozen());
-    return '<button class="item" data-it="'+k+'"'+(n<=0||useless||B.over?" disabled":"")+' aria-label="'+ITEMS[k].tip+'">'+img(ITEMS[k].e)+'<b class="cnt">'+n+'</b></button>';
+    const useless = k==="heal" ? B.hearts>=B.maxH : k==="swap" && BOARD_TIME[B.mode];
+    return '<button class="item" data-it="'+k+'"'+(n<=0||useless||B.over?" disabled":"")+' aria-label="'+ITEMS[k].tip+'">'+itemImg(k)+'<b class="cnt">'+n+'</b></button>';
   }).join("");
   $("items").querySelectorAll(".item").forEach(b=>b.onclick=()=>useItem(b.dataset.it));
 }
 function useItem(k){
-  if(!B || B.over || !(S.items[k]>0)) return;
+  if(!B || B.over || !(S.items[k]>0) || !itemUsable(k)) return;
   S.items[k]--; save();
   if(k==="heal"){ B.hearts = Math.min(B.maxH, B.hearts+1); drawHearts(false,true); toast("💖","+1 颗心"); sfx.heal(); tint("#f472b6"); }
-  if(k==="time"){ B.qt = Math.max(0, B.qt - TIME_ITEM_SEC/qTime()); B.charge = Math.max(0, B.charge - TIME_ITEM_SEC/chargeTime()); B.lastTick = 0; toast("⏳","+"+TIME_ITEM_SEC+" 秒"); sfx.shield(); tint("#4ade80"); }
-  if(k==="ice"){ freeze(); toast("🧊","怪兽被冻住了！"); }
+  if(k==="cut") cutWrong();
+  if(k==="swap") swapQuestion();
   renderItems(); drawCharge();
   const nb = $("items").querySelector('[data-it="'+k+'"]'); if(nb) restart(nb,"used");
 }
+// 去错：答题时随机去掉一个错误选项（变灰、点不了）；消除 / 连连看里把一对正确的配对亮出来
+function cutWrong(){
+  sfx.shield();
+  if(BOARD_TIME[B.mode]){
+    const pr = hintPair(); if(!pr) return;
+    const bd = $("board"); bd.querySelectorAll(".pairhint").forEach(x=>x.classList.remove("pairhint"));
+    pr.forEach(id=>{ const el = bd.querySelector('[data-id="'+id+'"]'); if(el) el.classList.add("pairhint"); });
+    toast("💡","这两个是一对！"); say("这两个是一对！");
+    return;
+  }
+  // 已经点错变灰的（.wrong）不算：要去掉一个孩子还没点过的错项
+  const a = String(B.q.answer), wrong = [...$("answers").querySelectorAll(".ans:not(.gone):not(.wrong)")].filter(b=>b.dataset.v!==a);
+  const b = pick(wrong); if(!b) return;
+  b.classList.add("gone"); b.disabled = true;
+  toast("💡","去掉一个错的！"); say("去掉一个错的！");
+}
+// 消除 / 连连看里还没配的一对正确答案（id 两个），没有就 null
+function hintPair(){
+  const b = B.board; if(!b) return null;
+  if(B.mode==="match"){
+    const cs = (b.cards || b).filter(c=>!c.gone && !c.done && !c.matched && !(c.coveredBy && c.coveredBy.length));
+    for(let i=0;i<cs.length;i++) for(let j=i+1;j<cs.length;j++) if(cs[i].value===cs[j].value) return [cs[i].id, cs[j].id];
+    return null;
+  }
+  const l = (b.left||[]).find(x=>!x.matched), r = l && (b.right||[]).find(x=>!x.matched && x.hz===l.hz);
+  return l && r ? [l.id, r.id] : null;
+}
+// 换题：同类型降一档（logic.js levelDef 的 easy），重新计时
+function swapQuestion(){
+  const old = B.q; let q = null;
+  for(let i=0;i<20;i++){ q = B.L.easy(old); if(qKey(q)!==qKey(old)) break; }
+  sfx.shield(); tint("#4ade80"); toast("💡","换一道简单点的！");
+  nextQuestion(q);
+}
 function qKey(q){ return q.key || q.parts.join(" "); }
-function nextQuestion(){
-  let q, tries = 0;
+function nextQuestion(given){
+  let q = given, tries = 0;
   const gen = (S.py>0 && B.W.id!=="think" && Math.random()<S.py) ? pyQ : B.L.g;
-  do { q = gen(); tries++; } while(B.recent.includes(qKey(q)) && tries<30);
+  if(!q) do { q = gen(); tries++; } while(B.recent.includes(qKey(q)) && tries<30);
   B.recent.push(qKey(q)); if(B.recent.length>8) B.recent.shift();
   B.q = q; B.charge = 0; B.qt = 0; B.lastTick = 0; B.wrongThisQ = false; B.hintOpen = false; B.step = 0;
   $("tutor").hidden = true;
@@ -1047,7 +1138,7 @@ function slashFx(col, crit){
 function punchFx(crit){
   const [cx,cy] = monCenter(-16, 0);
   const el = document.createElement("div"); el.className = "punchfx"+(crit?" crit":"");
-  el.style.left = cx+"px"; el.style.top = cy+"px"; el.innerHTML = '<i class="ring"></i>'+img("👊");
+  el.style.left = cx+"px"; el.style.top = cy+"px"; el.innerHTML = '<i class="ring"></i><i class="ring r2"></i>';
   $("arena").appendChild(el); setTimeout(()=>el.remove(), 500 + FX_HOLD);
 }
 function breakCombo(){ B.combo = 0; const c = $("combo"); c.textContent = ""; c.className = "combo"; $("arena").dataset.combo = "0"; }
@@ -1113,7 +1204,6 @@ function monsterAttack(reason){
   sfx.roar();
   play($("monSprite"),"lunge");
   if(reason==="timeout") setCombo("⏰ 太慢啦！", 0, true);
-  if(reason==="charge") setCombo("💢 蓄力攻击！", 0, true);
   setTimeout(()=>{
     if(B!==cur || B.over) return;
     B.charge = 0;
@@ -1144,7 +1234,7 @@ function monsterAttack(reason){
 // 连连看：makeLinkBoard / linkPick / linkDone（logic.js），字对取自连连看题库 LLK_SETS（按世界往后翻课本）。
 const linkPairs = w => llkPairs(w, LINK_N);
 function startBoard(){
-  B.charge = 0; B.lastTick = 0; B.sel = null; B.bcombo = 0; B.lastPair = -1e9;
+  B.charge = B.qt = 0; B.lastTick = 0; B.sel = null; B.bcombo = 0; B.lastPair = -1e9;
   // speak = the board's one-line instruction, so the 🔊 button repeats it
   if(B.mode==="match"){
     const layers = B.l >= 7 ? 2 : 1;
@@ -1214,7 +1304,7 @@ function boardWrong(els){
   sfx.wrong(); breakCombo(); B.bcombo = 0; B.lastPair = -1e9;
   const st = S.stats[B.W.id] || (S.stats[B.W.id]={r:0,w:0}); st.w++; save();
   setTimeout(()=>els.forEach(el=>{ if(el && B===cur) el.classList.remove("shake","bad"); }), 600);
-  if(B.lucky>0){ B.lucky--; B.charge = 0; sfx.shield(); toast("🍀","幸运光环！不扣心"); }
+  if(B.lucky>0){ B.lucky--; B.charge = B.qt = 0; sfx.shield(); toast("🍀","幸运光环！不扣心"); }
   else monsterAttack("wrong");
 }
 function pickCard(id, el){
@@ -1266,7 +1356,7 @@ function win(){
   info.reward = {lvBefore, expBefore, res: applyDrops(drops)};
   daily().n++;   // every win counts, replays and 连闯 battles included
   save();
-  $("monBox").classList.remove("angry","frozen"); $("iceBlock").hidden = true; $("iceChip").hidden = true; $("frost").classList.remove("on"); $("items").innerHTML = "";
+  $("monBox").classList.remove("angry"); $("items").innerHTML = "";
   if(info.boss) return bossFinale(cur, info);
   sfx.boom();
   play($("monSprite"),"hit");
@@ -1295,7 +1385,7 @@ function bossFinale(cur, info){
   }, 1900);
   setTimeout(()=>{ if(B!==cur) return; info.run ? (info.runDone ? showRunReward(info) : showRunNext(info)) : showWin(info); }, 3000);
 }
-const itemTile = (k, delay, n) => '<div class="lt it" style="animation-delay:'+(delay||0)+'s">'+img(ITEMS[k].e)+'<span class="tagnew">道具'+(n>1?" ×"+n:"")+'</span></div>';
+const itemTile = (k, delay, n) => '<div class="lt it" style="animation-delay:'+(delay||0)+'s">'+itemImg(k)+'<span class="tagnew">道具'+(n>1?" ×"+n:"")+'</span></div>';
 let dropOverride = null;   // tests only (via __t.setDrops): decide what a win drops
 const pctOf = (n, d) => Math.max(0, Math.min(100, Math.round(100*n/(d||1))));
 // one piece of gear in the result list: tag (本关掉落 / 升级奖励), name, affixes; 穿上 and, for drops, 不要
@@ -1313,7 +1403,7 @@ function rewardHTML(r){
   res.rewards.forEach(rw=>rw.items.forEach(it=>{ if(it.gear) rows.push(dropRow(it.gear, "升级奖励", "lvg_"+it.gear.id, false)); }));
   if(res.gear) rows.push(dropRow(res.gear, "本关掉落", "drop_"+res.gear.id, true));
   const chips = [];
-  if(res.item) chips.push('<span class="rchip">'+img(ITEMS[res.item].e)+'<b class="num">+1</b></span>');
+  if(res.item) chips.push('<span class="rchip">'+itemImg(res.item)+'<b class="num">+1</b></span>');
   if(res.itemNote) chips.push('<span class="rchip">'+img("🎒")+'道具'+res.itemNote+'</span>');
   if(res.stone) chips.push('<span class="rchip">'+img("💎")+'进阶石<b class="num">+'+res.stone+'</b></span>');
   if(rows.length || chips.length) h += '<div class="rdrops" id="rDrops">'+rows.slice(0,2).join("")+(chips.length?'<div class="rchips">'+chips.join("")+'</div>':'')+'</div>';
@@ -1373,7 +1463,7 @@ function showWin(info){
   body += '</div>';
   // 星星有用：离下一个勇士还差几颗星
   const nh = HEROES.find(x=>x.need!=null && x.need>totalStars());
-  if(nh && !info.newHero) body += '<p class="nexth" id="nextHero">再拿 <b class="num">'+(nh.need-totalStars())+'</b> 颗'+img("⭐")+'解锁 '+img(nh.e)+'「'+nh.n+'」</p>';
+  if(nh && !info.newHero) body += '<p class="nexth" id="nextHero">再拿 <b class="num">'+(nh.need-totalStars())+'</b> 颗'+img("⭐")+'解锁新勇士 <span class="sil">'+heroPic(HEROES.indexOf(nh))+'</span></p>';
   const notes = [];
   if(info.tierUp){
     const t = info.tierUp;
@@ -1412,7 +1502,7 @@ function lose(){
   B.over = true; B.busy = true;
   const cur = B, run = B.run;
   sfx.lose();
-  $("monBox").classList.remove("angry","frozen"); $("iceBlock").hidden = true; $("iceChip").hidden = true; $("frost").classList.remove("on"); $("items").innerHTML = "";
+  $("monBox").classList.remove("angry"); $("items").innerHTML = "";
   setTimeout(()=>{
     if(B!==cur) return;
     const w = B.w, l = B.l;
@@ -1478,7 +1568,7 @@ function runGain(info){
   return '<div class="rchips">'+'<span class="rchip">'+img("📘")+'经验<b class="num">+'+res.exp+'</b></span>'
     + (res.levels.length ? '<span class="rchip">升级 <b class="num">Lv.'+S.heroLv+'</b></span>' : '')
     + gear.map(g=>'<span class="rchip q-'+g.quality+'" style="--qc:'+qCol(g)+'">'+gearImg(g)+g.name+'</span>').join("")
-    + (res.item ? '<span class="rchip">'+img(ITEMS[res.item].e)+'<b class="num">+1</b></span>' : '')
+    + (res.item ? '<span class="rchip">'+itemImg(res.item)+'<b class="num">+1</b></span>' : '')
     + (res.stone ? '<span class="rchip">'+img("💎")+'<b class="num">+1</b></span>' : '')+'</div>';
 }
 function showRunNext(info){
