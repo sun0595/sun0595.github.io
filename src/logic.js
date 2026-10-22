@@ -1018,11 +1018,12 @@ const coins = (n, off) => [...Array(n)].map((_,i)=>rmb("j1", off && i<off)).join
 function clockSvg(h, m, size, hl){
   hl = hl||"";
   const rad = d => d*Math.PI/180, pt = (deg, r) => [(50+r*Math.sin(rad(deg))).toFixed(1), (50-r*Math.cos(rad(deg))).toFixed(1)];
-  const hand = (deg, r, w, on) => { const [x,y] = pt(deg, r); return '<line x1="50" y1="50" x2="'+x+'" y2="'+y+'" style="stroke:'+(on?"var(--red)":"var(--c-line)")+';stroke-width:'+w+';stroke-linecap:round"/>'; };
+  const hand = (cls, deg, r, w, on) => { const [x,y] = pt(deg, r); return '<line class="'+cls+'" x1="50" y1="50" x2="'+x+'" y2="'+y+'" style="stroke:'+(on?"var(--red)":"var(--c-line)")+';stroke-width:'+w+';stroke-linecap:round"/>'; };
   let s = '<svg viewBox="0 0 100 100" width="'+size+'" height="'+size+'" style="vertical-align:middle;flex:none"><circle cx="50" cy="50" r="46" style="fill:#fff8e6;stroke:var(--c-line);stroke-width:4"/>';
   for(let i=1;i<=12;i++){ const [x,y] = pt(i*30, 35); s += '<text x="'+x+'" y="'+(+y+5)+'" text-anchor="middle" style="font:800 14px var(--f-num);fill:var(--c-line)">'+i+'</text>'; }
-  if(m!=null) s += hand(m*6, 36, 4, hl.includes("m"));
-  if(h!=null) s += hand((h%12)*30+(m||0)/2, 23, 7, hl.includes("h"));
+  // 分针 = 分钟 × 6°；时针 = (小时 % 12 + 分钟 / 60) × 30°，半点时时针正好在两个数中间（wp_check 会量角度）
+  if(m!=null) s += hand("mh", m*6, 36, 4, hl.includes("m"));
+  if(h!=null) s += hand("hh", ((h%12) + (m||0)/60)*30, 23, 7, hl.includes("h"));
   return s + '<circle cx="50" cy="50" r="4" style="fill:var(--c-line)"/></svg>';
 }
 // 图形（分类计数）：k = 圆 c / 正方形 s / 三角形 t
@@ -1244,7 +1245,7 @@ const WP = {
         steps:[
           {t:"一共有 <b>"+t+"</b> "+u+"。用圆点画出来，盖住的也画上（虚线圈）。", v:dots([{n:a,c:"a"},{n:c,c:"e"}])},
           {t:"露在外面的有 <b>"+a+"</b> "+u+"，就是橙色的。剩下的虚线圈在布下面。", v:dots([{n:a,c:"a"},{n:c,c:"e"}])},
-          {t:"盖住的 = 一共的 − 露在外面的：<b>"+t+" − "+a+" = ?</b>", v:dots([{n:a,c:"x"},{n:c,c:"e"}])}
+          {t:"盖住的 = 一共的 − 露在外面的：<b style='white-space:nowrap'>"+t+" − "+a+" = ?</b>", v:dots([{n:a,c:"x"},{n:c,c:"e"}])}
         ]});
     }
     const a = h ? ri(4,10) : ri(2,7), c = h ? ri(3,Math.min(9,18-a)) : ri(2,10-a), t = a+c;
@@ -1254,7 +1255,7 @@ const WP = {
       steps:[
         {t:"先画外面看得见的 <b>"+a+"</b> "+u+"（橙色）。", v:dots([{n:a,c:"a"}])},
         {t:"布下面的 <b>"+c+"</b> "+u+"看不见，但也要算上（蓝色）。", v:dots([{n:a,c:"a"},{n:c,c:"b"}])},
-        {t:"求一共，就是把两部分合起来：<b>"+a+" + "+c+" = ?</b>", v:dots([{n:a,c:"a"},{n:c,c:"b"}])}
+        {t:"求一共，就是把两部分合起来：<b style='white-space:nowrap'>"+a+" + "+c+" = ?</b>", v:dots([{n:a,c:"a"},{n:c,c:"b"}])}
       ]});
   },
   // 排队问题（用「我」来说）：behind = 一共几人、我前面几人，求我后面；ahead = 我排第几，求我前面；
@@ -1270,7 +1271,7 @@ const WP = {
         steps:[
           {t:"从前往后数：1、2、3……数到我是第 <b>"+p+"</b> 个。", v:ppl(row(0),front)},
           {t:"我前面的人涂成蓝色。⚠️ 我自己不在我的前面！", v:ppl(row(1),front)},
-          {t:"前面的人数比我排的位置少 1：<b>"+p+" − 1 = ?</b>", v:ppl(row(2),front)}
+          {t:"前面的人数比我排的位置少 1：<b style='white-space:nowrap'>"+p+" − 1 = ?</b>", v:ppl(row(2),front)}
         ]});
     }
     if(v==="back"){
@@ -1285,7 +1286,7 @@ const WP = {
         steps:[
           {t:"画 <b>"+n+"</b> 个圆圈。从前往后数，第 <b>"+p+"</b> 个是我。", v:ppl(row(0),front)},
           {t:"我后面的人（绿色）有 <b>"+n+" − "+p+"</b> 个，从后往前数要先数完他们。", v:ppl(row(1),front)},
-          {t:"⚠️ 数完后面的人，还要再数上我自己：<b>"+n+" − "+p+" + 1 = ?</b>", v:ppl(row(2),front)}
+          {t:"⚠️ 数完后面的人，还要再数上我自己：<b style='white-space:nowrap'>"+n+" − "+p+" + 1 = ?</b>", v:ppl(row(2),front)}
         ]});
     }
     const n = ri(h ? 8 : 6, h ? 16 : 11), f = ri(1,n-3), b = n-f-1;
@@ -1295,7 +1296,7 @@ const WP = {
       steps:[
         {t:"一共 <b>"+n+"</b> 人，画 "+n+" 个圆圈。", v:ppl([...Array(n)].map((_,i)=>({t:i+1})),front)},
         {t:"我前面有 <b>"+f+"</b> 人（蓝色），接着就是我。", v:ppl(row(1),front)},
-        {t:"⚠️ 我自己也要去掉！后面的人（绿色）：<b>"+n+" − "+f+" − 1 = ?</b>", v:ppl(row(2),front)}
+        {t:"⚠️ 我自己也要去掉！后面的人（绿色）：<b style='white-space:nowrap'>"+n+" − "+f+" − 1 = ?</b>", v:ppl(row(2),front)}
       ]});
   },
   // 比多少：两行一一对齐的圆点；问「多几」或「少几」
@@ -1314,7 +1315,7 @@ const WP = {
       steps:[
         {t:"把"+xn+"和"+yn+"排成两行，<b>一个对一个</b>，左边对齐。", v:rows(null)},
         {t:"能一对一配上的是一样多的部分；没配上的（黄色）就是多出来的。", v:rows(small)},
-        {t:(askMore?"多几个":"少几个")+"，都是看黄色的有几个：<b>"+big+" − "+small+" = ?</b>", v:rows(small)}
+        {t:(askMore?"多几个":"少几个")+"，都是看黄色的有几个：<b style='white-space:nowrap'>"+big+" − "+small+" = ?</b>", v:rows(small)}
       ]});
   },
   // 人民币（1 元 = 10 角）：jiao = 付 1 元买几角的东西，找回几角；yuan = 付 10 / 20 元，找回几元；mix = 1 元几角是几角
@@ -1330,7 +1331,7 @@ const WP = {
         steps:[
           {t:"付了 <b>"+pay+"</b> 元，画一条线段表示 "+pay+" 元。", v:bars([{l:"付",segs:[{v:pay,c:"g"}],brace:{from:0,len:pay,t:"付 "+pay+" 元"}}],pay)},
           {t:tn+"的价钱是 <b>"+price+"</b> 元，占去一段；剩下的就是找回的钱。", v:bars([{l:"付",segs:[{v:price},{v:c,c:"q",t:"?"}],brace:{from:0,len:pay,t:"付 "+pay+" 元"}}],pay)},
-          {t:"找回的 = 付的钱 − 价钱：<b>"+pay+" − "+price+" = ?</b>", v:bars([{l:"付",segs:[{v:price,c:"x"},{v:c,c:"q hl",t:"?"}],brace:{from:0,len:pay,t:"付 "+pay+" 元"}}],pay)}
+          {t:"找回的 = 付的钱 − 价钱：<b style='white-space:nowrap'>"+pay+" − "+price+" = ?</b>", v:bars([{l:"付",segs:[{v:price,c:"x"},{v:c,c:"q hl",t:"?"}],brace:{from:0,len:pay,t:"付 "+pay+" 元"}}],pay)}
         ]});
     }
     const one = rmb("y1")+'<b style="margin:0 4px">=</b>'+coins(10);
@@ -1342,7 +1343,7 @@ const WP = {
         steps:[
           {t:"1 元 = 10 角，把 1 元换成 <b>10</b> 个 1 角。", v:picRow(one)},
           {t:"再加上原来的 <b>"+b+"</b> 个 1 角。", v:picRow(coins(10)+'<b style="margin:0 4px">+</b>'+coins(b))},
-          {t:"⚠️ 不是 1 + "+b+"！要先把 1 元变成 10 角：<b>10 + "+b+" = ?</b>", v:picRow(coins(10)+'<b style="margin:0 4px">+</b>'+coins(b))}
+          {t:"⚠️ 不是 1 + "+b+"！要先把 1 元变成 10 角：<b style='white-space:nowrap'>10 + "+b+" = ?</b>", v:picRow(coins(10)+'<b style="margin:0 4px">+</b>'+coins(b))}
         ]});
     }
     const price = ri(2,9), c = 10-price;
@@ -1352,13 +1353,14 @@ const WP = {
       steps:[
         {t:"1 元 = 10 角，把 1 元换成 <b>10</b> 个 1 角。", v:picRow(one)},
         {t:"买"+th+"花掉 <b>"+price+"</b> 角，划掉 "+price+" 个 1 角。", v:picRow(coins(10, price))},
-        {t:"没划掉的就是找回的钱：<b>10 − "+price+" = ?</b>", v:picRow(coins(10, price))}
+        {t:"没划掉的就是找回的钱：<b style='white-space:nowrap'>10 − "+price+" = ?</b>", v:picRow(coins(10, price))}
       ]});
   },
-  // 认钟表（整点 / 半点）：read = 看钟面选时间；pick = 看时间选钟面（选项画成钟面）
-  clock(h, v){
+  // 认钟表（整点 / 半点）：read = 看钟面选时间；pick = 看时间选钟面（选项画成钟面）；half 只给测试用（指定半点）
+  clock(h, v, half){
     v = v || pick(["read","read","pick"]);
-    const half = h ? Math.random()<.7 : false, hr = ri(1,12), m = half ? 30 : 0;
+    half = h ? (half==null ? Math.random()<.7 : !!half) : false;
+    const hr = ri(1,12), m = half ? 30 : 0;
     const nx = k => (k%12)+1, pv = k => ((k+10)%12)+1, fmt = (k,mm) => k+":"+(mm?"30":"00");
     const ans = fmt(hr,m), traps = half ? [fmt(nx(hr),30), fmt(hr,0), fmt(nx(hr),0)] : [fmt(nx(hr),0), fmt(pv(hr),0), fmt(hr,30)];
     const toMin = s => { const [a,b] = s.split(":").map(Number); return (a%12)*60+b; };
@@ -1417,7 +1419,7 @@ const WP = {
           steps:[
             {t:"按"+attr+"分：一样的放在同一行。", v:rowsV([])},
             {t:"数一数这两行："+p.l+"和"+q.l+"。", v:rowsV([ip,iq])},
-            {t:p.l+"有 <b>"+a+"</b> 个，"+q.l+"有 <b>"+b+"</b> 个：<b>"+a+" − "+b+" = ?</b>", v:rowsV([ip,iq])}
+            {t:p.l+"有 <b>"+a+"</b> 个，"+q.l+"有 <b>"+b+"</b> 个：<b style='white-space:nowrap'>"+a+" − "+b+" = ?</b>", v:rowsV([ip,iq])}
           ]});
       }
       const c = pick(cats), ans = c.it.length;

@@ -302,9 +302,10 @@ async function playAll(view) {
     console.log('wp_check', Object.keys(wr.stats).length, 'types x 2000 samples', wr.problems.length ? 'BAD' : 'ok');
   }
   const WP2 = [['picCover', 'part'], ['picCover', 'total'], ['lineUp', 'back'], ['compareRows', 'less'], ['money', 'jiao'], ['money', 'mix'],
-    ['clock', 'read'], ['clock', 'pick'], ['sortCount', 'count'], ['sortCount', 'diff']];
-  for (const [k, v] of WP2) {
-    await p.evaluate(([k, v]) => { __t.closeHint(); __t.B.L = Object.assign({}, __t.B.L, { g: () => __t.WP[k](1, v) }); __t.nextQuestion(); }, [k, v]);
+    ['clock', 'read', true], ['clock', 'pick', true], ['sortCount', 'count'], ['sortCount', 'diff']];
+  for (const [k, v, half] of WP2) {
+    // 钟表固定拍半点：看得出时针在两个数中间
+    await p.evaluate(([k, v, half]) => { __t.closeHint(); __t.B.L = Object.assign({}, __t.B.L, { g: () => __t.WP[k](1, v, half) }); __t.nextQuestion(); }, [k, v, half]);
     await p.waitForTimeout(300); await shot(`14w-${k}-${v}-q`);
     await tap('#hintBtn'); await p.waitForTimeout(300);
     while (await p.$('#stNext')) await tap('#stNext');
@@ -323,6 +324,7 @@ async function playAll(view) {
       for (let s = 0; s < q.steps.length; s++) {
         await new Promise(r => requestAnimationFrame(r));
         if (hint.scrollHeight > hint.clientHeight + 2) out.push(`${tag}: step ${s + 1} needs scrolling (${hint.scrollHeight}>${hint.clientHeight})`);
+        for (const f of hint.querySelectorAll('.stept b')) if (/= \?$/.test(f.textContent.trim()) && f.getClientRects().length > 1) out.push(`${tag}: step ${s + 1} formula 「${f.textContent.trim()}」 breaks over two lines`);
         const nx = document.getElementById('stNext'); if (nx) nx.click();
       }
     }
