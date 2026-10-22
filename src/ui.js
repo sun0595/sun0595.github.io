@@ -83,6 +83,10 @@ const ICON_SVG = {
   "🏳️": cs('<path d="M14 8 Q21 4 27 8 Q33 12 41 8 L41 27 Q33 31 27 27 Q21 23 14 27 Z" fill="#fff"/><rect x="8" y="5" width="6" height="39" rx="3" fill="'+CC.br+'"/><circle cx="11" cy="5" r="3.5" fill="'+CC.y+'"/>'),
   "💪": cs('<path d="M6 42 L6 31 Q7 23 16 22 L23 22 Q19 15 21 10 Q24 5 31 7 L33 13 L28 14 Q30 18 34 19 Q42 21 42 30 Q41 40 30 42 Z" fill="#FFC48A"/>'
     + '<path class="ln" d="M24 30 Q30 26 35 30" fill="none" stroke-width="3"/>'),
+  // 家长看板第五轮的三个页签：题型（四色积木）、有问题（黄色警示三角）、颜色题（调色盘）
+  "🧩": cs('<rect x="5" y="5" width="17" height="17" rx="4" fill="'+CC.r+'"/><rect x="26" y="5" width="17" height="17" rx="4" fill="'+CC.b+'"/><rect x="5" y="26" width="17" height="17" rx="4" fill="'+CC.g+'"/><rect x="26" y="26" width="17" height="17" rx="4" fill="'+CC.y+'"/>'),
+  "⚠️": cs('<path d="M24 5 L44 41 H4 Z" fill="'+CC.y+'"/><path class="ln" d="M24 17 V28" fill="none" stroke-width="5"/><circle cx="24" cy="35" r="2.5" fill="#3A2A1E" stroke-width="1"/>'),
+  "🎨": cs('<path d="M24 5 Q44 5 44 22 Q44 31 36 31 Q30 31 31 37 Q32 43 24 43 Q5 43 5 24 Q5 5 24 5 Z" fill="'+CC.w+'"/><circle cx="15" cy="20" r="4" fill="'+CC.r+'" stroke-width="2.5"/><circle cx="24" cy="13" r="4" fill="'+CC.y+'" stroke-width="2.5"/><circle cx="34" cy="17" r="4" fill="'+CC.b+'" stroke-width="2.5"/><circle cx="15" cy="32" r="4" fill="'+CC.g+'" stroke-width="2.5"/>'),
   "💡": cs('<rect x="17" y="31" width="14" height="11" rx="3" fill="'+CC.st+'"/><path d="M17 33 Q8 27 9 18 Q11 5 24 5 Q37 5 39 18 Q40 27 31 33 Z" fill="'+CC.y+'"/>'
     + '<path class="ln" d="M17 36.5 H31" fill="none" stroke-width="2.5"/><path class="ln" d="M20 22 Q24 27 28 22" fill="none" stroke="'+CC.o+'" stroke-width="3"/>'),
   "📊": cs('<rect x="4" y="6" width="40" height="36" rx="6" fill="#fff"/><rect x="10" y="25" width="7" height="11" rx="1.5" fill="'+CC.r+'" stroke-width="3"/>'
@@ -410,6 +414,9 @@ function renderMap(focus, width){
     signs += '<div class="cloud" data-c="'+wi+'" style="top:'+cb.top+'px;height:'+cb.h+'px"></div>'
       + '<div class="wsign cl'+(worldOpen(wi)?"":" locked")+'" data-w="'+wi+'" style="top:'+(cb.top+cb.h/2)+'px"><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><span class="wsub2"><small>'+w.sub+'</small>'
       + (bossDone ? '<button class="btn white wrun" data-w="'+wi+'">'+img("🏅")+'连闯</button>' : '')+'</span></div>';
+    // 大关宝箱：云带右边，显示这个大关的星星进度 x/45；集满能开就闪，开过就是打开的箱子
+    const ws = worldStars(wi), wopen = !!S.wchest[w.id], wready = wchestReady(wi);
+    signs += '<button class="wchest'+(wready?" ready":"")+(wopen?" opened":"")+'" data-w="'+wi+'" style="top:'+(cb.top+cb.h/2)+'px" aria-label="大关宝箱">'+img(wopen?"🎉":"🎁")+'<b class="num">'+ws+'/'+WCHEST_STARS+'</b></button>';
   }
   for(let wi=0; wi<WORLDS_V2.length; wi++) WORLDS_V2[wi].levels.forEach((L,li)=>{
     const lo = levelOpen(wi,li), st = starOf(wi,li), m = mastery(wi,li), x = nodeX(wi,li), y = nodeY(wi,li), mode = L.boss ? "battle" : LEVEL_MODES[wi].modes[li];
@@ -471,6 +478,7 @@ function renderMap(focus, width){
   sc.addEventListener("scroll", ()=>{ mapScroll = sc.scrollTop; }, {passive:true});
   mp.querySelectorAll(".node").forEach(b=>b.addEventListener("click",()=>{ sfx.click(); startLevel(+b.dataset.w, +b.dataset.l); }));
   mp.querySelectorAll(".wrun").forEach(b=>b.onclick=()=>{ sfx.click(); openRunMenu(+b.dataset.w); });
+  mp.querySelectorAll(".wchest").forEach(b=>b.onclick=()=>{ sfx.click(); openWChest(+b.dataset.w); });
   $("goCur").onclick = ()=>{
     sfx.click(); centre(cw, cl, true);
     const n = mp.querySelector(".node.current"); if(n){ n.classList.remove("cur-flash"); void n.offsetWidth; n.classList.add("cur-flash"); }
@@ -503,6 +511,22 @@ function closePage(){
 $("modal").addEventListener("click", e=>{ if(e.target.id==="modal" && pageClosable) closePage(); });
 function bubble(text){ const b = $("bubble"); if(!b) return; b.innerHTML = emo(text); restart(b,"on"); say(text); }
 
+// 大关宝箱：没集满就说还差几颗星；集满了打开，必出紫色或更好的装备
+function openWChest(w){
+  const W = WORLDS_V2[w], ws = worldStars(w);
+  if(S.wchest[W.id]){ openPage({title:"大关宝箱", back:true, onClose:renderMap, body:'<div class="wcbig">'+img("🎉")+'</div><p>「'+W.name+'」的宝箱已经打开过啦！</p>'}); say("这个宝箱已经打开过啦"); return; }
+  if(!wchestReady(w)){
+    openPage({title:"大关宝箱", back:true, onClose:renderMap, body:'<div class="wcbig">'+img("🎁")+'</div><p>「'+W.name+'」15 关都拿到 3 颗星，<br>就能打开大关宝箱！</p>'
+      + '<div class="wcprog"><span class="xbar"><i style="width:'+pctOf(ws, WCHEST_STARS)+'%"></i></span><b class="num">'+ws+'/'+WCHEST_STARS+'</b>'+img("⭐")+'</div><p class="muted"><small>宝箱里一定是紫色或更好的装备</small></p>'});
+    say("还差"+(WCHEST_STARS-ws)+"颗星，就能打开大关宝箱"); return;
+  }
+  const g = openWorldChest(w); if(!g) return;
+  sfx.chest(); confetti(180);
+  openPage({title:"大关宝箱", ribbon:"gold", back:true, onClose:renderMap, body:'<p class="gsay">'+img("🎁")+' 「'+W.name+'」全部三星！</p>'+gearCard(g, {preview:true, up:true, cls:"pop", lv:true})
+    + '<div class="btnrow">'+wearBtn(g, "wcWear")+'</div>'});
+  say("打开了大关宝箱！得到"+g.name+"！");
+  if($("wcWear") && !$("wcWear").disabled) $("wcWear").onclick = tapOnce(()=>{ wearWithPop(g.id); save(); sfx.right(); $("wcWear").disabled = true; $("wcWear").className = "btn white gwear"; $("wcWear").textContent = "已穿戴"; });
+}
 // 等级页（地图头像下的 Lv 点开）：经验条、现在的等级加成、下一次加成、逃跑的惩罚
 function openLevel(){
   const lv = S.heroLv||1, b = lvBonus(lv), nx = nextLvBonus(lv);
@@ -522,24 +546,94 @@ const gearNeed = k => '获得过<b style="color:'+GEAR_QUALITY_MAP[k].col+'">'+G
    穿了盔甲：脚下多一圈盔甲品质颜色的光环（.aura）。没有原画就是 3D 图 */
 const HERO_ART = ["", "hero2_ninja", "hero2_robot", "hero2_astronaut", "hero2_trex", "hero2_dragon", "hero2_unicorn", "hero2_king"];
 const HERO_HANDS = [{}, {}, {fr:.17, fl:.84, fy:.73}, {fr:.20, fl:.82, fy:.74}, {fr:.40, fl:.80, fy:.60}, {fr:.17, fl:.84, fy:.74}, {fr:.02, fl:.98, fy:.56, float:true}, {}];
-const heroArtFor = (i, eq) => i===0 ? ((eq && eq.armor && art("hero_"+eq.armor.quality)) || art("hero_base")) : art(HERO_ART[i]);
+// 神秘勇士（下标 8）还没有原画：用小勇士的原画画成剪影 + 金色光效（CSS .a-h8 / .mys）
+const heroArtFor = (i, eq) => HEROES[i] && HEROES[i].mystic ? art("hero_base") : i===0 ? ((eq && eq.armor && art("hero_"+eq.armor.quality)) || art("hero_base")) : art(HERO_ART[i]);
 // 勇士选择页的头像（没解锁的在选择页里涂成剪影）
 const heroPic = i => { const u = heroArtFor(i, null); return u ? artTag(u, "ei art", img(HEROES[i].e)) : img(HEROES[i].e); };
+// 勇士页：擅长什么题
+const heroGoodText = h => h.mystic ? '每道选择题少一个错误选项，对对碰少一对，连连看少一组' : h.good ? '擅长：<span class="hgood">'+Q_CATS[h.good]+'</span><br><small>（这类题多一些）</small>' : '什么题都一样拿手';
+// 神秘勇士：剪影 + 金色光效（之后再画原画）；找到之前是黑色剪影
+const mysticPic = found => '<span class="mys'+(found?" found":"")+'">'+heroPic(mysticIdx())+'</span>';
 function openHeroes(){
   let view = S.hero;
+  // 没找到的神秘勇士：「神秘勇士在等你们去寻找……」、碎片进度、每天一次「结伴探险」
+  const renderMystic = first => {
+    const done = questToday(), fr = S.mystic.frags;
+    const body = '<div class="herostage mystic">'+mysticPic(false)+'<div><b class="qqq">？？？</b><p>神秘勇士在等你们去寻找……</p></div></div>'
+      + '<div class="frags">'+img("🗺️")+' 寻宝地图碎片 '+[...Array(MYSTIC_FRAGS)].map((_,i)=>'<span class="frag'+(i<fr?" on":"")+'"></span>').join("")+'<b class="num">'+fr+'/'+MYSTIC_FRAGS+'</b></div>'
+      + '<p class="muted"><small>选两位勇士结伴探险，'+MYSTIC_Q+' 道题答对 '+MYSTIC_PASS+' 道就算成功，每天一次</small></p>'
+      + '<div class="btnrow"><button class="btn white" id="hBack">回勇士</button><button class="btn purple" id="qGo"'+(done?' disabled':'')+'>'+(done ? '明天再来' : '结伴探险')+'</button></div>';
+    if(first) openPage({title:"选择勇士", back:true, onClose:renderMap, body}); else setBody(body);
+    say(done ? "今天已经探险过啦，明天再来找神秘勇士吧" : "神秘勇士在等你们去寻找");
+    $("hBack").onclick = ()=>{ sfx.click(); view = S.hero; render(false); };
+    if(!done) $("qGo").onclick = ()=>{ sfx.click(); pickPartners(); };
+  };
+  // 选两位已解锁的勇士结伴
+  const pickPartners = () => {
+    let sel = [];
+    const draw = () => {
+      setBody('<p class="gsay">'+img("🗺️")+' 选两位勇士一起去探险</p><div class="heroes">'+HEROES.map((x,i)=>x.mystic || !heroUnlocked(i) ? '' :
+          '<button class="hcard'+(sel.includes(i)?" sel":"")+'" data-i="'+i+'">'+heroPic(i)+'</button>').join("")+'</div>'
+        + '<div class="btnrow"><button class="btn white" id="pBack">回去</button><button class="btn green" id="pGo"'+(sel.length===2?'':' disabled')+'>出发探险 <b class="num">'+sel.length+'/2</b></button></div>');
+      $("pbody").querySelectorAll(".hcard").forEach(b=>b.onclick=()=>{ const i = +b.dataset.i; sfx.click();
+        sel = sel.includes(i) ? sel.filter(x=>x!==i) : sel.length<2 ? sel.concat(i) : [sel[1], i]; draw(); });
+      $("pBack").onclick = ()=>{ sfx.click(); renderMystic(false); };
+      if(sel.length===2) $("pGo").onclick = ()=>{ sfx.click(); runQuest(sel); };
+    };
+    draw(); say("选两位勇士，一起去寻找神秘勇士");
+  };
+  // 探险：MYSTIC_Q 道题（这个大关 Boss 关的计算类题，没有限时、答错不扣东西），答对 ≥ MYSTIC_PASS 道成功
+  const runQuest = pair => {
+    // 一出发就记下今天已经探险过（Fable 审查：原来结束时才记，中途返回或刷新就能无限重开）
+    S.mystic.day = today(); save();
+    const [cw] = curLevel(), gen = questGenForce || levelDef(cw, NLV-1).math;
+    let n = 0, right = 0, q = null, busy = false;
+    const next = () => {
+      if(n>=MYSTIC_Q) return finish();
+      for(let k=0; k<30; k++){ q = gen(); if(q.kind!=="word" && Array.isArray(q.options)) break; }
+      if(hero().mystic) q = mysticTrim(q);
+      busy = false; questQ = q;
+      const show = q.html ? q.html : q.parts.map(p=>p==="?" ? '<span class="blank">?</span>' : '<span>'+p+'</span>').join(" ");
+      setBody('<div class="qhead">'+pair.map(i=>'<span class="qhero">'+heroPic(i)+'</span>').join("")+'<span class="qprog">第 <b class="num">'+(n+1)+'/'+MYSTIC_Q+'</b> 题 · 答对 <b class="num" id="qRight">'+right+'</b></span></div>'
+        + '<div class="qbox panel"><div class="q'+(q.small?" small":"")+'" id="qBox">'+show+'</div></div>'
+        + '<div class="answers qans'+(q.options.length===3?" three":"")+'">'+q.options.map(o=>'<button class="ans" data-v="'+o+'">'+(q.optHtml?q.optHtml(o):o+(q.kind==="cmp"?'<small>'+CMP_LABEL[o]+'</small>':''))+'</button>').join("")+'</div>');
+      say(q.speak);
+      $("pbody").querySelectorAll(".ans").forEach(b=>b.onclick=()=>{
+        if(busy) return; busy = true;
+        const ok = b.dataset.v===String(q.answer);
+        if(ok){ right++; b.classList.add("right"); sfx.right(); }
+        else { b.classList.add("wrong"); sfx.wrong(); const a = $("pbody").querySelector('.ans[data-v="'+String(q.answer)+'"]'); if(a) a.classList.add("right"); }
+        n++; setTimeout(next, ok ? 600 : 1300);
+      });
+    };
+    const finish = () => {
+      const r = questResult(right, questForce);
+      let body = '<div class="qhead">'+pair.map(i=>'<span class="qhero">'+heroPic(i)+'</span>').join("")+'</div><p class="gsay">答对 <b class="num">'+right+'/'+MYSTIC_Q+'</b> 道</p>';
+      if(r.found){ body += '<div class="herostage mystic">'+mysticPic(true)+'<div><b>找到神秘勇士了！</b><p>'+img("✨")+' 能力：每道选择题少一个错误选项，对对碰少一对，连连看少一组</p></div></div>'; sfx.chest(); confetti(200); say("找到神秘勇士了！"); }
+      else if(r.frag){ body += '<p>'+img("🗺️")+' 这次没找到，但发现了新线索！<br>得到 1 块寻宝地图碎片（<b class="num">'+S.mystic.frags+'/'+MYSTIC_FRAGS+'</b>）</p>'; sfx.star(1); say("这次没找到，但发现了新线索！"); }
+      else { body += '<p>'+img("💪")+' 差一点点！答对 '+MYSTIC_PASS+' 道就能成功，明天再来！</p>'; say("差一点点，明天再来！"); }
+      body += '<div class="btnrow"><button class="btn green" id="qDone">回勇士</button></div>';
+      setBody(body);
+      $("qDone").onclick = ()=>{ sfx.click(); view = r.found ? mysticIdx() : S.hero; render(false); };
+    };
+    say("出发探险！"); next();
+  };
   const render = first => {
-    const h = HEROES[view], un = heroUnlocked(view);
+    const h = HEROES[view], un = heroUnlocked(view), showMystic = normalHeroesDone();
+    if(h.mystic && !un) return renderMystic(first);
     // 没解锁的勇士：只给剪影、「？？？」和解锁条件，名字、技能都不露（家长 10-22）
-    const body = (un ? '<div class="herostage" style="--hcol:'+h.col+'">'+heroPic(view)+'<div><b>'+h.n+'</b><p>'+img(h.shot)+' '+h.skill+'</p></div></div>'
+    const body = (un ? '<div class="herostage'+(h.mystic?" mystic":"")+'" style="--hcol:'+h.col+'">'+(h.mystic ? mysticPic(true) : heroPic(view))+'<div><b>'+h.n+'</b><p>'+img(h.shot)+' '+heroGoodText(h)+'</p></div></div>'
         : '<div class="herostage locked"><span class="sil">'+heroPic(view)+'</span><div><b class="qqq">？？？</b>'
           + '<p class="lockline">'+img("🔒")+' '+(h.gear ? gearNeed(h.gear) : '需要 '+h.need+' 颗 '+img("⭐"))+'</p></div></div>')
-      + '<div class="heroes">'+HEROES.map((x,i)=>'<button class="hcard'+(i===S.hero?" sel":"")+(heroUnlocked(i)?"":" lock")+(i===view?" view":"")+'" data-i="'+i+'">'+heroPic(i)+(heroUnlocked(i)?"":'<span class="lk">'+img("🔒")+'</span>')+'</button>').join("")+'</div>'
+      + '<div class="heroes'+(showMystic?" h9":"")+'">'+HEROES.map((x,i)=>x.mystic ? (showMystic ? '<button class="hcard mystic'+(i===S.hero?" sel":"")+(heroUnlocked(i)?"":" lock")+(i===view?" view":"")+'" data-i="'+i+'">'+mysticPic(heroUnlocked(i))+'</button>' : '')
+        : '<button class="hcard'+(i===S.hero?" sel":"")+(heroUnlocked(i)?"":" lock")+(i===view?" view":"")+'" data-i="'+i+'">'+heroPic(i)+(heroUnlocked(i)?"":'<span class="lk">'+img("🔒")+'</span>')+'</button>').join("")+'</div>'
       + '<p>'+img("✨")+' 金色光环：所有勇士暴击多打 1 滴血'+(goldAura() ? '（已获得）' : '<br><small>拿到橙色或更好的装备就能获得</small>')+'</p>'
       + '<button class="btn green" id="hGo">'+img("⚔️")+' 出发！</button>';
     if(first) openPage({title:"选择勇士", back:true, onClose:renderMap, body}); else setBody(body);
     $("pbody").querySelectorAll(".hcard").forEach(b=>b.onclick=()=>{
       view = +b.dataset.i;
-      if(heroUnlocked(view)){ S.hero = view; save(); sfx.right(); say(HEROES[view].n+"，"+HEROES[view].skill); }
+      if(heroUnlocked(view)){ S.hero = view; save(); sfx.right(); say(HEROES[view].n+"，"+strip(heroGoodText(HEROES[view]))); }
+      else if(HEROES[view].mystic) sfx.click();
       else { sfx.click(); say(HEROES[view].gear ? "拿到"+GEAR_QUALITY_MAP[HEROES[view].gear].name+"色装备，就能解锁这个勇士" : "再拿"+(HEROES[view].need-totalStars())+"颗星，就能解锁这个勇士"); }
       render(false);
     });
@@ -547,6 +641,34 @@ function openHeroes(){
   };
   render(true);
 }
+
+/* 成长看得见（第五轮）：勇士现在的攻击（普通一下打掉几滴血）和心上限（普通关），穿装备前后对比 */
+function heroPower(eq){
+  const gs = gearStats(eq || S.equipped), lb = lvBonus(S.heroLv||1);
+  return {atk: 1 + Math.floor(gs.atk/3) + lb.atk, hearts: 3 + lb.hearts, shield: gs.shield, lucky: gs.lucky, time: gs.time, crit: gs.critRate};
+}
+const battleStatHTML = () => { if(!B) return ""; return '<span class="bst" id="bStat">'+img("⚔️")+'<b class="num">'+(1+atkBonus()+B.lvAtk)+'</b>'+img("❤️")+'<b class="num">'+B.maxH+'</b></span>'; };
+// 穿上 / 换装备：弹出「⚔️ 攻击 3 → 5」这样的对比（变了的都列出来；都没变就只写攻击）
+const POWER_ROWS = [["atk","⚔️","攻击"],["hearts","❤️","心"],["shield","🛡️","每关挡住"],["lucky","🍀","答错不扣心"],["time","⏳","多给秒数"],["crit","🎯","暴击机会"]];
+function powerDiff(a, b){
+  const rows = POWER_ROWS.filter(([k])=>a[k]!==b[k]);
+  return (rows.length ? rows : POWER_ROWS.slice(0,1)).map(([k,e,n])=>'<p>'+img(e)+' '+n+' <b class="num">'+a[k]+'</b> → <b class="num'+(b[k]>a[k]?' up':b[k]<a[k]?' down':'')+'">'+b[k]+'</b></p>').join("");
+}
+function statPop(before){
+  const after = heroPower(), html = powerDiff(before, after);
+  let el = $("statPop"); if(!el){ el = document.createElement("div"); el.id = "statPop"; el.className = "statpop panel"; document.body.appendChild(el); }
+  el.innerHTML = emo(html); restart(el, "on");
+  say(strip(html).replace(/→/g,"变成").replace(/\s+/g,""));
+  clearTimeout(statPop.tm); statPop.tm = setTimeout(()=>el.classList.remove("on"), 2400);
+}
+// 穿上装备，并弹出前后对比
+function wearWithPop(id){ const before = heroPower(); equipGear(id); statPop(before); }
+// 词缀用孩子听得懂的话：「每题多打 1 下」「每关挡住 1 次攻击」……
+const AFX_KID = {
+  atk: v => v>=3 ? "每题多打 "+Math.floor(v/3)+" 下" : "攻击 +"+v+"（攒满 3 点每题多打 1 下）",
+  critRate: v => "多 "+v+"% 机会暴击", critDmg: v => "暴击多打 "+v+" 下", time: v => "每题多 "+v+" 秒",
+  shield: v => "每关挡住 "+v+" 次攻击", comboHeal: v => "连对 5 题回 "+v+" 颗心", lucky: v => "每关答错 "+v+" 次不扣心", slow: v => "怪兽蓄力慢 "+v+"%"};
+const gearKid = g => g.affixes.filter(a=>AFX_KID[a.id]).map(a=>AFX_KID[a.id](afxVal(g,a))).join("，");
 
 /* ================= gear (装备)：掉落卡、背包、主角穿戴预览 =================
    Data (GEAR_*, rollGear, gearStats, equipGear, openGearChest, S.bag/S.equipped/S.chests) lives in logic.js.
@@ -566,7 +688,7 @@ const isWorn = g => !!g && !!S.equipped[g.slot] && S.equipped[g.slot].id===g.id;
 // 小勇士 with original art: the armour's quality picks the whole look (hero_<品质>, else hero_base); weapon / shield
 // pictures sit in the hands if they exist. Other heroes, or no art at all: the 3D emoji with the gear icons around it.
 function heroArtURL(eq){ return heroArtFor(HEROES.indexOf(hero()), eq); }
-const heroFace = () => { const u = heroArtURL(S.equipped); return u ? artTag(u, "ei art", img(hero().e)) : img(hero().e); };
+const heroFace = () => { if(hero().mystic) return mysticPic(true); const u = heroArtURL(S.equipped); return u ? artTag(u, "ei art", img(hero().e)) : img(hero().e); };
 function avatarHTML(eq){
   const base = heroArtURL(eq);
   if(base){
@@ -590,7 +712,7 @@ function gearCard(g, o){
   return '<div class="gcard q-'+g.quality+(o.cls?" "+o.cls:"")+'" style="--qc:'+q.col+';--qb:'+q.bg+'">'
     + '<div class="gmain"><span class="gicon">'+gearImg(g)+(o.up && isBetter(g) ? '<span class="gup" aria-label="比现在的好"><span class="chev"></span></span>' : '')+'</span>'
     + '<div class="ginfo"><b>'+g.name+'</b><small>'+q.title+' · '+(GEAR_SLOTS[g.slot]||{}).name+'</small>'
-    + '<div class="afxs">'+g.affixes.map(a=>GEAR_AFFIXES[a.id] ? afxChip(a.id, afxVal(g,a)) : '').join("")+'</div>'+(o.lv ? gearLvHTML(g) : '')+'</div>'
+    + '<div class="afxs">'+g.affixes.map(a=>GEAR_AFFIXES[a.id] ? afxChip(a.id, afxVal(g,a)) : '').join("")+'</div><small class="gkid">'+gearKid(g)+'</small>'+(o.lv ? gearLvHTML(g) : '')+'</div>'
     + (o.preview ? '<span class="gprev">'+avatarHTML(Object.assign({}, S.equipped, {[g.slot]:g}))+'</span>' : '')+'</div>'
     + (o.btn||"")+'</div>';
 }
@@ -645,7 +767,7 @@ function openBag(slot){
     P.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ sfx.click(); slot = b.dataset.s; sel = null; pg = 0; render(false); });
     P.querySelectorAll(".gt").forEach(b=>b.onclick=()=>{ sfx.click(); sel = b.dataset.id; render(false); });
     const on = (id,f) => { if($(id)) $(id).onclick = f; };
-    on("gOn", tapOnce(()=>{ equipGear(cur.id); applySpareExp(); save(); sel = cur.id; sfx.right(); say("穿上了"+cur.name+"！"); render(false); }));
+    on("gOn", tapOnce(()=>{ wearWithPop(cur.id); applySpareExp(); save(); sel = cur.id; sfx.right(); render(false); }));
     on("gOff", tapOnce(()=>{ unequipGear(slot); sel = cur.id; sfx.click(); render(false); }));
     on("gSalvage", tapOnce(()=>{ const r = salvageGear(cur.id); if(!r.ok) return; sfx.click(); sel = null; gone = r.exp; say("分解成"+r.exp+"点装备经验"); render(false); }));
     on("gAscend", tapOnce(()=>{ const r = ascendGear(cur.id); if(!r.ok) return; sfx.chest(); confetti(120); sel = cur.id; note = '进阶成功！变成 <b style="color:'+qCol(r.gear)+'">'+GEAR_QUALITY_MAP[r.gear.quality].name+'色</b> 啦'; say("进阶成功！"); render(false); }));
@@ -687,7 +809,7 @@ function openSynth(back){
       setBody('<p class="gsay">'+img("✨")+' 合成成功！</p>'+gearCard(r.gear, {preview:true, up:true, cls:"pop", lv:true})
         + '<div class="btnrow"><button class="btn white" id="sBack">回背包</button>'+wearBtn(r.gear, "sWear")+'</div>');
       $("sBack").onclick = ()=>{ sfx.click(); back(); };
-      if(!isWorn(r.gear)) $("sWear").onclick = tapOnce(()=>{ equipGear(r.gear.id); applySpareExp(); save(); sfx.right(); back(); });
+      if(!isWorn(r.gear)) $("sWear").onclick = tapOnce(()=>{ wearWithPop(r.gear.id); applySpareExp(); save(); sfx.right(); back(); });
     });
   };
   /* 一键合成：先说清楚「将用 N 件 x 色装备合成 M 件 y 色装备」（每一档一行），确认后一次合完，列出得到的装备 */
@@ -725,13 +847,39 @@ function showChestHaul(got, back){
 
 function openParent(tab){
   tab = tab || "set";
-  let confirmReset = false;
+  let confirmReset = false, bugPg = 0, colPg = 0, misPg = 0, copied = "";
+  const MPER = 4, RPER = 4;
+  // 「有问题的题」：家长点过的题，能复制给开发的人
+  const reportsHTML = pg => {
+    const n = S.reports.length, pages = Math.max(1, Math.ceil(n/RPER)); pg = Math.min(pg, pages-1); bugPg = pg;
+    if(!n) return '<p class="muted">还没有记录。<br>在「报告」页签的错题旁点「这题有问题」，就会记到这里。</p>';
+    return '<div class="rephead"><span>共 <b class="num">'+n+'</b> 条（最多 '+REPORT_MAX+' 条）</span><button class="btn blue bagsm" id="bCopy">复制全部</button></div>'
+      + (copied ? '<p class="copied" id="bCopied">'+img("✅")+' '+copied+'</p>' : '')
+      + '<ul class="mlist rlist">'+S.reports.slice(pg*RPER, pg*RPER+RPER).map(r=>'<li><span><small class="muted">'+r.lv+' · '+r.t+'</small><br>'+r.q+'</span><span>对 <span class="good">'+r.a+'</span> · 选 <span class="bad">'+r.g+'</span><br><small>选项：'+(r.o||[]).join(" / ")+'</small></span></li>').join("")+'</ul>'
+      + pagerHTML(pg, pages);
+  };
+  const tx = h => String(h==null?"":h).replace(/<[^>]+>/g,"").replace(/\s+/g," ").trim();   // 去掉标签，保留空格
+  const reportText = () => S.reports.map((r,i)=>(i+1)+". ["+r.lv+"] "+tx(r.q)+" | 正确答案："+tx(r.a)+" | 孩子选："+tx(r.g)+" | 选项："+(r.o||[]).map(tx).join(" / ")+" | "+r.t).join("\n");
+  // 「颜色题记录」：颜色题答错时记下题目颜色和孩子选的颜色（颜色题下一版加入）
+  const sw = c => c ? '<span class="cswatch" style="background:'+(c.hex||"#ccc")+'"></span>'+(c.name||"") : '';
+  const colorLogHTML = pg => {
+    const n = S.colorLog.length, pages = Math.max(1, Math.ceil(n/RPER)); pg = Math.min(pg, pages-1); colPg = pg;
+    if(!n) return '<p class="muted">还没有颜色题记录。<br>颜色题答错时，会记下题目要的颜色和孩子选的颜色。</p>';
+    return '<p class="muted">共 <b class="num">'+n+'</b> 条</p><ul class="mlist clog">'+S.colorLog.slice(pg*RPER, pg*RPER+RPER).map(r=>'<li><span><small class="muted">'+r.t+'</small><br>要找 '+sw(r.q)+'</span><span>选了 '+sw(r.pick)+'</span></li>').join("")+'</ul>'+pagerHTML(pg, pages);
+  };
   const render = first => {
     const tg = (id,label,on)=>'<button class="toggle'+(on?" on":"")+'" id="'+id+'"><span class="tl">'+label+'</span><span class="sw"></span></button>';
-    let body = '<div class="tabs">'+[["set","⚙️","设置"],["voice","🔊","声音"],["rep","📊","报告"]].map(([k,e,t])=>'<button class="tab'+(tab===k?" on":"")+'" data-t="'+k+'">'+img(e)+' '+t+'</button>').join("")+'</div>';
-    if(tab==="set"){
+    // 六个页签分两行（第五轮加了「题型」「有问题的题」「颜色题记录」）
+    let body = '<div class="tabs ptabs">'+[["set","⚙️","设置"],["qs","🧩","题型"],["voice","🔊","声音"],["rep","📊","报告"],["bug","⚠️","有问题"],["color","🎨","颜色题"]].map(([k,e,t])=>'<button class="tab'+(tab===k?" on":"")+'" data-t="'+k+'">'+img(e)+' '+t+'</button>').join("")+'</div>';
+    if(tab==="qs"){
+      // 插入题开关：拼音题照旧「关 / 偶尔 / 经常」，其余每类一个开关（默认全开）；关掉后这类题不再混进关卡（关卡专用玩法不受影响）
+      body += '<div class="tgls"><div class="toggle"><span class="tl">插入拼音题</span><span class="seg3">'+[[0,"关"],[0.25,"偶尔"],[0.5,"经常"]].map(([v,t])=>'<button data-py="'+v+'" class="'+(S.py===v?"on":"")+'">'+t+'</button>').join("")+'</span></div></div>'
+        + '<div class="tgls two">'+Q_SWITCHES.map(([k,label])=>tg("q_"+k, label, qOn(k))).join("")+'</div>'
+        + '<p class="muted"><small>关掉的题型不再混进关卡；算术消除、连连看、拼读这些关卡玩法不受影响。小知识、科普题、颜色题下一版加入。</small></p>';
+    } else if(tab==="bug") body += reportsHTML(bugPg);
+    else if(tab==="color") body += colorLogHTML(colPg);
+    else if(tab==="set"){
       body += '<div class="tgls">'+tg("tTimer","怪兽限时攻击",S.timer)
-        + '<div class="toggle"><span class="tl">插入拼音题</span><span class="seg3">'+[[0,"关"],[0.25,"偶尔"],[0.5,"经常"]].map(([v,t])=>'<button data-py="'+v+'" class="'+(S.py===v?"on":"")+'">'+t+'</button>').join("")+'</span></div>'
         + tg("tOpen","全部关卡直接开放",S.openAll)
         + tg("tVoice","语音读题",S.voice)
         + tg("tSound","音效",S.sound)+'</div>'
@@ -751,23 +899,37 @@ function openParent(tab){
         rows += '<div class="stat"><span>'+name+'</span><span class="sb"><i style="width:'+p+'%"></i></span><span class="pct">'+p+'% · '+tot+'题</span></div>';
       });
       body += rows ? '<div style="display:flex;flex-direction:column;gap:6px">'+rows+'</div>' : '<p class="muted">还没有记录。玩几关之后这里会显示答对的比例。</p>';
+      // 最近做错的题：每条旁边「这题有问题」，点了记到「有问题」页签（每页 MPER 条）
+      const pages = Math.max(1, Math.ceil(S.mistakes.length/MPER)); misPg = Math.min(misPg, pages-1);
       body += '<p class="muted" style="margin-top:4px">最近做错的题</p>' + (S.mistakes.length
-        ? '<ul class="mlist">'+S.mistakes.slice(0,6).map(m=>'<li><span>'+m.q+'</span><span>答 <span class="bad">'+m.g+'</span> · 对 <span class="good">'+m.a+'</span></span></li>').join("")+'</ul>'
+        ? '<ul class="mlist">'+S.mistakes.slice(misPg*MPER, misPg*MPER+MPER).map((m,k)=>'<li><span>'+m.q+'</span><span>答 <span class="bad">'+m.g+'</span> · 对 <span class="good">'+m.a+'</span></span>'
+            + '<button class="btn white mrep" data-i="'+(misPg*MPER+k)+'"'+(m.rep?' disabled':'')+'>'+(m.rep?'已记录':'这题有问题')+'</button></li>').join("")+'</ul>'+pagerHTML(misPg, pages)
         : '<p class="muted">还没有错题。</p>');
     }
     if(first) openPage({title:"家长看板", ribbon:"blue", back:true, onClose:renderMap, body}); else setBody(body);
     const P = $("pbody");
-    P.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ tab = b.dataset.t; render(false); });
+    P.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ tab = b.dataset.t; copied = ""; render(false); });
     const on = (id,f) => { if($(id)) $(id).onclick = f; };
     on("tTimer", ()=>{ S.timer=!S.timer; save(); render(false); });
     on("tOpen",  ()=>{ S.openAll=!S.openAll; save(); render(false); });
     on("tVoice", ()=>{ S.voice=!S.voice; save(); render(false); });
     on("tSound", ()=>{ S.sound=!S.sound; save(); render(false); });
     P.querySelectorAll("[data-py]").forEach(b=>b.onclick=()=>{ S.py = +b.dataset.py; save(); render(false); });
+    Q_SWITCHES.forEach(([k])=>on("q_"+k, ()=>{ S.qOn[k] = !qOn(k); save(); render(false); }));
+    P.querySelectorAll(".mrep").forEach(b=>b.onclick=tapOnce(()=>{ if(reportQ(S.mistakes[+b.dataset.i])){ sfx.click(); render(false); } }));
+    on("gPrev", ()=>{ if(tab==="bug") bugPg--; else if(tab==="color") colPg--; else misPg--; copied = ""; render(false); });
+    on("gNext", ()=>{ if(tab==="bug") bugPg++; else if(tab==="color") colPg++; else misPg++; copied = ""; render(false); });
+    on("bCopy", ()=>{
+      const text = reportText(), done = ok => { copied = ok ? "已复制 "+S.reports.length+" 条，可以粘贴发给开发的人" : "复制失败，请长按选中文字复制"; render(false); };
+      const fallback = () => { try{ const ta = document.createElement("textarea"); ta.value = text; ta.setAttribute("readonly",""); ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length); const ok = document.execCommand("copy"); ta.remove(); done(ok); }catch(e){ done(false); } };
+      lastCopy = text;
+      if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(()=>done(true), fallback); else fallback();
+    });
     on("mReset", ()=>{
       if(!confirmReset){ confirmReset = true; return render(false); }
       const keep = {voiceName:S.voiceName, rate:S.rate};
       S = Object.assign({}, DEFAULT, {stars:{},stats:{},mistakes:[],stickers:{},medals:{},tier:{},shiny:{},items:{heal:1,cut:1,swap:1},itemsV3:true,crown:false,world:0,lv:{stars:{},tier:{}},lvMigrated:true,mapWorld:0}, keep);
+      ensureR5(S);
       save(); mapScroll = null; closePage();
     });
     if($("voiceSel")) $("voiceSel").onchange = e=>{ S.voiceName = e.target.value; save(); say("小勇士，准备好了吗？我们出发吧！", true); };
@@ -794,7 +956,7 @@ function startLevel(w,l,run){
   // 消除 / 连连看：怪兽血量固定（BOARD_HP），连击打得快就能提前打倒；慢慢配完最后一对也一定赢
   const hp = BOARD_HP[mode] || L.hp + 2*diff;
   B = {w,l,W:Wd,L,h,mode,board:null,sel:null,diff,run:run||null,hp,maxHp:hp,rage,dmg:RAGE[rage].dmg,maxH,hearts:run?run.hearts:maxH,combo:0,q:null,busy:true,charge:0,qt:0,over:false,recent:[],enraged:false,hintOpen:false,step:0,lastTick:0,wrongThisQ:false,
-       gs, shield:(h.shield||0)+gs.shield, lucky:(h.lucky||0)+gs.lucky, fleeUntil:0, lvAtk:lb.atk, urged:false};
+       gs, shield:gs.shield, lucky:gs.lucky, fleeUntil:0, lvAtk:lb.atk, urged:false};
   const cur = B, bt = $("battle");
   setArenaBg(Wd.id);
   bt.classList.toggle("boss", !!L.boss); bt.classList.remove("enraged");
@@ -805,7 +967,7 @@ function startLevel(w,l,run){
   $("bTitle").innerHTML = emo(run ? (runDef(run.mode).name+" "+(run.i+1)+"/"+run.seq.length)
     : Wd.name+" · "+(L.boss?"BOSS":"第"+(l+1)+"关")+(mode!=="battle"?" · "+MODE_NAME[mode]:"")+(diff?" · "+TIERS[diff].n+"挑战":""));
   const hb = $("heroBox"); hb.style.setProperty("--hcol", h.col); hb.classList.toggle("gold", goldAura());
-  $("heroSprite").className = "sprite"; $("heroSprite").innerHTML = avatarHTML(S.equipped); $("heroName").innerHTML = emo((S.crown?"👑":"")+h.n);
+  $("heroSprite").className = "sprite"; $("heroSprite").innerHTML = avatarHTML(S.equipped); $("heroName").innerHTML = emo((S.crown?"👑":"")+h.n)+battleStatHTML();
   $("shield").hidden = !B.shield; $("shield").className = "shield";
   const ms = $("monSprite"); ms.className = "sprite"; ms.innerHTML = monImg(w,l);
   $("monGrow").style.transform = ""; $("monBox").classList.remove("angry");
@@ -895,7 +1057,7 @@ function qTime(){
   const t = RAGE[B.rage].t;
   const base = BOARD_TIME[B.mode] ? Math.round(BOARD_TIME[B.mode]*t/Q_TIME)
     : B.q && B.q.kind==="word" ? Math.max(WORD_MIN, Math.round(WORD_TIME*t/Q_TIME)) : t;
-  const slow = Math.min(SLOW_CAP, Math.round(((B.h.slow||1)-1)*100) + B.gs.slow);
+  const slow = Math.min(SLOW_CAP, B.gs.slow);
   return (base + B.gs.time) * (1 + slow/100);
 }
 /* 战斗手感（家长试玩反馈：要像成熟手游）。数字都在这里调：
@@ -1031,11 +1193,13 @@ function swapQuestion(){
   sfx.shield(); tint("#4ade80"); toast("💡","换一道简单点的！");
   nextQuestion(q);
 }
+const CMP_LABEL = {">":"大于","<":"小于","=":"等于"};   // 比大小选项下面的小字（战斗和结伴探险都用）
 function qKey(q){ return q.key || q.parts.join(" "); }
 function nextQuestion(given){
   let q = given, tries = 0;
   const gen = (S.py>0 && B.W.id!=="think" && Math.random()<S.py) ? pyQ : B.L.g;
   if(!q) do { q = gen(); tries++; } while(B.recent.includes(qKey(q)) && tries<30);
+  if(hero().mystic) q = mysticTrim(q);   // 神秘勇士：少一个错误选项
   B.recent.push(qKey(q)); if(B.recent.length>8) B.recent.shift();
   B.q = q; B.charge = 0; B.qt = 0; B.lastTick = 0; B.wrongThisQ = false; B.hintOpen = false; B.step = 0;
   $("tutor").hidden = true;
@@ -1059,8 +1223,7 @@ function nextQuestion(given){
   ["hintBtn","qHint"].forEach(id=>{ if($(id)) $(id).onclick = e=>{ e.stopPropagation(); if(B && B.q===q && !B.busy && !B.over) showHint(); }; });
   const ans = $("answers");
   ans.className = "answers"+(q.options.length===3?" three":"");
-  const label = {">":"大于","<":"小于","=":"等于"};
-  ans.innerHTML = q.options.map(o=>'<button class="ans" data-v="'+o+'">'+emoQ(q.optHtml?q.optHtml(o):o+(q.kind==="cmp"?'<small>'+label[o]+'</small>':''))+'</button>').join("");
+  ans.innerHTML = q.options.map(o=>'<button class="ans" data-v="'+o+'">'+emoQ(q.optHtml?q.optHtml(o):o+(q.kind==="cmp"?'<small>'+CMP_LABEL[o]+'</small>':''))+'</button>').join("");
   ans.querySelectorAll(".ans").forEach(b=>b.addEventListener("click",()=>answer(b)));
   B.busy = false;
   drawCharge();
@@ -1115,6 +1278,7 @@ function answer(btn){
     $("answers").querySelectorAll(".ans").forEach(b=>b.disabled=true);
     B.busy = true;
     B.combo = B.wrongThisQ ? 0 : B.combo+1;
+    if(dodgeCheck(B, dodgeForce!=null ? dodgeForce : Math.random())) return monsterDodge();
     heroAttack();
   } else {
     btn.classList.add("wrong","shake"); btn.disabled = true;
@@ -1124,7 +1288,9 @@ function answer(btn){
     if(first){
       B.wrongThisQ = true; st.w++;
       const d = q.disp || (x=>x);
-      S.mistakes.unshift({q:q.rec || q.parts.join(" ").replace("?","□"), g:d(v), a:d(String(q.answer))});
+      // 选项和关卡也记下来，家长点「这题有问题」时一起交上去
+      S.mistakes.unshift({q:q.rec || q.parts.join(" ").replace("?","□"), g:d(v), a:d(String(q.answer)), o:(q.options||[]).map(x=>d(String(x))),
+        lv:B.run ? "连闯" : B.W.name+" 第"+(B.l+1)+"关", t:nowText()});
       S.mistakes = S.mistakes.slice(0,30); save();
     }
     // 答错立刻挨一下（不等蓄力）；第一次答错，挨完打再弹出小老师的提示
@@ -1194,6 +1360,31 @@ function punchFx(crit){
   el.style.left = cx+"px"; el.style.top = cy+"px"; el.innerHTML = '<i class="ring"></i><i class="ring r2"></i>';
   $("arena").appendChild(el); setTimeout(()=>el.remove(), 500 + FX_HOLD);
 }
+/* 怪物闪避（第五轮）：答对后有 DODGE_RATE 的机会怪物闪开（显示「闪避！」+ 闪避动作，不掉血，自动换下一题，连击不断）。
+   不会连续两次闪避；第 1 大关前 3 关不闪避；Boss 这一下可能打倒它（血量 ≤ 单次伤害上限）时不闪避。 */
+const DODGE_RATE = 0.04;
+let dodgeForce = null, questForce = null, questGenForce = null, questQ = null, lastCopy = "";   // lastCopy：测试看复制了什么   // questForce：测试用（__t.setQuest），固定探险找没找到的随机数   // 测试用（__t.setDodge）：固定闪避用的随机数
+function dodgeCheck(b, r){
+  if(!b || b.lastDodge) return false;
+  if(!b.run && b.w===0 && b.l<3) return false;
+  if(b.L && b.L.boss && b.hp <= Math.max(1, Math.floor(b.maxHp/4))) return false;
+  return r < DODGE_RATE;
+}
+function monsterDodge(){
+  const cur = B; B.lastDodge = true; B.dodges = (B.dodges||0)+1;
+  const hs = $("heroSprite"), hr = hs.getBoundingClientRect(), mr = $("monSprite").getBoundingClientRect();
+  hs.style.setProperty("--dash", Math.max(20, mr.left - hr.right + hr.width*.4)+"px");
+  play(hs, S.equipped && S.equipped.weapon ? "atk-slash" : "atk-punch"); sfx.slash();
+  setTimeout(()=>{
+    if(B!==cur || B.over) return;
+    play($("monSprite"), "dodge"); sfx.pop();
+    const [cx,cy] = monCenter(0, -40), d = document.createElement("span");
+    d.className = "dmg hitn dodgetxt"; d.innerHTML = '<b>闪避！</b>'; d.style.left = cx+"px"; d.style.top = cy+"px";
+    $("arena").appendChild(d); setTimeout(()=>d.remove(), 1000 + FX_HOLD);
+    say("闪避！");
+  }, DASH_HIT-40);
+  setTimeout(()=>{ if(B===cur && !B.over) nextQuestion(); }, 1100 + FX_HOLD);
+}
 function breakCombo(){ B.combo = 0; const c = $("combo"); c.textContent = ""; c.className = "combo"; $("arena").dataset.combo = "0"; }
 /* 伤害（家长 10-21 平衡）：普通攻击 = 1 + floor(装备攻击总和 / 3)；暴击 = 勇士暴击伤害 + 金色光环 + 装备暴击伤害 + 同样的攻击加成；
    再加等级加成（lvBonus：每 2 级 +1）。每一下最多打掉怪兽总血量的 1/4（向下取整，至少 1），所以一关也至少要答对 4 题。
@@ -1204,8 +1395,9 @@ const DASH_HIT = 170;   // 冲刺动作（.dash 480ms）在 35% 处碰到怪兽
 function heroAttack(board){   // board = {dmg, crit} for 消除 / 连连看
   const cur = B, h = B.h;
   const gs = B.gs;
-  const crit = board ? !!board.crit : (B.combo >= (h.critAt||3) || Math.random()*100 < Math.min(CRIT_CAP, gs.critRate));
-  const dmg = board ? board.dmg : Math.min(B.hp, hitCap(), (crit ? (h.critDmg||2)+(goldAura()?1:0)+gs.critDmg+atkBonus() : 1+atkBonus()) + B.lvAtk);
+  if(!board) B.lastDodge = false;
+  const crit = board ? !!board.crit : (B.combo >= 3 || Math.random()*100 < Math.min(CRIT_CAP, gs.critRate));
+  const dmg = board ? board.dmg : Math.min(B.hp, hitCap(), (crit ? 2+(goldAura()?1:0)+gs.critDmg+atkBonus() : 1+atkBonus()) + B.lvAtk);
   const wpn = S.equipped && S.equipped.weapon, hs = $("heroSprite");
   // 冲到怪兽面前：距离 = 勇士右边到怪兽左边（留一点重叠，像真的打到）
   const hr = hs.getBoundingClientRect(), mr = $("monSprite").getBoundingClientRect();
@@ -1229,11 +1421,11 @@ function heroAttack(board){   // board = {dmg, crit} for 消除 / 连连看
     else if(crit) burst(8,[h.fx,"✨"]);
     const stop = hitStop((crit ? HITSTOP_CRIT : HITSTOP_MS) + (heavy ? HITSTOP_BOSS : 0));
     B.hp = Math.max(0, B.hp - dmg); drawHP();
-    // 神龙 heals 1 every h.heal combo; gear 💖 heals gs.comboHeal every 5 combo; both add up
-    const heal = (h.heal && B.combo>0 && B.combo%h.heal===0 ? 1 : 0) + (gs.comboHeal && B.combo>0 && B.combo%5===0 ? gs.comboHeal : 0);
+    // gear 💖 heals gs.comboHeal every 5 combo
+    const heal = gs.comboHeal && B.combo>0 && B.combo%5===0 ? gs.comboHeal : 0;
     if(heal && B.hearts<B.maxH){
       B.hearts = Math.min(B.maxH, B.hearts+heal); drawHearts(false,true); renderItems(); sfx.heal();
-      setTimeout(()=>toast(h.heal?"🐲":"💖", (h.heal?"龙之恢复":"连对回心")+" +"+heal+" 颗心"), 200);
+      setTimeout(()=>toast("💖", "连对回心 +"+heal+" 颗心"), 200);
     }
     if(B.hp<=0) return win();
     if(board) return;
@@ -1292,9 +1484,11 @@ function startBoard(){
   if(B.mode==="match"){
     const layers = B.l >= 7 ? 2 : 1;
     B.board = makeMatchBoard(matchGenFor(B.w,B.l) || (()=>G.add(10)), {layers, cols: layers===2 ? 3 : 4});
+    if(hero().mystic) B.board = boardDropPair(B.board);   // 神秘勇士：少一对
     B.q = {kind:"board", speak: layers===2 ? "找出得数一样的两张卡片！上面的卡片拿走，下面的才能用哦！" : "找出得数一样的两张卡片！"};
   } else {
-    B.board = makeLinkBoard(linkPairs(B.w), {n:LINK_N});
+    const n = LINK_N - (hero().mystic ? 1 : 0);   // 神秘勇士：少一组
+    B.board = makeLinkBoard(llkPairs(B.w, n), {n});
     B.q = {kind:"board", speak:"把汉字和它的拼音连起来！"};
   }
   say(B.q.speak);
@@ -1451,6 +1645,9 @@ function dropRow(g, tag, id, canDrop){
 function rewardHTML(r){
   const res = r.res;
   let h = '<div class="rexp">'+img("📘", "rxi")+'<span class="rlv">Lv.<b class="num" id="rLv">'+r.lvBefore+'</b></span><span class="xbar"><i id="xFill" style="width:'+pctOf(r.expBefore, expNeed(r.lvBefore))+'%"></i></span><b class="num rgain">+'+res.exp+'</b></div>';
+  // 离下一级还差多少、升到下一级会加什么（升级了就是新等级的下一级）
+  const nx = nextLvBonus(S.heroLv||1), left = expNeed(S.heroLv||1) - (S.exp||0);
+  h += '<p class="rnext" id="rNextLv">离 <b class="num">Lv.'+((S.heroLv||1)+1)+'</b> 还差 <b class="num">'+left+'</b> 经验'+(nx && nx.lv===(S.heroLv||1)+1 ? '，升级加 '+bonusText(nx) : '')+'</p>';
   if(res.gearExp.length) h += '<div class="rgx">装备经验'+res.gearExp.map(x=>{ const g = gearById(x.id); return g ? '<span class="rgp q-'+g.quality+'" style="--qc:'+qCol(g)+'">'+gearImg(g)+'<b class="num">'+(x.levels.length?'Lv'+g.lv+'↑':'+'+x.gain)+'</b></span>' : ''; }).join("")+'</div>';
   const rows = [];
   res.rewards.forEach(rw=>rw.items.forEach(it=>{ if(it.gear) rows.push(dropRow(it.gear, "升级奖励", "lvg_"+it.gear.id, false)); }));
@@ -1493,7 +1690,7 @@ function wireDrops(){
   const P = $("pbody");
   P.querySelectorAll(".dwear").forEach(b=>b.onclick=tapOnce(()=>{
     const g = gearById(b.dataset.id); if(!g) return;
-    equipGear(g.id); sfx.right(); say("穿上啦！");
+    wearWithPop(g.id); sfx.right();
     P.querySelectorAll(".dwear").forEach(x=>{ const gx = gearById(x.dataset.id); if(gx && isWorn(gx)){ x.className = "btn white dwear"; x.disabled = true; x.textContent = "已穿戴"; } else if(gx){ x.disabled = false; x.className = "btn green dwear"; x.innerHTML = emo("👕穿上"); } });
     P.querySelectorAll(".ddrop").forEach(x=>{ x.disabled = isWorn(gearById(x.dataset.id)); });
     P.querySelectorAll(".gup").forEach(u=>u.remove());
