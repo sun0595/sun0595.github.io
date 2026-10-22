@@ -83,6 +83,10 @@ const ICON_SVG = {
   "🏳️": cs('<path d="M14 8 Q21 4 27 8 Q33 12 41 8 L41 27 Q33 31 27 27 Q21 23 14 27 Z" fill="#fff"/><rect x="8" y="5" width="6" height="39" rx="3" fill="'+CC.br+'"/><circle cx="11" cy="5" r="3.5" fill="'+CC.y+'"/>'),
   "💪": cs('<path d="M6 42 L6 31 Q7 23 16 22 L23 22 Q19 15 21 10 Q24 5 31 7 L33 13 L28 14 Q30 18 34 19 Q42 21 42 30 Q41 40 30 42 Z" fill="#FFC48A"/>'
     + '<path class="ln" d="M24 30 Q30 26 35 30" fill="none" stroke-width="3"/>'),
+  // 家长看板第五轮的三个页签：题型（四色积木）、有问题（黄色警示三角）、颜色题（调色盘）
+  "🧩": cs('<rect x="5" y="5" width="17" height="17" rx="4" fill="'+CC.r+'"/><rect x="26" y="5" width="17" height="17" rx="4" fill="'+CC.b+'"/><rect x="5" y="26" width="17" height="17" rx="4" fill="'+CC.g+'"/><rect x="26" y="26" width="17" height="17" rx="4" fill="'+CC.y+'"/>'),
+  "⚠️": cs('<path d="M24 5 L44 41 H4 Z" fill="'+CC.y+'"/><path class="ln" d="M24 17 V28" fill="none" stroke-width="5"/><circle cx="24" cy="35" r="2.5" fill="#3A2A1E" stroke-width="1"/>'),
+  "🎨": cs('<path d="M24 5 Q44 5 44 22 Q44 31 36 31 Q30 31 31 37 Q32 43 24 43 Q5 43 5 24 Q5 5 24 5 Z" fill="'+CC.w+'"/><circle cx="15" cy="20" r="4" fill="'+CC.r+'" stroke-width="2.5"/><circle cx="24" cy="13" r="4" fill="'+CC.y+'" stroke-width="2.5"/><circle cx="34" cy="17" r="4" fill="'+CC.b+'" stroke-width="2.5"/><circle cx="15" cy="32" r="4" fill="'+CC.g+'" stroke-width="2.5"/>'),
   "💡": cs('<rect x="17" y="31" width="14" height="11" rx="3" fill="'+CC.st+'"/><path d="M17 33 Q8 27 9 18 Q11 5 24 5 Q37 5 39 18 Q40 27 31 33 Z" fill="'+CC.y+'"/>'
     + '<path class="ln" d="M17 36.5 H31" fill="none" stroke-width="2.5"/><path class="ln" d="M20 22 Q24 27 28 22" fill="none" stroke="'+CC.o+'" stroke-width="3"/>'),
   "📊": cs('<rect x="4" y="6" width="40" height="36" rx="6" fill="#fff"/><rect x="10" y="25" width="7" height="11" rx="1.5" fill="'+CC.r+'" stroke-width="3"/>'
@@ -841,13 +845,39 @@ function showChestHaul(got, back){
 
 function openParent(tab){
   tab = tab || "set";
-  let confirmReset = false;
+  let confirmReset = false, bugPg = 0, colPg = 0, misPg = 0, copied = "";
+  const MPER = 4, RPER = 4;
+  // 「有问题的题」：家长点过的题，能复制给开发的人
+  const reportsHTML = pg => {
+    const n = S.reports.length, pages = Math.max(1, Math.ceil(n/RPER)); pg = Math.min(pg, pages-1); bugPg = pg;
+    if(!n) return '<p class="muted">还没有记录。<br>在「报告」页签的错题旁点「这题有问题」，就会记到这里。</p>';
+    return '<div class="rephead"><span>共 <b class="num">'+n+'</b> 条（最多 '+REPORT_MAX+' 条）</span><button class="btn blue bagsm" id="bCopy">复制全部</button></div>'
+      + (copied ? '<p class="copied" id="bCopied">'+img("✅")+' '+copied+'</p>' : '')
+      + '<ul class="mlist rlist">'+S.reports.slice(pg*RPER, pg*RPER+RPER).map(r=>'<li><span><small class="muted">'+r.lv+' · '+r.t+'</small><br>'+r.q+'</span><span>对 <span class="good">'+r.a+'</span> · 选 <span class="bad">'+r.g+'</span><br><small>选项：'+(r.o||[]).join(" / ")+'</small></span></li>').join("")+'</ul>'
+      + pagerHTML(pg, pages);
+  };
+  const tx = h => String(h==null?"":h).replace(/<[^>]+>/g,"").replace(/\s+/g," ").trim();   // 去掉标签，保留空格
+  const reportText = () => S.reports.map((r,i)=>(i+1)+". ["+r.lv+"] "+tx(r.q)+" | 正确答案："+tx(r.a)+" | 孩子选："+tx(r.g)+" | 选项："+(r.o||[]).map(tx).join(" / ")+" | "+r.t).join("\n");
+  // 「颜色题记录」：颜色题答错时记下题目颜色和孩子选的颜色（颜色题下一版加入）
+  const sw = c => c ? '<span class="cswatch" style="background:'+(c.hex||"#ccc")+'"></span>'+(c.name||"") : '';
+  const colorLogHTML = pg => {
+    const n = S.colorLog.length, pages = Math.max(1, Math.ceil(n/RPER)); pg = Math.min(pg, pages-1); colPg = pg;
+    if(!n) return '<p class="muted">还没有颜色题记录。<br>颜色题答错时，会记下题目要的颜色和孩子选的颜色。</p>';
+    return '<p class="muted">共 <b class="num">'+n+'</b> 条</p><ul class="mlist clog">'+S.colorLog.slice(pg*RPER, pg*RPER+RPER).map(r=>'<li><span><small class="muted">'+r.t+'</small><br>要找 '+sw(r.q)+'</span><span>选了 '+sw(r.pick)+'</span></li>').join("")+'</ul>'+pagerHTML(pg, pages);
+  };
   const render = first => {
     const tg = (id,label,on)=>'<button class="toggle'+(on?" on":"")+'" id="'+id+'"><span class="tl">'+label+'</span><span class="sw"></span></button>';
-    let body = '<div class="tabs">'+[["set","⚙️","设置"],["voice","🔊","声音"],["rep","📊","报告"]].map(([k,e,t])=>'<button class="tab'+(tab===k?" on":"")+'" data-t="'+k+'">'+img(e)+' '+t+'</button>').join("")+'</div>';
-    if(tab==="set"){
+    // 六个页签分两行（第五轮加了「题型」「有问题的题」「颜色题记录」）
+    let body = '<div class="tabs ptabs">'+[["set","⚙️","设置"],["qs","🧩","题型"],["voice","🔊","声音"],["rep","📊","报告"],["bug","⚠️","有问题"],["color","🎨","颜色题"]].map(([k,e,t])=>'<button class="tab'+(tab===k?" on":"")+'" data-t="'+k+'">'+img(e)+' '+t+'</button>').join("")+'</div>';
+    if(tab==="qs"){
+      // 插入题开关：拼音题照旧「关 / 偶尔 / 经常」，其余每类一个开关（默认全开）；关掉后这类题不再混进关卡（关卡专用玩法不受影响）
+      body += '<div class="tgls"><div class="toggle"><span class="tl">插入拼音题</span><span class="seg3">'+[[0,"关"],[0.25,"偶尔"],[0.5,"经常"]].map(([v,t])=>'<button data-py="'+v+'" class="'+(S.py===v?"on":"")+'">'+t+'</button>').join("")+'</span></div></div>'
+        + '<div class="tgls two">'+Q_SWITCHES.map(([k,label])=>tg("q_"+k, label, qOn(k))).join("")+'</div>'
+        + '<p class="muted"><small>关掉的题型不再混进关卡；算术消除、连连看、拼读这些关卡玩法不受影响。小知识、科普题、颜色题下一版加入。</small></p>';
+    } else if(tab==="bug") body += reportsHTML(bugPg);
+    else if(tab==="color") body += colorLogHTML(colPg);
+    else if(tab==="set"){
       body += '<div class="tgls">'+tg("tTimer","怪兽限时攻击",S.timer)
-        + '<div class="toggle"><span class="tl">插入拼音题</span><span class="seg3">'+[[0,"关"],[0.25,"偶尔"],[0.5,"经常"]].map(([v,t])=>'<button data-py="'+v+'" class="'+(S.py===v?"on":"")+'">'+t+'</button>').join("")+'</span></div>'
         + tg("tOpen","全部关卡直接开放",S.openAll)
         + tg("tVoice","语音读题",S.voice)
         + tg("tSound","音效",S.sound)+'</div>'
@@ -867,19 +897,32 @@ function openParent(tab){
         rows += '<div class="stat"><span>'+name+'</span><span class="sb"><i style="width:'+p+'%"></i></span><span class="pct">'+p+'% · '+tot+'题</span></div>';
       });
       body += rows ? '<div style="display:flex;flex-direction:column;gap:6px">'+rows+'</div>' : '<p class="muted">还没有记录。玩几关之后这里会显示答对的比例。</p>';
+      // 最近做错的题：每条旁边「这题有问题」，点了记到「有问题」页签（每页 MPER 条）
+      const pages = Math.max(1, Math.ceil(S.mistakes.length/MPER)); misPg = Math.min(misPg, pages-1);
       body += '<p class="muted" style="margin-top:4px">最近做错的题</p>' + (S.mistakes.length
-        ? '<ul class="mlist">'+S.mistakes.slice(0,6).map(m=>'<li><span>'+m.q+'</span><span>答 <span class="bad">'+m.g+'</span> · 对 <span class="good">'+m.a+'</span></span></li>').join("")+'</ul>'
+        ? '<ul class="mlist">'+S.mistakes.slice(misPg*MPER, misPg*MPER+MPER).map((m,k)=>'<li><span>'+m.q+'</span><span>答 <span class="bad">'+m.g+'</span> · 对 <span class="good">'+m.a+'</span></span>'
+            + '<button class="btn white mrep" data-i="'+(misPg*MPER+k)+'"'+(m.rep?' disabled':'')+'>'+(m.rep?'已记录':'这题有问题')+'</button></li>').join("")+'</ul>'+pagerHTML(misPg, pages)
         : '<p class="muted">还没有错题。</p>');
     }
     if(first) openPage({title:"家长看板", ribbon:"blue", back:true, onClose:renderMap, body}); else setBody(body);
     const P = $("pbody");
-    P.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ tab = b.dataset.t; render(false); });
+    P.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ tab = b.dataset.t; copied = ""; render(false); });
     const on = (id,f) => { if($(id)) $(id).onclick = f; };
     on("tTimer", ()=>{ S.timer=!S.timer; save(); render(false); });
     on("tOpen",  ()=>{ S.openAll=!S.openAll; save(); render(false); });
     on("tVoice", ()=>{ S.voice=!S.voice; save(); render(false); });
     on("tSound", ()=>{ S.sound=!S.sound; save(); render(false); });
     P.querySelectorAll("[data-py]").forEach(b=>b.onclick=()=>{ S.py = +b.dataset.py; save(); render(false); });
+    Q_SWITCHES.forEach(([k])=>on("q_"+k, ()=>{ S.qOn[k] = !qOn(k); save(); render(false); }));
+    P.querySelectorAll(".mrep").forEach(b=>b.onclick=tapOnce(()=>{ if(reportQ(S.mistakes[+b.dataset.i])){ sfx.click(); render(false); } }));
+    on("gPrev", ()=>{ if(tab==="bug") bugPg--; else if(tab==="color") colPg--; else misPg--; copied = ""; render(false); });
+    on("gNext", ()=>{ if(tab==="bug") bugPg++; else if(tab==="color") colPg++; else misPg++; copied = ""; render(false); });
+    on("bCopy", ()=>{
+      const text = reportText(), done = ok => { copied = ok ? "已复制 "+S.reports.length+" 条，可以粘贴发给开发的人" : "复制失败，请长按选中文字复制"; render(false); };
+      const fallback = () => { try{ const ta = document.createElement("textarea"); ta.value = text; ta.setAttribute("readonly",""); ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length); const ok = document.execCommand("copy"); ta.remove(); done(ok); }catch(e){ done(false); } };
+      lastCopy = text;
+      if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(()=>done(true), fallback); else fallback();
+    });
     on("mReset", ()=>{
       if(!confirmReset){ confirmReset = true; return render(false); }
       const keep = {voiceName:S.voiceName, rate:S.rate};
@@ -1243,7 +1286,9 @@ function answer(btn){
     if(first){
       B.wrongThisQ = true; st.w++;
       const d = q.disp || (x=>x);
-      S.mistakes.unshift({q:q.rec || q.parts.join(" ").replace("?","□"), g:d(v), a:d(String(q.answer))});
+      // 选项和关卡也记下来，家长点「这题有问题」时一起交上去
+      S.mistakes.unshift({q:q.rec || q.parts.join(" ").replace("?","□"), g:d(v), a:d(String(q.answer)), o:(q.options||[]).map(x=>d(String(x))),
+        lv:B.run ? "连闯" : B.W.name+" 第"+(B.l+1)+"关", t:nowText()});
       S.mistakes = S.mistakes.slice(0,30); save();
     }
     // 答错立刻挨一下（不等蓄力）；第一次答错，挨完打再弹出小老师的提示
@@ -1316,7 +1361,7 @@ function punchFx(crit){
 /* 怪物闪避（第五轮）：答对后有 DODGE_RATE 的机会怪物闪开（显示「闪避！」+ 闪避动作，不掉血，自动换下一题，连击不断）。
    不会连续两次闪避；第 1 大关前 3 关不闪避；Boss 这一下可能打倒它（血量 ≤ 单次伤害上限）时不闪避。 */
 const DODGE_RATE = 0.04;
-let dodgeForce = null, questForce = null, questQ = null;   // questForce：测试用（__t.setQuest），固定探险找没找到的随机数   // 测试用（__t.setDodge）：固定闪避用的随机数
+let dodgeForce = null, questForce = null, questQ = null, lastCopy = "";   // lastCopy：测试看复制了什么   // questForce：测试用（__t.setQuest），固定探险找没找到的随机数   // 测试用（__t.setDodge）：固定闪避用的随机数
 function dodgeCheck(b, r){
   if(!b || b.lastDodge) return false;
   if(!b.run && b.w===0 && b.l<3) return false;

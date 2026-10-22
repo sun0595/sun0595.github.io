@@ -2891,6 +2891,22 @@ function ensureR5(st){
 }
 if(ensureR5(S)) save();
 
+/* 家长反馈（第五轮）：答题记录里点「这题有问题」→ 记进 S.reports（最多 REPORT_MAX 条，新的在前）；
+   颜色题答错 → logColorMiss() 记进 S.colorLog（最多 COLORLOG_MAX 条），颜色题下一版加入。 */
+const REPORT_MAX = 100, COLORLOG_MAX = 200;
+const nowText = () => { const d = new Date(), p = n => String(n).padStart(2,"0"); return today()+" "+p(d.getHours())+":"+p(d.getMinutes()); };
+function reportQ(m){
+  if(!m || m.rep) return false;
+  S.reports.unshift({q:m.q, a:m.a, g:m.g, o:m.o||[], lv:m.lv||"", t:nowText()});
+  S.reports = S.reports.slice(0, REPORT_MAX); m.rep = true; save();
+  return true;
+}
+// qc / pc = {name:"红色", hex:"#e53935"}：题目要的颜色、孩子选的颜色
+function logColorMiss(qc, pc, extra){
+  S.colorLog.unshift(Object.assign({t:nowText(), q:qc, pick:pc}, extra||{}));
+  S.colorLog = S.colorLog.slice(0, COLORLOG_MAX); save();
+}
+
 /* ================= 奖励：经验、稀缺掉落、装备成长（界面稍后接入） =================
    家长要调的数字都在这一段最上面。
    结算画面目前还是旧的「点宝箱」，接上 applyDrops 之后才改用这里。

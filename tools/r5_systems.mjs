@@ -147,3 +147,62 @@ export async function r5Mystic(p, { view, problems, shot, tap }) {
   await p.evaluate(() => { __t.setQuest(null); __t.S.hero = 0; __t.toMap(); });
   console.log('ok ', view.name, 'r5 mystic');
 }
+
+// ---- 5 题型开关 / 6 家长看板新页签 / 旧存档迁移 ----
+export async function r5Parent(p, { view, problems, shot, tap }) {
+  const bad = m => problems.push(`[${view.name}] r5: ${m}`);
+  // 开关关掉后，这类题不再出现（擅长这类题的勇士也不会把它带回来）；拼读关照常
+  const sw = await p.evaluate(() => { const T = __t, out = {};
+    for (const w of T.WORLDS_V2) for (let l = 1; l <= 15; l++) T.S.lv.stars[w.id + '-' + l] = 3; T.S.bestQ = 'red';
+    for (const k of ['word', 'shape', 'pic4', 'cmp', 'trap', 'calc'].slice(0, 5)) {
+      T.S.qOn = { [k]: false }; T.S.hero = Math.max(0, T.HEROES.findIndex(h => h.good === k)); let n = 0, tot = 0;
+      for (const [w, l] of [[1, 4], [2, 8], [4, 5], [6, 8], [7, 14]]) { const d = T.levelDef(w, l); for (let i = 0; i < 600; i++) { tot++; if (T.qCat(d.g()) === k) n++; } }
+      out[k] = n; }
+    T.S.qOn = { word: false, shape: false, pic4: false, cmp: false, trap: false };
+    const bl = T.LEVEL_MODES[1].modes.indexOf('blend'), bq = T.levelDef(1, bl).g(); out.blend = bq.kind;
+    T.S.qOn = {}; T.S.hero = 0; return out; });
+  for (const k of ['word', 'shape', 'pic4', 'cmp', 'trap']) if (sw[k]) bad(`关掉「${k}」后还出了 ${sw[k]} 道`);
+  if (sw.blend !== 'py') bad('拼读关不受开关影响: ' + sw.blend);
+  await p.evaluate(() => { __t.toMap(); }); await tap('#parentBtn'); await p.waitForTimeout(300);
+  await tap('.tab[data-t="qs"]'); await p.waitForTimeout(200);
+  await tap('#q_word'); await p.waitForTimeout(200); await shot('84-settings-qtypes');
+  const ui = await p.evaluate(() => ({ n: document.querySelectorAll('.tgls.two .toggle').length, word: __t.S.qOn.word, py: !!document.querySelector('[data-py]') }));
+  if (ui.n !== 8 || ui.word !== false || !ui.py) bad('题型页签应有拼音题 + 8 个开关，点了能关: ' + JSON.stringify(ui));
+  await tap('#q_word'); await tap('#pgBack');
+  // 答错一题 → 报告页签每条错题旁有「这题有问题」→ 记到「有问题」页签，能复制
+  await p.evaluate(() => { __t.S.mistakes = []; __t.S.reports = []; __t.startLevel(1, 4); });
+  for (let i = 0; i < 40; i++) { if (await p.evaluate(() => !!(__t.B.q && !__t.B.busy))) break; await p.waitForTimeout(100); }
+  const wrong = await p.evaluate(() => { const B = __t.B; B.lucky = 0; B.shield = 0; const a = String(B.q.answer); return [...document.querySelectorAll('#answers .ans')].map(b => b.dataset.v).find(v => v !== a); });
+  await tap(`#answers .ans[data-v="${wrong}"]`); await p.waitForTimeout(600);
+  await p.evaluate(() => { __t.closeHint(); __t.toMap(); }); await tap('#parentBtn'); await p.waitForTimeout(200); await tap('.tab[data-t="rep"]'); await p.waitForTimeout(200);
+  await tap('.mrep[data-i="0"]'); await p.waitForTimeout(200); await shot('84-report-mistakes');
+  const rp = await p.evaluate(() => ({ n: __t.S.reports.length, r: __t.S.reports[0], btn: document.querySelector('.mrep[data-i="0"]').textContent }));
+  if (rp.n !== 1 || !rp.r.q || !rp.r.a || !(rp.r.o || []).length || !/水晶洞穴 第5关/.test(rp.r.lv) || rp.btn !== '已记录') bad('点「这题有问题」应记下题面、答案、选项、关卡: ' + JSON.stringify(rp));
+  await p.evaluate(() => { for (let i = 0; i < 6; i++) __t.reportQ({ q: '3 + ' + i + ' = □', a: String(3 + i), g: '1', o: ['1', String(3 + i), '9', '10'], lv: '魔法森林 第' + (i + 2) + '关' }); });
+  await tap('.tab[data-t="bug"]'); await p.waitForTimeout(200); await tap('#bCopy'); await p.waitForTimeout(300); await shot('84-report-bugs');
+  const cp = await p.evaluate(() => ({ txt: __t.lastCopy, note: (document.getElementById('bCopied') || {}).textContent || '' }));
+  if (!/1\. \[魔法森林 第7关\] 3 \+ 5 = □ \| 正确答案：8/.test(cp.txt) || !/选项：/.test(cp.txt) || !cp.note) bad('「有问题」页签应能复制全部: ' + JSON.stringify(cp).slice(0, 200));
+  const cap = await p.evaluate(() => { for (let i = 0; i < 120; i++) __t.reportQ({ q: 'x' + i, a: '1', g: '2', o: [] }); return __t.S.reports.length; });
+  if (cap !== 100) bad('有问题的题最多 100 条: ' + cap);
+  // 颜色题记录：先放两条样例数据看页面（颜色题下一版才有）
+  await p.evaluate(() => { __t.S.colorLog = []; __t.logColorMiss({ name: '红色', hex: '#e53935' }, { name: '粉红色', hex: '#f48fb1' }); __t.logColorMiss({ name: '绿色', hex: '#43a047' }, { name: '蓝色', hex: '#1e88e5' }); });
+  await tap('.tab[data-t="color"]'); await p.waitForTimeout(200); await shot('84-color-log');
+  if ((await p.evaluate(() => document.querySelectorAll('.clog .cswatch').length)) !== 4) bad('颜色题记录页签应显示题目颜色和孩子选的颜色');
+  await p.evaluate(() => { __t.S.colorLog = []; __t.S.reports = []; }); await tap('#pgBack');
+  console.log('ok ', view.name, 'r5 parent');
+}
+// 旧存档（没有第五轮字段）打开后：新字段补上默认值，旧东西一样不少
+export async function r5Migrate(p, { view, problems }, V1) {
+  const bad = m => problems.push(`[${view.name}] r5: ${m}`);
+  const old = { stars: { 'add-1': 3 }, lv: { stars: { 'add-1': 3, 'add-2': 2 }, tier: {} }, lvMigrated: true, hero: 6, heroLv: 4, exp: 33, stones: 2, items: { heal: 2, cut: 3, swap: 1 }, itemsV3: true,
+    bag: [{ id: 'old_g', slot: 'weapon', quality: 'blue', name: '旧剑', e: '🗡️', lv: 2, exp: 5, affixes: [{ id: 'atk', val: 2 }] }], equipped: { weapon: null, helmet: null, armor: null, shield: null },
+    mistakes: [{ q: '3 + 4 = □', g: '6', a: '7' }], medals: { add: true }, bestQ: 'purple', stickers: { '🐶': 1 }, stickerMigrated: true, sound: false, voice: false };
+  await p.evaluate(([k, s]) => localStorage.setItem(k, JSON.stringify(s)), [V1, old]); await p.reload(); await p.waitForTimeout(600);
+  const r = await p.evaluate(k => { const S = __t.S, saved = JSON.parse(localStorage.getItem(k)); return { S: { wchest: S.wchest, qOn: S.qOn, mystic: S.mystic, reports: S.reports, colorLog: S.colorLog, hero: S.hero, heroLv: S.heroLv, exp: S.exp, stones: S.stones, items: S.items, bag: S.bag.map(g => g.id), mis: S.mistakes.length, stars: S.lv.stars, medals: S.medals }, savedHasNew: 'mystic' in saved && 'wchest' in saved }; }, V1);
+  const s = r.S;
+  if (JSON.stringify(s.wchest) !== '{}' || JSON.stringify(s.qOn) !== '{}' || JSON.stringify(s.mystic) !== '{"found":false,"frags":0,"day":""}' || !Array.isArray(s.reports) || !Array.isArray(s.colorLog) || !r.savedHasNew) bad('旧存档应补上第五轮字段的默认值: ' + JSON.stringify(s));
+  if (s.hero !== 6 || s.heroLv !== 4 || s.exp !== 33 || s.stones !== 2 || s.items.cut !== 3 || !s.bag.includes('old_g') || s.mis !== 1 || s.stars['add-2'] !== 2 || !s.medals.add) bad('旧存档迁移丢了东西: ' + JSON.stringify(s));
+  // 旧错题（没有选项、关卡）也能点「这题有问题」
+  if (!(await p.evaluate(() => __t.reportQ(__t.S.mistakes[0]) && __t.S.reports.length === 1))) bad('旧错题应能记为有问题');
+  console.log('ok ', view.name, 'r5 migrate');
+}
