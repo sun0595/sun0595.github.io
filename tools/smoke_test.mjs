@@ -11,7 +11,7 @@
 //   python3 tools/build.py --test && node tools/smoke_test.mjs
 // Needs: npm i playwright  (and `npx playwright install chromium`, or set CHROMIUM_PATH)
 import { chromium } from 'playwright';
-import { wpCheck, invCheck } from './wp_check.mjs';
+import { wpCheck, invCheck, qbankCheck } from './wp_check.mjs';
 import { mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -393,7 +393,24 @@ async function playAll(view) {
     const ir = await invCheck(p);
     for (const x of ir.problems) problems.push(`[inv_check] ${x}`);
     console.log('inv_check', ir.stats.share, ir.problems.length ? 'BAD' : 'ok');
+    const qr = await qbankCheck(p);
+    for (const x of qr.problems) problems.push(`[qbank_check] ${x}`);
+    console.log('qbank_check', qr.stats.pos.length, 'generators, forest inverse', qr.stats.forest, qr.problems.length ? 'BAD' : 'ok');
   }
+  // 连式逆向每关第一次出现：当「思维挑战」出（40 秒、请小老师讲一讲、三步讲解）。魔法森林第 5 关（5 以内）和云顶雪山第 9 关（数最大）
+  for (const [w, l, name] of [[0, 4, 'forest5'], [5, 8, 'snow9']]) {
+    const t = await p.evaluate(([w, l]) => {
+      const d = __t.levelDef(w, l); let q = null;
+      for (let i = 0; i < 5000 && !q; i++) { const x = d.math(); if (x.intro) q = x; }
+      __t.closeHint(); __t.nextQuestion(q); return __t.qTime();
+    }, [w, l]);
+    if (t <= 15) problems.push(`[${view.name}] the first chain-inverse question should get the word-problem time (40 s), got ${t}`);
+    await p.waitForTimeout(300); await shot(`14c-chain-intro-${name}-q`);
+    await tap('#hintBtn'); await p.waitForTimeout(300);
+    while (await p.$('#stNext')) await tap('#stNext');
+    await p.waitForTimeout(250); await shot(`14c-chain-intro-${name}-hint`);
+  }
+  await p.evaluate(() => __t.closeHint());
   // 逆向思维算术题：4 种形式各拍题面和最后一步讲解（10 / 20 档是圆点，整十和两位数是数轴）
   for (const [t, f, name] of [['10', 'a-?', 'sub-mid'], ['20', '?-b', 'sub-first'], ['tens', 'a+?', 'add-mid'], ['d1', '?+b', 'add-first']]) {
     await p.evaluate(([t, f]) => { __t.closeHint(); __t.B.L = Object.assign({}, __t.B.L, { g: () => __t.G.inv(t, f) }); __t.nextQuestion(); }, [t, f]);
