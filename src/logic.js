@@ -506,6 +506,129 @@ G.chain3 = function(tier, inv, ops){
   return mk(parts, sp, ans, null,
     {options:kidOpts(ans, traps, 0, hi), steps:st.map(t=>({t})), small:true, inv:"c"+pos, chain:o1+o2, tier, key:"c3i"+parts.join("")});
 };
+/* ================= 第五轮新题型（家长第五轮） =================
+   G.cmp10()：10 以内比大小（>、<、=，三成是等于）。
+   G.pic4(M)：一图四式看图说话：一张图 + 一句情境，选和这句话对应的算式（选项是 3+1、1+3、4−3、4−1 这类，
+     正确答案的顺序必须和叙述一致：先说的数写在前面），得数 M（10）以内。
+   G.shapeEq(M)：基础图形题 ○+○=6，○=?；○+○+○=9，○=?（SVG 画圆、方、三角），答案 M 以内。
+   G.shapeLogic()：图形推理（第 7、8 大关）：○+□=3、□+△=4、○=1，△=? 这类两三步的，数都在 10 以内。
+   G.trap(M)：易错应用题（WP_TRAP，30 多种模板，数字随机，讲解里指出常见错误）。 */
+G.cmp10 = function(){
+  let left, val, speakL;
+  const r0 = Math.random();
+  if(r0<.3){ val = ri(0,10); left = [val]; speakL = String(val); }
+  else if(r0<.65){ const a = ri(0,9), b = ri(1,10-a); val = a+b; left = [a,"+",b]; speakL = a+"加"+b; }
+  else { const a = ri(2,10), b = ri(1,a); val = a-b; left = [a,"−",b]; speakL = a+"减"+b; }
+  let r = Math.random()<.34 ? val : val + pick([1,-1,2,-2,3,-3]);
+  if(r<0 || r>10) r = val;
+  if(left.length===1 && r===val) r = val<10 ? val+ri(1,10-val) : val-ri(1,5);
+  const ans = val>r ? ">" : val<r ? "<" : "=";
+  const calc = left.length>1 ? '<p>先算左边：<b>'+left.join(" ")+' = '+val+'</b></p>' : '';
+  const hint = '<p class="htitle">比大小</p>'+calc+'<p>再比 <b>'+val+'</b> 和 <b>'+r+'</b>：一样大就选 <b>=</b>。</p><p>开口朝大数，尖尖对小数。</p>'+dots([{n:val,c:"a"}])+dots([{n:r,c:"b"}]);
+  return {parts:[...left,"?",r], speak:speakL+"和"+r+"比，选大于、小于，还是等于？", answer:ans, options:[">","<","="], kind:"cmp", hint, key:"cmp10"+left.join("")+"?"+r};
+};
+// 一图四式的场景：动物、两个地方、单位、离开的说法
+const PIC4 = [
+  {e:"🐸", n:"青蛙", u:"只", L:"一片荷叶上", R:"另一片荷叶上", go:"跳走了", bg:["#9be37a","#9be37a"]},
+  {e:"🐦", n:"小鸟", u:"只", L:"一根树枝上", R:"另一根树枝上", go:"飞走了", bg:["#e3b27a","#e3b27a"]},
+  {e:"🐰", n:"小兔", u:"只", L:"草地上", R:"树下", go:"跑走了", bg:["#b8eaa8","#7fcf8a"]},
+  {e:"🦆", n:"小鸭", u:"只", L:"岸上", R:"水里", go:"游走了", bg:["#b8eaa8","#9fd8ff"]}
+];
+// 一块地方（荷叶 / 树枝……）上站着 n 只；gone = 其中最后几只是要走的（变淡，带箭头）
+function pic4Spot(sc, n, gone, side){
+  const one = i => '<span style="display:inline-block;'+(gone && i>=n-gone ? 'opacity:.4;transform:translateY(-6px) rotate(12deg)' : '')+'">'+sc.e+'</span>';
+  return '<span style="display:inline-flex;flex-wrap:wrap;justify-content:center;align-items:flex-end;gap:2px;min-width:64px;max-width:150px;padding:6px 10px 4px;border-radius:50% / 40%;border:var(--c-lw-s) solid var(--c-line);background:'+sc.bg[side||0]+';font-size:24px;line-height:1">'
+    + [...Array(n)].map((_,i)=>one(i)).join("") + '</span>' + (gone ? '<span style="font:800 18px var(--f-num);color:var(--red-d);margin-left:4px">→'+gone+'</span>' : '');
+}
+const pic4Row = spots => '<div style="clear:both;display:flex;justify-content:center;align-items:center;gap:10px;margin-top:6px">'+spots.join("")+'</div>';
+// 算式写成选项：a + b / a − b（选项按字符串比，答案也是字符串）
+const fx = (a, op, b) => a+op+b;
+G.pic4 = function(M, v){
+  M = M || 10; v = v || pick(["join","join","part","leave"]);
+  const sc = pick(PIC4), u = sc.u;
+  let a, b; do { a = ri(1, M-1); b = ri(1, M-a); } while(a===b);
+  const s = a+b, two = pic4Row([pic4Spot(sc, a, 0, 0), pic4Spot(sc, b, 0, 1)]);
+  let say, ans, opts, st;
+  if(v==="join"){
+    say = sc.L+"有"+a+u+sc.n+"，"+sc.R+"有"+b+u+"，一共有几"+u+"？";
+    ans = fx(a,"+",b); opts = [ans, fx(b,"+",a), fx(s,"−",a), fx(s,"−",b)];
+    st = [
+      {t:"看图："+sc.L+" <b>"+a+"</b> "+u+"，"+sc.R+" <b>"+b+"</b> "+u+"。", v:two},
+      {t:"问「一共有几"+u+"」，是把两边合起来，用<b>加法</b>。", v:dots([{n:a,c:"a"},{n:b,c:"b"}])},
+      {t:"⚠️ 算式要和题目说的顺序一样：题目先说 "+a+"，再说 "+b+"，先说的数写在前面。", v:two}
+    ];
+  } else if(v==="part"){
+    say = "一共有"+s+u+sc.n+"，"+sc.L+"有"+a+u+"，"+sc.R+"有几"+u+"？";
+    ans = fx(s,"−",a); opts = [ans, fx(s,"−",b), fx(a,"+",b), fx(b,"+",a)];
+    st = [
+      {t:"看图：一共有 <b>"+s+"</b> "+u+"，"+sc.L+"有 <b>"+a+"</b> "+u+"。", v:two},
+      {t:"知道一共，求一部分：从一共的里面去掉知道的那部分，用<b>减法</b>。", v:dots([{n:a,c:"x"},{n:b,c:"e"}])},
+      {t:"⚠️ 题目先说一共 "+s+"，再说"+sc.L+"的 "+a+"：先写一共的，再减去知道的那部分。", v:two}
+    ];
+  } else {
+    a = ri(3, M); b = ri(1, a-1); if(a-b===b) b = b>1 ? b-1 : b+1;
+    const r = a-b, pic = pic4Row([pic4Spot(sc, a, b, 0)]);
+    say = "原来有"+a+u+sc.n+"，"+sc.go+b+u+"，还剩几"+u+"？";
+    ans = fx(a,"−",b); opts = [ans, fx(a,"−",r), fx(r,"+",b), fx(b,"+",r)];
+    st = [
+      {t:"看图：原来有 <b>"+a+"</b> "+u+"，"+sc.go+" <b>"+b+"</b> "+u+"（变淡的）。", v:pic},
+      {t:"问「还剩几"+u+"」，是从原来的里面去掉走了的，用<b>减法</b>。", v:dots([{n:r,c:"a"},{n:b,c:"x"}])},
+      {t:"⚠️ 题目先说原来 "+a+"，再说走了 "+b+"：先写原来的，再减去走了的。", v:pic}
+    ];
+    return wq({key:"p4"+v+a+"-"+b+sc.n, pic:sc.e, answer:ans, options:shuffle(opts), speak:say+"选出对的算式。", rec:say,
+      html:say.replace(/(\d+)/g, (m)=>N(m))+pic, steps:st});
+  }
+  return wq({key:"p4"+v+a+"-"+b+sc.n, pic:sc.e, answer:ans, options:shuffle(opts), speak:say+"选出对的算式。", rec:say,
+    html:say.replace(/(\d+)/g, (m)=>N(m))+two, steps:st});
+};
+// 图形题用的三种图形（颜色固定：圆红、方蓝、三角黄），一行等式：items 是 ["c","+","c","=",6]
+const SHAPE_COL = {c:"#ff8a8a", s:"#7ab8ff", t:"#ffd23f"};
+const SHAPE_NAME = {c:"○", s:"□", t:"△"};
+const shapeEqRow = items => '<div style="display:flex;align-items:center;justify-content:center;gap:4px;font:800 26px/1.15 var(--f-num);white-space:nowrap">'
+  + items.map(x => SHAPE_COL[x] ? shapeSvg(x, SHAPE_COL[x], 30) : x==="?" ? '<span class="blank">?</span>' : '<span>'+x+'</span>').join("") + '</div>';
+const shapeSay = items => items.map(x => SHAPE_NAME[x] ? {c:"圆",s:"方块",t:"三角"}[x] : x==="+" ? "加" : x==="−" ? "减" : x==="=" ? "等于" : x==="?" ? "几" : String(x)).join("");
+G.shapeEq = function(M){
+  M = M || 10;
+  const k = Math.random()<.5 ? 2 : 3, v = ri(1, Math.floor(M/k)), s = k*v, sh = pick(["c","s","t"]);
+  const row1 = [], add = []; for(let i=0;i<k;i++){ if(i){ row1.push("+"); } row1.push(sh); add.push(v); }
+  row1.push("=", s);
+  const html = shapeEqRow(row1) + shapeEqRow([sh, "=", "?"]);
+  const hint = '<p class="htitle">一样的图形是一样的数</p><p>'+k+' 个 '+SHAPE_NAME[sh]+' 加起来是 <b>'+s+'</b>，每个 '+SHAPE_NAME[sh]+' 都一样大。</p><p>把 '+s+' 分成同样多的 '+k+' 份，一份是几？</p>'+dots([{n:s,c:"a"}])+'<p>试一试：'+Array(k).fill("?").join(" + ")+' = '+s+'，几个一样的数加起来是 '+s+'？</p>';
+  return {html, speak:shapeSay(row1)+"，"+{c:"圆",s:"方块",t:"三角"}[sh]+"等于几？", answer:v, options:kidOpts(v, [s, s-v, v+1, v-1, k], 0, M), hint, kind:"num", shape:true,
+    rec:row1.map(x=>SHAPE_NAME[x]||x).join(" ")+"，"+SHAPE_NAME[sh]+" = ?", key:"sh"+k+sh+s};
+};
+/* 图形推理（三个图形，两三步）：
+   A：○=a，○+□=s1，□+△=s2，△=?   B：○+○=s1，○+□=s2，□=?   C：△+△=s1，△+○=s2，○+□=s3，□=? */
+G.shapeLogic = function(v){
+  v = v || pick(["A","B","C"]);
+  const [x, y, z] = shuffle(["c","s","t"]), nm = k => SHAPE_NAME[k];
+  let rows, ask, ans, st, a, b, c;
+  // 讲解里写出来的中间数（= 几）不能刚好等于答案，不然像直接说出了答案
+  const shown = () => v==="A" ? [a, a+b, b] : v==="B" ? [a+a, a] : [a+a, a, a+b, b];
+  for(let k=0; k<500; k++){ a = ri(1,5); b = ri(1,8); c = ri(0,9); ans = v==="B" ? b : c;
+    if(a+b<=10 && b+c<=10 && !shown().includes(ans)) break; }
+  if(v==="A"){
+    rows = [[x,"+",y,"=",a+b],[y,"+",z,"=",b+c],[x,"=",a]]; ask = z;
+    st = [{t:"先用知道的："+nm(x)+" = <b>"+a+"</b>，代进第一行 "+nm(x)+" + "+nm(y)+" = "+(a+b)+"。", v:shapeEqRow([a,"+",y,"=",a+b])},
+          {t:"算出 "+nm(y)+"：<b>"+(a+b)+" − "+a+" = "+b+"</b>，所以 "+nm(y)+" 是 "+b+"。", v:shapeEqRow([b,"+",z,"=",b+c])},
+          {t:"⚠️ 一步一步来，别跳步。再代进第二行："+nm(y)+" 是 "+b+"，<b>"+(b+c)+" − "+b+" = ?</b>", v:shapeEqRow([b,"+",z,"=",b+c])}];
+  } else if(v==="B"){
+    rows = [[x,"+",x,"=",a+a],[x,"+",y,"=",a+b]]; ask = y;
+    st = [{t:"两个 "+nm(x)+" 一样大，加起来是 <b>"+(a+a)+"</b>：把 "+(a+a)+" 分成同样多的两份。", v:dots([{n:a,c:"a"},{n:a,c:"b"}])},
+          {t:"所以 "+nm(x)+" = <b>"+a+"</b>。代进第二行。", v:shapeEqRow([a,"+",y,"=",a+b])},
+          {t:"⚠️ 别把 "+(a+a)+" 直接当成 "+nm(x)+"！算一算 <b>"+(a+b)+" − "+a+" = ?</b>", v:shapeEqRow([a,"+",y,"=",a+b])}];
+  } else {
+    rows = [[z,"+",z,"=",a+a],[z,"+",x,"=",a+b],[x,"+",y,"=",b+c]]; ask = y;
+    st = [{t:"从最简单的一行开始：两个 "+nm(z)+" 一样大，合起来是 <b>"+(a+a)+"</b>，所以 "+nm(z)+" = "+a+"。", v:dots([{n:a,c:"a"},{n:a,c:"b"}])},
+          {t:"代进第二行："+a+" + "+nm(x)+" = "+(a+b)+"，所以 "+nm(x)+" = <b>"+(a+b)+" − "+a+" = "+b+"</b>。", v:shapeEqRow([a,"+",x,"=",a+b])},
+          {t:"⚠️ 一个一个求，别跳步。代进第三行："+b+" + "+nm(y)+" = "+(b+c)+"，<b>"+(b+c)+" − "+b+" = ?</b>", v:shapeEqRow([b,"+",y,"=",b+c])}];
+  }
+  const html = "每种图形代表一个数，"+nm(ask)+" 是几？" + rows.map(shapeEqRow).join("");
+  const say = "每种图形代表一个数。"+rows.map(shapeSay).join("，")+"。"+{c:"圆",s:"方块",t:"三角"}[ask]+"等于几？";
+  const traps = [ans+1, ans-1, ...rows.map(r=>r[r.length-1])];
+  return wq({key:"sl"+v+rows.flat().join(""), pic:"🧩", answer:ans, options:kidOpts(ans, traps, 0, 10), speak:say,
+    rec:rows.map(r=>r.map(t=>SHAPE_NAME[t]||t).join("")).join("，")+"，"+nm(ask)+"=?", html, steps:st});
+};
 // 题型（一关里轮换用）：应用题 / 拼音 / 逆向（? 不在最后）/ 连式 / 加 / 减
 function qForm(q){
   if(!q) return "";
@@ -829,6 +952,26 @@ const LEVEL_MODES = [
   {id:"digit1", modes:["battle","battle","battle","match","battle","blend","battle","match","battle","battle","link","battle","match","battle","battle"]},
   {id:"digit2", modes:["battle","battle","battle","match","battle","battle","match","link","battle","blend","battle","battle","match","battle","battle"]}
 ];
+
+/* 第五轮题型扩充（家长第五轮）：每个大关的 battle 关轮流加进一种新题型（第 1 大关前两关除外），Boss 关全都有：
+   每关两种：10 以内比大小 cmp10、一图四式 pic4、基础图形题 shapeEq、易错应用题 trap（前两个大关数在 10 以内，后面 20 以内），
+   第 7、8 大关再加图形推理 shapeLogic。连加连减、加减混合（chain3）各大关原来就有。
+   第 5～8 大关（整十、整百、两位数）：得数超过 20 的题压到三成以内——每道题有 SMALL_P 的机会改出这一关的 small 题单
+   （20 以内的复习题 + 新题型），逆向题也一样按 SMALL_P 改用 20 以内的档（见 levelDef）。消除关的数一律 20 以内（matchGenFor）。 */
+const SMALL_P = 0.75;
+const SMALL_REVIEW = [A_("carryAny"), A_("borrowAny"), A_("teenNoBorrow"), A_("add",10), A_("sub",10)];
+const ROUND5 = w => [A_("cmp10"), A_("pic4",10), A_("shapeEq",10), A_("trap", w<2 ? 10 : 20)].concat(w>=6 ? [A_("shapeLogic")] : []);
+LEVEL_PLAN.forEach((P, w) => {
+  const E = ROUND5(w), big = w>=4; let k = w;
+  P.levels.forEach((lp, l) => {
+    const mode = lp.boss ? "battle" : LEVEL_MODES[w].modes[l];
+    const ex = mode!=="battle" || (w===0 && l<2) ? [] : lp.boss ? E : [E[k++ % E.length], E[k++ % E.length]];
+    // 第 5 大关起：small 题单 = 20 以内的复习（加、减、连式各一种）+ 新题型；原来的 mix 是剩下那 25% 的大数题
+    // （这一关原来没有连式的，small 里也不放连式：草原、雪山前几关只做一步加减）
+    if(big) lp.small = [SMALL_REVIEW[l % 2], SMALL_REVIEW[2 + l % 3]].concat(lp.mix.some(it=>it.g==="chain3") ? [A_("chain3","20")] : [], ex);
+    else lp.mix = lp.mix.concat(ex);
+  });
+});
 
 /* ================= pinyin (语文) ================= */
 // [字, 无调拼音(ü 写作 v), 声调, 图]
@@ -1646,6 +1789,250 @@ const WP = {
 };
 
 /* ================= worlds ================= */
+/* ---- 易错应用题题库 WP_TRAP（家长第五轮）：每种一个模板，数字随机，答案和题里的数都在 M（10 / 20）以内。
+   讲解三步，最后一步用 ⚠️ 指出孩子常犯的错（别忘了数自己、两头都算、超过第二名就是第二名……），用排队圆圈、线段图或圆点。 ---- */
+const nRow = (n, f) => [...Array(Math.max(0,n))].map((_,i)=>f(i));
+const qp = (list, lead) => ppl(list, lead==null ? "前→" : lead);
+// 一排格子（日历 / 书页 / 台阶），从 from 到 to 写上数，lo～hi 之间涂黄
+const numRow = (from, to, lo, hi) => qp(nRow(to-from+1, i => ({c: from+i>=lo && from+i<=hi ? "m" : "", t: from+i})), "");
+const WP_TRAP = {
+  hideSlide(M){ const a = ri(2, M-4), c = ri(1, Math.min(5, M-a));
+    return {answer:a+c, traps:[a, c, a+c+1], pic:"🛝", say:"滑梯小屋挡住了"+c+"人，外面能看到"+a+"人在玩。一共有几人在玩滑梯？",
+      html:"滑梯小屋挡住了"+N(c)+"人，外面能看到"+N(a)+"人在玩。一共有几人在玩滑梯？"+picRow("🧒".repeat(Math.min(a,8))+cover("🏠 "+c+" 人"), 20),
+      steps:[{t:"外面看得见的有 <b>"+a+"</b> 人（橙色）。", v:dots([{n:a,c:"a"}])},
+             {t:"小屋里挡住的 <b>"+c+"</b> 人看不见，也在玩（蓝色）。", v:dots([{n:a,c:"a"},{n:c,c:"b"}])},
+             {t:"⚠️ 别只数看得见的！一共 = 外面的 + 挡住的：<b>"+a+" + "+c+" = ?</b>", v:dots([{n:a,c:"a"},{n:c,c:"b"}])}]}; },
+  hideBox(M){ const t = ri(6, M), a = ri(2, t-2), c = t-a;
+    return {answer:c, traps:[t+a, t, a], pic:"🍬", say:"盒子里和桌上一共有"+t+"颗糖，桌上有"+a+"颗。盒子里有几颗？",
+      html:"盒子里和桌上一共有"+N(t)+"颗糖，桌上有"+N(a)+"颗。盒子里有几颗？"+picRow("🍬".repeat(a)+cover("?"), 20),
+      steps:[{t:"一共有 <b>"+t+"</b> 颗，盒子里的也算在里面（虚线圈）。", v:dots([{n:a,c:"a"},{n:c,c:"e"}])},
+             {t:"桌上看得见的是 <b>"+a+"</b> 颗。", v:dots([{n:a,c:"a"},{n:c,c:"e"}])},
+             {t:"⚠️ 求一部分要用减法，别看到「一共」就加：<b>"+t+" − "+a+" = ?</b>", v:dots([{n:a,c:"x"},{n:c,c:"e"}])}]}; },
+  qTotal(M, A){ const f = ri(1, Math.min(8, M-3)), b = ri(1, Math.min(8, M-1-f)), me = A.slice(-1);
+    const row = hl => nRow(f, ()=>({c:"f"})).concat([{c:"me"+(hl?" hl":""), t:me}], nRow(b, ()=>({c:"b"})));
+    return {answer:f+b+1, traps:[f+b, f+b+2, f], pic:"🧍", say:"做操排队，"+A+"的前面有"+f+"人，后面有"+b+"人。这一队一共有几人？",
+      steps:[{t:A+" 前面有 <b>"+f+"</b> 人（蓝色）。", v:qp(nRow(f, ()=>({c:"f"})).concat([{c:"me",t:me}]))},
+             {t:A+" 后面有 <b>"+b+"</b> 人（绿色）。", v:qp(row(false))},
+             {t:"⚠️ 别忘了数"+A+"自己！一共：<b>"+f+" + 1 + "+b+" = ?</b>", v:qp(row(true))}]}; },
+  qRowLR(M, A){ const l = ri(1, Math.min(8, M-3)), r = ri(1, Math.min(8, M-1-l)), me = A.slice(-1);
+    const row = hl => nRow(l, ()=>({c:"f"})).concat([{c:"me"+(hl?" hl":""), t:me}], nRow(r, ()=>({c:"b"})));
+    return {answer:l+r+1, traps:[l+r, l+r+2, r], pic:"📸", say:"小朋友站成一横排拍照。"+A+"的左边有"+l+"人，右边有"+r+"人。一共有几人？",
+      steps:[{t:"左边 <b>"+l+"</b> 人，右边 <b>"+r+"</b> 人，"+A+" 站在中间。", v:qp(row(false), "左")},
+             {t:"左边的加右边的，还没有数到"+A+"。", v:qp(row(false), "左")},
+             {t:"⚠️ "+A+"自己也要拍照！<b>"+l+" + "+r+" + 1 = ?</b>", v:qp(row(true), "左")}]}; },
+  qPosFront(M, A){ const p = ri(3, Math.min(12, M)), me = A.slice(-1);
+    const row = hl => nRow(p, i => i===p-1 ? {c:"me", t:me} : {c: hl ? "f" : "", t:i+1});
+    return {answer:p-1, traps:[p, p+1, p-2], pic:"🧍", say:"排队买票，"+A+"排第"+p+"个。"+A+"的前面有几人？",
+      steps:[{t:"从前往后数，数到 "+A+" 是第 <b>"+p+"</b> 个。", v:qp(row(false))},
+             {t:"第 "+p+" 个是"+A+"自己，前面的人涂成蓝色。", v:qp(row(true))},
+             {t:"⚠️ 第几个里包括"+A+"自己，前面的人要去掉自己：<b>"+p+" − 1 = ?</b>", v:qp(row(true))}]}; },
+  qPosBehind(M, A){ const t = ri(6, Math.min(15, M)), p = ri(2, t-1), me = A.slice(-1);
+    const row = hl => nRow(t, i => i===p-1 ? {c:"me", t:me} : i>p-1 && hl ? {c:"b"} : {c:"", t:i<p-1 ? i+1 : ""});
+    return {answer:t-p, traps:[t-p+1, t-p-1, t+p], pic:"🧍", say:"一队有"+t+"人，"+A+"从前往后数排第"+p+"个。"+A+"的后面有几人？",
+      steps:[{t:"一共 <b>"+t+"</b> 人，"+A+" 是第 <b>"+p+"</b> 个。", v:qp(row(false))},
+             {t:"从第 1 个到"+A+"一共 "+p+" 人，剩下的在后面（绿色）。", v:qp(row(true))},
+             {t:"⚠️ "+A+"自己不在后面：后面的 = <b>"+t+" − "+p+" = ?</b>", v:qp(row(true))}]}; },
+  qBothEnds(M, A){ const p = ri(2, Math.min(9, M-2)), q = ri(2, Math.min(9, M+1-p)), tot = p+q-1, me = A.slice(-1);
+    const row = m => nRow(tot, i => i===p-1 ? {c:"me"+(m===3?" hl":""), t:me} : m===1 && i<p ? {c:"f", t:i+1} : m===2 && i>p-1 ? {c:"b", t:tot-i} : {c:""});
+    return {answer:tot, traps:[p+q, p+q+1, tot-1], pic:"🧍", say:"排队时，从前往后数"+A+"排第"+p+"，从后往前数"+A+"排第"+q+"。这一队一共有几人？",
+      steps:[{t:"从前往后数到"+A+"：第 <b>"+p+"</b> 个（包括"+A+"）。", v:qp(row(1))},
+             {t:"从后往前数到"+A+"：第 <b>"+q+"</b> 个（也包括"+A+"）。", v:qp(row(2))},
+             {t:"⚠️ "+A+"被数了两次，要减掉一次：<b>"+p+" + "+q+" − 1 = ?</b>", v:qp(row(3))}]}; },
+  qBetween(M, A, B){ const p = ri(1, Math.min(8, M-4)), q = ri(p+3, Math.min(M, p+10)), mid = q-p-1;
+    const row = hl => nRow(q, i => i===p-1 ? {c:"me", t:A.slice(-1)} : i===q-1 ? {c:"me", t:B.slice(-1)} : hl && i>p-1 ? {c:"m", t:i+1} : {c:"", t:i+1});
+    return {answer:mid, traps:[q-p, q-p+1, q], pic:"🧍", say:"从前往后数，"+A+"排第"+p+"，"+B+"排第"+q+"。"+A+"和"+B+"中间有几人？",
+      steps:[{t:"画出来：第 "+p+" 个是"+A+"，第 "+q+" 个是"+B+"。", v:qp(row(false))},
+             {t:"中间的人（黄色）不算"+A+"，也不算"+B+"。", v:qp(row(true))},
+             {t:"⚠️ 不是 "+q+" − "+p+"，两个人都不能算进去：<b>"+q+" − "+p+" − 1 = ?</b>", v:qp(row(true))}]}; },
+  qLeave(M, A){ const p = ri(5, Math.min(14, M)), k = ri(2, p-2), me = A.slice(-1);
+    const row = gone => nRow(p, i => i===p-1 ? {c:"me", t:me} : gone && i<k ? {c:"x"} : {c:"", t: gone ? "" : i+1});
+    return {answer:p-k, traps:[p, p+k, p-k-1], pic:"🧍", say:A+"排队排第"+p+"个，前面有"+k+"人走了。"+A+"现在排第几个？",
+      steps:[{t:A+" 原来排第 <b>"+p+"</b> 个。", v:qp(row(false))},
+             {t:"前面走了 <b>"+k+"</b> 人（虚线圈），"+A+"往前挪 "+k+" 个位置。", v:qp(row(true))},
+             {t:"⚠️ 走的是前面的人，"+A+"的位置变小了：<b>"+p+" − "+k+" = ?</b>", v:qp(row(true))}]}; },
+  qComeBehind(M, A){ const p = ri(3, Math.min(10, M-3)), k = ri(2, Math.min(6, M-p)), me = A.slice(-1);
+    const row = n => nRow(p+n, i => i===p-1 ? {c:"me", t:me} : i>=p ? {c:"b"} : {c:"", t:i+1});
+    return {answer:p, traps:[p+k, p+1, p-1], pic:"🧍", say:A+"排队排第"+p+"个，后面又来了"+k+"人。"+A+"现在排第几个？",
+      steps:[{t:A+" 排第 <b>"+p+"</b> 个。", v:qp(row(0))},
+             {t:"后面来了 <b>"+k+"</b> 人（绿色），排在"+A+"的后面。", v:qp(row(k))},
+             {t:"⚠️ 后面来人，"+A+"前面的人没有变！从前往后数到"+A+"，还是第几个？", v:qp(row(k))}]}; },
+  qOvertake(M, A){ const n = ri(2, Math.min(6, M)), me = A.slice(-1);
+    const before = nRow(n+1, i => i===n ? {c:"me", t:me} : {c: i===n-1 ? "m" : "", t:i+1});
+    const after = nRow(n+1, i => i===n-1 ? {c:"me hl", t:me} : i===n ? {c:"m", t:""} : {c:"", t:i+1});
+    return {answer:n, traps:[n-1, n+1, 1], pic:"🏃", say:"跑步比赛，"+A+"超过了第"+n+"名。"+A+"现在是第几名？",
+      steps:[{t:"跑在前面的写着名次。"+A+"在第 "+n+" 名（黄色）的后面。", v:qp(before, "终点←")},
+             {t:A+" 超过了他，站到了他的位置，他退到"+A+"后面。", v:qp(after, "终点←")},
+             {t:"⚠️ 超过第 "+n+" 名，不是变成第 "+(n-1)+" 名！"+A+"前面还有几个人？再加上"+A+"自己。", v:qp(after, "终点←")}]}; },
+  qOvertaken(M, A){ const p = ri(1, Math.min(6, M-4)), k = ri(1, Math.min(4, M-p)), me = A.slice(-1);
+    const row = n => nRow(p+n, i => i===p-1+n ? {c:"me", t:me} : i>=p-1 && n ? {c:"f"} : {c:"", t:i+1});
+    return {answer:p+k, traps:[Math.abs(p-k), p, p+k+1], pic:"🏃", say:"跑步比赛，"+A+"原来跑第"+p+"名，后来被"+k+"人超过了。"+A+"现在第几名？",
+      steps:[{t:A+" 原来是第 <b>"+p+"</b> 名。", v:qp(row(0), "终点←")},
+             {t:"被 <b>"+k+"</b> 人超过：他们跑到了"+A+"前面（蓝色）。", v:qp(row(k), "终点←")},
+             {t:"⚠️ 被超过，名次往后退，数变大：<b>"+p+" + "+k+" = ?</b>", v:qp(row(k), "终点←")}]}; },
+  qFromBack(M, A){ const t = ri(5, Math.min(15, M)), p = ri(2, t-1), q = t-p+1, me = A.slice(-1);
+    const row = m => nRow(t, i => i===p-1 ? {c:"me"+(m===2?" hl":""), t:me} : m===2 && i>p-1 ? {c:"b", t:t-i} : {c:"", t: m ? "" : i+1});
+    return {answer:q, traps:[t-p, q+1, t+p], pic:"🧍", say:"一队有"+t+"人，"+A+"从前往后数排第"+p+"。从后往前数，"+A+"排第几？",
+      steps:[{t:"一共 <b>"+t+"</b> 人，从前往后数"+A+"是第 <b>"+p+"</b> 个。", v:qp(row(0))},
+             {t:A+" 后面有 "+t+" − "+p+" 人。", v:qp(row(1))},
+             {t:"⚠️ 从后往前数要数到"+A+"自己：后面的人数再加 1，<b>"+t+" − "+p+" + 1 = ?</b>", v:qp(row(2))}]}; },
+  qCountBefore(M, A){ const f = ri(2, Math.min(12, M-1)), me = A.slice(-1);
+    const row = hl => nRow(f, i => ({c:"f", t:hl ? i+1 : ""})).concat([{c:"me"+(hl?" hl":""), t:me}]);
+    return {answer:f+1, traps:[f, f+2, f-1], pic:"🧍", say:"排队打饭，"+A+"的前面有"+f+"人。"+A+"排第几个？",
+      steps:[{t:A+" 前面有 <b>"+f+"</b> 人（蓝色）。", v:qp(row(false))},
+             {t:"从第一个开始数，一个一个往后数到"+A+"。", v:qp(row(true))},
+             {t:"⚠️「几个人」和「第几个」不一样：前面 "+f+" 人，"+A+"是下一个，<b>"+f+" + 1 = ?</b>", v:qp(row(true))}]}; },
+  qCountAfter(M, A){ const t = ri(5, Math.min(15, M)), b = ri(1, t-2), me = A.slice(-1), p = t-b;
+    const row = hl => nRow(t, i => i===p-1 ? {c:"me"+(hl?" hl":""), t:me} : i>p-1 ? {c:"b"} : {c:"", t: hl ? i+1 : ""});
+    return {answer:p, traps:[p-1, p+1, t+b], pic:"🧍", say:"一队有"+t+"人，"+A+"的后面有"+b+"人。"+A+"从前往后数排第几个？",
+      steps:[{t:"一共 <b>"+t+"</b> 人，"+A+" 后面有 <b>"+b+"</b> 人（绿色）。", v:qp(row(false))},
+             {t:"去掉后面的人，剩下的从第一个一直到"+A+"。", v:qp(row(true))},
+             {t:"⚠️ 剩下的人里包括"+A+"自己，正好数到"+A+"：<b>"+t+" − "+b+" = ?</b>", v:qp(row(true))}]}; },
+  busUpDown(M){ const a = ri(5, M-2), b = ri(1, a-2), c = ri(1, Math.min(8, M-(a-b))), m = a-b;
+    return {answer:m+c, traps:[Math.abs(m-c), a+b+c, m], pic:"🚌", say:"公交车上有"+a+"人，到站后下去"+b+"人，又上来"+c+"人。现在车上有几人？",
+      steps:[{t:"车上本来有 <b>"+a+"</b> 人，下去 <b>"+b+"</b> 人，划掉。", v:dots([{n:m,c:"a"},{n:b,c:"x"}])},
+             {t:"下车后还有 <b>"+a+" − "+b+" = "+m+"</b> 人。", v:dots([{n:m,c:"a"}])},
+             {t:"⚠️ 上来的人要加上，不是减：<b>"+m+" + "+c+" = ?</b>", v:dots([{n:m,c:"a"},{n:c,c:"b"}])}]}; },
+  busOrigin(M){ const b = ri(1, 5), c = ri(1, 5), m = ri(2, M-Math.max(b,c)), o = m+b, r = m+c;
+    if(m===o || r===o) return null;
+    return {answer:o, traps:[r+b+c, r, Math.abs(r-b-c), r-c], pic:"🚌", say:"公交车到站，下去"+b+"人，又上来"+c+"人，现在车上有"+r+"人。车上原来有几人？",
+      steps:[{t:"从后往前想：现在有 <b>"+r+"</b> 人，刚上来的 "+c+" 人原来不在车上。", v:dots([{n:m,c:"a"},{n:c,c:"b"}])},
+             {t:"去掉刚上来的："+r+" − "+c+" = <b>"+m+"</b> 人。", v:dots([{n:m,c:"a"}])},
+             {t:"⚠️ 下去的 "+b+" 人原来在车上，要加回来：<b>"+m+" + "+b+" = ?</b>", v:dots([{n:m,c:"a"},{n:b,c:"e"}])}]}; },
+  busSame(M){ const a = ri(4, M-3), k = ri(2, Math.min(6, a-1));
+    return {answer:a, traps:[a+k, a-k, a+k+k], pic:"🚌", say:"公交车上有"+a+"人，到站下去"+k+"人，又上来"+k+"人。现在车上有几人？",
+      steps:[{t:"车上有 <b>"+a+"</b> 人，下去 "+k+" 人。", v:dots([{n:a-k,c:"a"},{n:k,c:"x"}])},
+             {t:"又上来 <b>"+k+"</b> 人，正好补上空出来的位置。", v:dots([{n:a-k,c:"a"},{n:k,c:"b"}])},
+             {t:"⚠️ 下去几人又上来几人，人数没变！别急着加或减，和原来比一比。", v:dots([{n:a-k,c:"a"},{n:k,c:"b"}])}]}; },
+  stairsFloors(M){ const n = ri(3, Math.min(10, M));
+    const v = hl => numRow(1, n, hl ? 2 : 0, hl ? n : 0);
+    return {answer:n-1, traps:[n, n+1, n-2], pic:"🪜", say:"从1楼走到"+n+"楼，每两层楼之间有一层楼梯。一共要走几层楼梯？",
+      steps:[{t:"画出 1 楼到 "+n+" 楼。", v:v(false)},
+             {t:"1 楼是起点，不用走楼梯。每往上一层走一层楼梯（黄色）。", v:v(true)},
+             {t:"⚠️ 不是 "+n+" 层！楼梯比楼层少 1：<b>"+n+" − 1 = ?</b>", v:v(true)}]}; },
+  floorsAB(M){ const a = ri(2, 6), b = ri(a+2, Math.min(a+8, Math.max(a+2, M-2)));
+    const v = hl => numRow(a, b, hl ? a+1 : 0, hl ? b : 0);
+    return {answer:b-a, traps:[b-a+1, b+a, b-a-1], pic:"🪜", say:"小明从"+a+"楼走到"+b+"楼，要走几层楼梯？",
+      steps:[{t:"画出 "+a+" 楼到 "+b+" 楼。", v:v(false)},
+             {t:"站在 "+a+" 楼出发，往上走一层就是一层楼梯（黄色）。", v:v(true)},
+             {t:"⚠️ "+a+" 楼不用走，别把它数进去：<b>"+b+" − "+a+" = ?</b>", v:v(true)}]}; },
+  stepsLeft(M, A){ const t = ri(8, M), a = ri(2, t-2);
+    return {answer:t-a, traps:[t-a+1, t-a-1, t+a], pic:"🪜", say:"一段楼梯一共有"+t+"级台阶，"+A+"站在第"+a+"级上。再走几级就到最上面？",
+      steps:[{t:"一共 <b>"+t+"</b> 级，画一条线段。", v:bars([{l:"台阶",segs:[{v:t,c:"g"}]}],t)},
+             {t:A+" 站在第 "+a+" 级，前 <b>"+a+"</b> 级已经走完了（橙色）。", v:bars([{l:"台阶",segs:[{v:a},{v:t-a,c:"q",t:"?"}]}],t)},
+             {t:"⚠️ 站着的那一级也走完了，不用再走：<b>"+t+" − "+a+" = ?</b>", v:bars([{l:"台阶",segs:[{v:a,c:"x"},{v:t-a,c:"q hl",t:"?"}]}],t)}]}; },
+  treesGaps(M){ const n = ri(3, Math.min(10, M));
+    const v = hl => '<div class="xrow">'+nRow(n, i => "🌳"+(i<n-1 ? '<span class="eq" style="'+(hl?"color:#dc2626":"")+'">'+(hl?"🌸":"—")+'</span>' : "")).join("")+'</div>';
+    return {answer:n-1, traps:[n, n+1, n-2], pic:"🌳", say:"路边从头到尾种了"+n+"棵树，每两棵树中间放1盆花。一共要放几盆花？",
+      steps:[{t:"画出 <b>"+n+"</b> 棵树。", v:v(false)},
+             {t:"花放在两棵树<b>中间</b>，最前面和最后面不放。", v:v(true)},
+             {t:"⚠️ 两头都是树，空儿比树少 1：<b>"+n+" − 1 = ?</b>", v:v(true)}]}; },
+  treesSegs(M){ const k = ri(2, Math.min(9, M-1));
+    const v = hl => '<div class="xrow">'+nRow(k+1, i => (hl?"🌳":"🌱")+(i<k ? '<span class="eq">—</span>' : "")).join("")+'</div>';
+    return {answer:k+1, traps:[k, k-1, k+2], pic:"🌳", say:"一条小路分成"+k+"段，每段的两头都种一棵树，路的两头也要种。一共种几棵树？",
+      steps:[{t:"画出 <b>"+k+"</b> 段路（—）。", v:v(false)},
+             {t:"每段路的两头都有树，路的头和尾也有。", v:v(true)},
+             {t:"⚠️ 两头都种，树比段数多 1：<b>"+k+" + 1 = ?</b>", v:v(true)}]}; },
+  sawCuts(M){ const n = ri(2, Math.min(9, M));
+    const v = cut => '<div class="log">'+nRow(n, i => '<span class="wood"></span>'+(i<n-1 ? '<i class="cut"'+(cut?'':' style="color:transparent"')+'>✂</i>' : "")).join("")+'</div>';
+    return {answer:n-1, traps:[n, n+1, n-2], pic:"🪵", say:"一根木头要锯成"+n+"段，一共要锯几次？",
+      steps:[{t:"画一根木头，分成 <b>"+n+"</b> 段。", v:v(false)},
+             {t:"锯口（✂）只在两段<b>中间</b>，头和尾不用锯。", v:v(true)},
+             {t:"⚠️ 锯的次数比段数少 1：<b>"+n+" − 1 = ?</b>", v:v(true)}]}; },
+  sawPieces(M){ const k = ri(1, Math.min(8, M-1)), n = k+1;
+    const v = cut => '<div class="log">'+nRow(n, i => '<span class="wood"></span>'+(i<n-1 ? '<i class="cut"'+(cut?'':' style="color:transparent"')+'>✂</i>' : "")).join("")+'</div>';
+    return {answer:n, traps:[k, k-1, k+2], pic:"🪵", say:"一根木头锯了"+k+"次，变成了几段？",
+      steps:[{t:"锯了 <b>"+k+"</b> 次，就有 "+k+" 个锯口（✂）。", v:v(true)},
+             {t:"每个锯口把木头多分出一段。", v:v(true)},
+             {t:"⚠️ 段数比锯的次数多 1：<b>"+k+" + 1 = ?</b>", v:v(true)}]}; },
+  chocolate(M){ const n = ri(3, Math.min(10, M));
+    const v = cut => '<div class="log">'+nRow(n, i => '<span class="wood" style="background:#8b5a2b;width:30px"></span>'+(i<n-1 ? '<i class="cut"'+(cut?'':' style="color:transparent"')+'>✂</i>' : "")).join("")+'</div>';
+    return {answer:n-1, traps:[n, n+1, n-2], pic:"🍫", say:"一排巧克力有"+n+"小块连在一起，要一块一块全部掰开，一共要掰几次？",
+      steps:[{t:"画出 <b>"+n+"</b> 小块巧克力。", v:v(false)},
+             {t:"每掰一次，在两块<b>中间</b>分开一处。", v:v(true)},
+             {t:"⚠️ 最后一块不用掰：次数比块数少 1，<b>"+n+" − 1 = ?</b>", v:v(true)}]}; },
+  pages(M, A){ const a = ri(1, Math.max(1, M-12)), b = ri(a+2, Math.min(M, a+10));
+    return {answer:b-a+1, traps:[b-a, b-a+2, a+b], pic:"📖", say:A+"看书，从第"+a+"页看到第"+b+"页。一共看了几页？",
+      steps:[{t:"把看过的页写出来：从第 "+a+" 页到第 "+b+" 页。", v:numRow(a, b, 0, 0)},
+             {t:"第 "+a+" 页和第 "+b+" 页<b>都</b>看了（黄色）。", v:numRow(a, b, a, b)},
+             {t:"⚠️ 两头都要算，不是 "+b+" − "+a+"：<b>"+b+" − "+a+" + 1 = ?</b>", v:numRow(a, b, a, b)}]}; },
+  days(M){ const a = ri(1, Math.max(1, M-10)), b = ri(a+2, Math.min(M, a+9));
+    return {answer:b-a+1, traps:[b-a, b-a+2, a+b], pic:"📅", say:"运动会从"+a+"号开到"+b+"号，一共开了几天？",
+      steps:[{t:"在日历上找到 "+a+" 号到 "+b+" 号。", v:numRow(a, b, 0, 0)},
+             {t:a+" 号和 "+b+" 号这两天<b>都</b>在开（黄色）。", v:numRow(a, b, a, b)},
+             {t:"⚠️ 头一天也要算上：<b>"+b+" − "+a+" + 1 = ?</b>", v:numRow(a, b, a, b)}]}; },
+  handOut(M){ const p = ri(2, Math.max(2, M-10)), q = ri(p+2, Math.min(M, p+9));
+    return {answer:q-p+1, traps:[q-p, q-p+2, q], pic:"📚", say:"老师给排队的小朋友发书，从第"+p+"个一直发到第"+q+"个，一共发给了几人？",
+      steps:[{t:"写出从第 "+p+" 个到第 "+q+" 个。", v:numRow(p, q, 0, 0)},
+             {t:"第 "+p+" 个和第 "+q+" 个<b>都</b>拿到了（黄色）。", v:numRow(p, q, p, q)},
+             {t:"⚠️ 两头的人都要算：<b>"+q+" − "+p+" + 1 = ?</b>", v:numRow(p, q, p, q)}]}; },
+  nextPage(M, A){ const n = ri(3, M-1);
+    return {answer:n+1, traps:[n, n+2, n-1], pic:"📖", say:A+"看书，今天看到第"+n+"页，这一页也看完了。明天从第几页看起？",
+      steps:[{t:"今天看到第 <b>"+n+"</b> 页（黄色）。", v:numRow(Math.max(1,n-3), n+1, n, n)},
+             {t:"第 "+n+" 页已经看完了，明天不用再看它。", v:numRow(Math.max(1,n-3), n+1, n, n)},
+             {t:"⚠️ 明天从下一页开始：<b>"+n+" + 1 = ?</b>", v:numRow(Math.max(1,n-3), n+1, n, n)}]}; },
+  ageSame(M){ const [big,small] = pick([["哥哥","弟弟"],["姐姐","妹妹"]]), d = ri(2, 6), k = ri(2, 5), b = 3;
+    const later = [{l:big,segs:[{v:b,t:""},{v:d,c:"d hl",t:d},{v:k,c:"c",t:"+"+k}]},{l:small,segs:[{v:b,c:"b",t:""},{v:k,c:"c",t:"+"+k}]}];
+    return {answer:d, traps:[d+k, k, d+k+k], pic:"🎂", say:big+"比"+small+"大"+d+"岁。"+k+"年以后，"+big+"比"+small+"大几岁？",
+      steps:[{t:"今年"+big+"比"+small+"大 <b>"+d+"</b> 岁：上面那条多出一段。", v:bars([{l:big,segs:[{v:b,t:""},{v:d,c:"d",t:d}]},{l:small,segs:[{v:b,c:"b",t:""}]}], b+d+k)},
+             {t:"过了 <b>"+k+"</b> 年，两个人<b>都</b>长了 "+k+" 岁（绿色）。", v:bars(later, b+d+k)},
+             {t:"⚠️ 两个人一起长大，相差的那段一点都没变！不用加 "+k+"。", v:bars(later, b+d+k)}]}; },
+  moreTrap(M, A, B){ const a = ri(5, M), d = ri(2, Math.min(6, a-2)), b = a-d;
+    return {answer:b, traps:[a+d, a, d], pic:"🍬", say:A+"有"+a+"颗糖，比"+B+"多"+d+"颗。"+B+"有几颗？",
+      steps:[{t:"题目说"+A+"比"+B+"<b>多</b>，所以"+A+"的长，"+B+"的短。", v:bars([{l:A,segs:[{v:a}]},{l:B,segs:[{v:b,c:"q",t:"?"}]}],a)},
+             {t:A+" 多出来一段 <b>"+d+"</b>。", v:bars([{l:A,segs:[{v:b},{v:d,c:"d"}]},{l:B,segs:[{v:b,c:"q",t:"?"}]}],a)},
+             {t:"⚠️ 看到「多」别急着加！"+B+"少，要减：<b>"+a+" − "+d+" = ?</b>", v:bars([{l:A,segs:[{v:b},{v:d,c:"x"}]},{l:B,segs:[{v:b,c:"q hl",t:"?"}]}],a)}]}; },
+  lessTrap(M, A, B){ const a = ri(2, M-3), d = ri(2, Math.min(6, M-a)), b = a+d;
+    return {answer:b, traps:[Math.abs(a-d), a, d], pic:"🍬", say:A+"有"+a+"颗糖，比"+B+"少"+d+"颗。"+B+"有几颗？",
+      steps:[{t:"题目说"+A+"比"+B+"<b>少</b>，所以"+A+"的短，"+B+"的长。", v:bars([{l:A,segs:[{v:a}]},{l:B,segs:[{v:b,c:"q",t:"?"}]}],b)},
+             {t:B+" 比 "+A+" 多出一段 <b>"+d+"</b>。", v:bars([{l:A,segs:[{v:a}]},{l:B,segs:[{v:a,c:"b",t:""},{v:d,c:"d"}]}],b)},
+             {t:"⚠️ 看到「少」别急着减！"+B+"多，要加：<b>"+a+" + "+d+" = ?</b>", v:bars([{l:A,segs:[{v:a}]},{l:B,segs:[{v:a,c:"b",t:""},{v:d,c:"d hl"}],brace:{from:0,len:b,t:"?"}}],b)}]}; },
+  giveEqual(M, A, B){ const x = ri(1, 4), b = ri(2, Math.max(2, Math.min(8, M-2*x))), a = b+2*x;
+    return {answer:x, traps:[2*x, a, x+1], pic:"🍬", say:A+"有"+a+"颗糖，"+B+"有"+b+"颗。"+A+"给"+B+"几颗，两人的糖就一样多？",
+      steps:[{t:A+" 比 "+B+" 多 <b>"+a+" − "+b+" = "+(2*x)+"</b> 颗（黄色）。", v:bars([{l:A,segs:[{v:b},{v:2*x,c:"d"}]},{l:B,segs:[{v:b,c:"b"}]}],a)},
+             {t:"给出去的那几颗，"+A+"少了，"+B+"多了：多出来的一段要<b>分成同样多的两半</b>。", v:bars([{l:A,segs:[{v:b},{v:x,c:"d",t:"?"},{v:x,c:"d",t:"?"}]},{l:B,segs:[{v:b,c:"b"}]}],a)},
+             {t:"⚠️ 别把多出来的 "+(2*x)+" 颗全给！一半给"+B+"：几加几等于 "+(2*x)+"，两个数一样？", v:bars([{l:A,segs:[{v:b},{v:x,c:"d",t:"?"}]},{l:B,segs:[{v:b,c:"b"},{v:x,c:"d hl",t:"?"}]}],a)}]}; },
+  hideSeek(M){ const t = ri(5, Math.min(12, M)), a = ri(1, t-3), r = t-1-a;
+    const row = hl => [{c:"me", t:"找"}].concat(nRow(a, ()=>({c:"b", t:"✓"})), nRow(r, ()=>({c: hl ? "m" : "", t:"?"})));
+    return {answer:r, traps:[t-a, r+1, a], pic:"🙈", say:t+"个小朋友玩捉迷藏，1人来找，已经找到了"+a+"人。还有几人没找到？",
+      steps:[{t:"一共 <b>"+t+"</b> 人，其中 1 人是来找的（橙色）。", v:qp(row(false), "")},
+             {t:"已经找到 <b>"+a+"</b> 人（绿色打勾）。", v:qp(row(false), "")},
+             {t:"⚠️ 来找的人不用被找！<b>"+t+" − 1 − "+a+" = ?</b>", v:qp(row(true), "")}]}; },
+  roomSame(M){ const a = ri(4, M-3), k = ri(2, Math.min(6, a-1));
+    return {answer:a, traps:[a+k, a-k, a+k+k], pic:"🏫", say:"教室里有"+a+"个小朋友，走出去"+k+"个，又走进来"+k+"个。现在教室里有几个小朋友？",
+      steps:[{t:"教室里有 <b>"+a+"</b> 个，走出去 "+k+" 个。", v:dots([{n:a-k,c:"a"},{n:k,c:"x"}])},
+             {t:"又进来 <b>"+k+"</b> 个，补上了。", v:dots([{n:a-k,c:"a"},{n:k,c:"b"}])},
+             {t:"⚠️ 出去几个又进来几个，人数没变！比一比原来有几个。", v:dots([{n:a-k,c:"a"},{n:k,c:"b"}])}]}; },
+  ribbon(M){ const k = ri(1, Math.min(8, M-1)), n = k+1;
+    const v = cut => '<div class="log">'+nRow(n, i => '<span class="wood" style="background:#f9a8d4;border-color:#be185d;height:12px"></span>'+(i<n-1 ? '<i class="cut"'+(cut?'':' style="color:transparent"')+'>✂</i>' : "")).join("")+'</div>';
+    return {answer:n, traps:[k, k-1, k+2], pic:"🎀", say:"一根彩带，剪了"+k+"刀，剪成了几段？",
+      steps:[{t:"剪了 <b>"+k+"</b> 刀，就有 "+k+" 个剪口（✂）。", v:v(true)},
+             {t:"数一数剪口两边分开的小段。", v:v(true)},
+             {t:"⚠️ 段数比刀数多 1：<b>"+k+" + 1 = ?</b>", v:v(true)}]}; },
+  flagsBoth(M){ const n = ri(3, Math.min(10, M));
+    const v = hl => '<div class="xrow">'+nRow(n, i => "🚩"+(i<n-1 ? '<span class="eq" style="'+(hl?"color:#dc2626":"")+'">—</span>' : "")).join("")+'</div>';
+    return {answer:n-1, traps:[n, n+1, n-2], pic:"🚩", say:"跑道上从起点到终点插了"+n+"面小旗，两头都插了。小旗把跑道分成了几段？",
+      steps:[{t:"画出 <b>"+n+"</b> 面小旗，起点和终点都有。", v:v(false)},
+             {t:"每两面小旗<b>中间</b>是一段（红色的线）。", v:v(true)},
+             {t:"⚠️ 两头都是小旗，段数比小旗少 1：<b>"+n+" − 1 = ?</b>", v:v(true)}]}; },
+  qInsert(M, A){ const p = ri(4, Math.min(12, M-2)), k = ri(1, Math.min(3, M-p)), me = A.slice(-1);
+    const row = n => nRow(p+n, i => i===p-1+n ? {c:"me", t:me} : n && i>=1 && i<=n ? {c:"f", t:"新"} : {c:"", t: n ? "" : i+1});
+    return {answer:p+k, traps:[p, Math.abs(p-k), p+k+1], pic:"🧍", say:A+"排队排第"+p+"个，有"+k+"人插到了"+A+"前面。"+A+"现在排第几个？",
+      steps:[{t:A+" 原来是第 <b>"+p+"</b> 个。", v:qp(row(0))},
+             {t:"<b>"+k+"</b> 人插到了前面（蓝色），"+A+"往后退。", v:qp(row(k))},
+             {t:"⚠️ 前面的人变多了，"+A+"是第几个就变大：<b>"+p+" + "+k+" = ?</b>", v:qp(row(k))}]}; }
+};
+const WP_TRAP_KEYS = Object.keys(WP_TRAP);
+// 出一道易错应用题：k 指定模板（测试用），M = 题里的数最大是几（前两个大关 10，后面 20）
+G.trap = function(M, k){
+  M = M || 20;
+  for(let i=0; i<30; i++){
+    const key = k || pick(WP_TRAP_KEYS), [A, B] = names(2), o = WP_TRAP[key](M, A, B);
+    if(!o || !(o.answer>=0 && o.answer<=M)) continue;
+    return Object.assign(wq({key:"tp"+key+o.answer+o.say.replace(/\D+/g,"-"), pic:o.pic, answer:o.answer, traps:o.traps, speak:o.say, rec:o.say,
+      html:o.html || o.say.replace(/(\d+)/g, m=>N(m)), steps:o.steps}), {trap:key});
+  }
+  return WP.queue();
+};
 const W = WP;
 const WORLDS = [
   { id:"add", name:"加法森林", sub:"10 以内加法", bg:"linear-gradient(#c9f0b0,#6cc070)", text:"#1f3a1f",
@@ -1843,7 +2230,8 @@ const WP_NEW = [
 // 前两个世界（10 以内）用 10 以内的简单应用题（WP_SMALL 这几种可以传最大数）
 const WP_SMALL = ["joinResult","joinChange","separateStart","compareDiff","compareBigger"];
 const wpPool = w => w<2 ? WP_SMALL.filter(k=>WP[k]).map(k=>()=>WP[k](10)) : (w>=4 ? WP_MORE : WP_EASY).filter(k=>WP[k]).map(k=>()=>WP[k]())
-  .concat(WP_NEW.filter(([k,h,a,b])=>WP[k] && w>=a && (b==null || w<b)).map(([k,h])=>()=>WP[k](h)));
+  .concat(WP_NEW.filter(([k,h,a,b])=>WP[k] && w>=a && (b==null || w<b)).map(([k,h])=>()=>WP[k](h)))
+  .concat([0,1,2].map(()=>()=>G.trap(w<2 ? 10 : 20)));   // 易错应用题（第五轮）在应用题里占得多一些
 const WP_RATE = 0.15, WP_FROM = 2;   // battle 关从第 3 关起（下标 2）混进应用题
 const planFn = it => () => G[it.g](...(it.args||[]));
 /* 道具「换题」：同类型降一档（两位数 → 一位数，进位 → 不进位，填空 → 直接算，整百 → 整十 …），最低一档就还是它自己 */
@@ -1897,45 +2285,55 @@ function rotate(gen){
 function levelDef(w,l){
   const W2 = WORLDS_V2[w], lv = W2.levels[l], plan = LEVEL_PLAN[w].levels[l];
   const mode = lv.boss ? "battle" : (LEVEL_MODES[w].modes[l] || "battle");
-  const base = mix(...plan.mix.map(planFn)), inv = invRate(w,l), iv = LEVEL_PLAN[w].inv;
+  const bigQ = mix(...plan.mix.map(planFn)), inv = invRate(w,l), iv = LEVEL_PLAN[w].inv;
+  // 第 5 大关起，SMALL_P 的题出 20 以内的 small 题单（见 LEVEL_PLAN 后面的第五轮题型扩充）
+  const smallQ = plan.small && mix(...plan.small.map(planFn)), useSmall = () => !!smallQ && Math.random()<SMALL_P;
+  const base = smallQ ? () => useSmall() ? smallQ() : bigQ() : bigQ;
   // 逆向题：mix 里有连式的关，四成出连式逆向（10 + ? − 3 = 8，跟本关连式同一档），其余是两步逆向（? + 3 = 7）。
   // 连式逆向每关第一次出现时先给三步讲解（chainIntro）
   const chains = plan.mix.filter(it=>it.g==="chain3"), it2 = invTier(w,l);
   let introDone = false;
   const invQ = () => {
+    if(useSmall()) return G.inv(it2==="d1n" ? "20n" : "20", pick(INV_FORMS));   // 糖果小镇前 9 关还是不进位不退位
     if(!chains.length || Math.random()>=.4) return G.inv(it2, pick(INV_FORMS));
     const q = G.chain3((chains[0].args||[])[0] || iv.c, true);
-    if(introDone) return q;
-    introDone = true; return chainIntro(q);
+    return introDone ? q : chainIntro(q);
   };
-  const math = rotate(inv>0 ? () => Math.random()<inv ? invQ() : base() : base);
+  // 讲解题真的出给孩子（没被轮换换掉）以后才算讲过：只在最外层记
+  const mark = f => () => { const q = f(); if(q && q.intro) introDone = true; return q; };
+  const mathRaw = rotate(inv>0 ? () => Math.random()<inv ? invQ() : base() : base), math = mark(mathRaw);
   let g = math;
   if(mode==="blend") g = () => blendQ(w);
-  else if(mode==="battle" && l>=WP_FROM){ const pool = wpPool(w); g = rotate(() => Math.random()<WP_RATE ? pick(pool)() : math()); }
+  else if(mode==="battle" && l>=WP_FROM){ const pool = wpPool(w); g = mark(rotate(() => Math.random()<WP_RATE ? pick(pool)() : mathRaw())); }
   const i = gIndex(w,l);
   // 换题用：应用题换一道简单的应用题，拼音 / 拼读题换一道别的，计算题按 EASIER 降一档
-  const easyMath = mix(...plan.mix.map(it=>planFn(easierIt(it))));
-  const easy = q => q && q.kind==="word" ? (w<2 ? WP[pick(WP_SMALL)](10) : WP[pick(WP_EASY.filter(k=>WP[k]))]()) : q && q.kind==="py" ? (mode==="blend" ? blendQ(w) : pyQ(w)) : easyMath();
+  // 大数题（> 20）按本关原来的 mix 降一档；20 以内的（small 题单）按 small 降一档
+  const easyBig = mix(...plan.mix.map(it=>planFn(easierIt(it)))), easySmall = plan.small ? mix(...plan.small.map(it=>planFn(easierIt(it)))) : easyBig;
+  const isBig = q => q && (q.answer>20 || (q.parts||[]).some(x => typeof x==="number" && x>20));
+  const easyMath = q => isBig(q) ? easyBig() : easySmall();
+  const easy = q => q && q.kind==="word" ? (w<2 ? WP[pick(WP_SMALL)](10) : WP[pick(WP_EASY.filter(k=>WP[k]))]()) : q && q.kind==="py" ? (mode==="blend" ? blendQ(w) : pyQ(w)) : easyMath(q);
   return {w, l, m:lv.emoji, n:lv.name, boss:!!lv.boss, mode, g, math, easy, hp:10 + Math.floor(i/10) + (lv.boss?5:0)};
 }
 /* 算术消除用的出题器：只要"算式 = ?"这种直接算的题（不要填空题），而且至少 6 个得数各有 2 道不同算式，
    这样 makeMatchBoard 永远不会走"补 20 以上加法"的保底。先试本关 mix 里得数最多的那个，不够就用整关 mix，
    再不够用同世界 Boss 关（最宽）的 mix，最后用整个世界所有出题器。 */
 const plainQ = q => q && typeof q.answer==="number" && Array.isArray(q.parts) && q.parts[q.parts.length-1]==="?" && q.parts[q.parts.length-2]==="=";
+// 消除卡片上的数（算式里的数和得数）一律 20 以内（家长第五轮）
+const matchSmall = q => q.parts.every(x => typeof x!=="number" || x<=20) && q.answer<=20;
 function matchPoolOK(gen){
   const pool = new Map();
-  for(let i=0;i<400;i++){ const q = gen(); if(!plainQ(q)) return false; const t = q.parts.slice(0,-2).join(" "); if(!pool.has(q.answer)) pool.set(q.answer, new Set()); pool.get(q.answer).add(t); }
+  for(let i=0;i<400;i++){ const q = gen(); if(!plainQ(q) || !matchSmall(q)) return false; const t = q.parts.slice(0,-2).join(" "); if(!pool.has(q.answer)) pool.set(q.answer, new Set()); pool.get(q.answer).add(t); }
   return [...pool.values()].filter(x=>x.size>=2).length >= 6;
 }
 function matchGenFor(w,l){
   // 连式（三个数）放不进消除卡片，不用
   const two = it => it.g!=="chain3";
-  const items = LEVEL_PLAN[w].levels[l].mix.filter(two), all = LEVEL_PLAN[w].levels.flatMap(x=>x.mix).filter(two);
+  const lp = LEVEL_PLAN[w].levels[l], items = (lp.small || []).concat(lp.mix).filter(two), all = LEVEL_PLAN[w].levels.flatMap(x=>(x.small || []).concat(x.mix)).filter(two);
   const distinct = it => { const f = planFn(it), v = new Set(); for(let i=0;i<60;i++){ const q = f(); if(plainQ(q)) v.add(q.answer); } return v.size; };
   const cands = items.slice().sort((a,b)=>distinct(b)-distinct(a)).map(it=>[it])
-    .concat([items, LEVEL_PLAN[w].levels[NLV-1].mix.filter(two), all]);
+    .concat([items, LEVEL_PLAN[w].levels[NLV-1].mix.filter(two), all, SMALL_REVIEW]);
   for(const c of cands){
-    const fns = c.map(planFn).filter(f=>plainQ(f()));
+    const fns = c.map(planFn).filter(f=>{ const q = f(); return plainQ(q) && matchSmall(q); });
     if(!fns.length) continue;
     const gen = mix(...fns);
     if(matchPoolOK(gen)) return gen;
