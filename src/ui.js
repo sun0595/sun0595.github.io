@@ -13,7 +13,26 @@ const IMG = {};
   for(const k in IMG_K) IMG[k] = urls[IMG_K[k]];
 })();
 const EMO_RE = new RegExp(Object.keys(IMG).sort((a,b)=>b.length-a.length).map(k=>k.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|"), "g");
-const img = (e, cls) => IMG[e] ? '<img class="ei'+(cls?" "+cls:"")+'" src="'+IMG[e]+'" alt="">' : '<span class="ei">'+e+'</span>';
+const img3d = (e, cls) => IMG[e] ? '<img class="ei'+(cls?" "+cls:"")+'" src="'+IMG[e]+'" alt="">' : '<span class="ei">'+e+'</span>';
+/* 界面图标的原画（src/art/icon_*，糖果风）：这些 emoji 无论写在哪里（img() 或 emo() 文字里）都显示原画；
+   没有这张原画（或加载失败）就退回原来的 3D 图。📘 = 经验，🤍 = 空心（掉了的心） */
+const ICON_ART = {"❤️":"icon_heart", "🤍":"icon_heart_empty", "⏳":"icon_hourglass", "🧊":"icon_ice", "💖":"icon_potion", "🎒":"icon_bag",
+  "⚙️":"icon_settings", "🔊":"icon_sound_on", "🔇":"icon_sound_off", "🗺️":"icon_map", "⭐":"icon_star", "🔒":"icon_lock",
+  "💎":"icon_stone", "📍":"icon_pin", "📘":"icon_exp"};
+// 喇叭原画只有喇叭本体：开 = 右边 3 道弧形声波，关 = 红色粗 ×（先画深棕粗线当描边，再画彩色细线）
+const SND_SVG = {
+  on: '<svg viewBox="0 0 40 60" aria-hidden="true"><g fill="none" stroke-linecap="round">'
+    + ['M5 22 Q11 30 5 38','M12 15 Q23 30 12 45','M19 8 Q35 30 19 52'].map(d=>'<path d="'+d+'" stroke="#3A2A1E" stroke-width="10"/><path d="'+d+'" stroke="#ffcf3a" stroke-width="4.5"/>').join("")+'</g></svg>',
+  off: '<svg viewBox="0 0 40 60" aria-hidden="true"><g fill="none" stroke-linecap="round">'
+    + ['M6 16 L34 44','M34 16 L6 44'].map(d=>'<path d="'+d+'" stroke="#3A2A1E" stroke-width="13"/>').join("")
+    + ['M6 16 L34 44','M34 16 L6 44'].map(d=>'<path d="'+d+'" stroke="#f2465e" stroke-width="7"/>').join("")+'</g></svg>'
+};
+const img = (e, cls) => {
+  const u = ICON_ART[e] && ART[ICON_ART[e]];
+  if(!u) return img3d(e, cls);
+  if(e==="🔊" || e==="🔇") return '<span class="ei snd'+(cls?" "+cls:"")+'">'+artTag(u, "art icon", img3d(e))+SND_SVG[e==="🔊"?"on":"off"]+'</span>';
+  return artTag(u, "ei art icon"+(cls?" "+cls:""), img3d(e, cls));
+};
 // swap emoji in text (never inside tags/attributes) for the 3D icons
 const emo = html => String(html).split(/(<[^>]*>)/).map(p => p[0]==="<" ? p : p.replace(EMO_RE, m=>img(m))).join("");
 const cleanSpeech = t => String(t).replace(EMO_RE, "");
@@ -78,6 +97,8 @@ const restart = (el, cls) => { el.classList.remove(cls); void el.offsetWidth; el
 const shake = cls => { const bt = $("battle"); bt.classList.remove("quake","quakeS"); void bt.offsetWidth; bt.classList.add(cls||"quake"); };
 const play = (el, cls) => { el.className = "sprite"; void el.offsetWidth; el.classList.add(cls); };
 const chev = r => '<span class="chev'+(r?" r":"")+'"></span>';
+// 返回：原画箭头（icon_back），没有就用画出来的箭头
+const backIcon = () => art("icon_back") ? artTag(art("icon_back"), "ei art icon", chev()) : chev();
 const starImg = (on, tier) => '<span class="'+(on?"":"off")+'"'+(on && tier && TIERS[tier].f ? ' style="filter:'+TIERS[tier].f+'"' : '')+'>'+img("⭐")+'</span>';
 sfx.freeze = ()=>{ tone([1800,2400,3000],.05,"sine",.08); noise(.35,.25,7000); };
 sfx.shatter = ()=>{ noise(.4,.5,5000); tone([2600,1900,1300],.05,"triangle",.07); };
@@ -105,14 +126,15 @@ function nodePos(l){
   const r = Math.floor(l/3), k = l%3, xs = [24,50,76];
   return [r%2 ? xs[2-k] : xs[k], MAP_PAD_B + r*MAP_ROW + k*14];
 }
-/* A world with map art (map_<世界id>) gets a taller band (ART_BAND_H) filled with the picture (cover, centred); its
-   levels follow the road painted in the picture: ART_ROADS[id] is that road from the bottom up, in picture fractions
-   (x, y from the top). The bottom of the road (behind the world sign) is skipped, levels 1–14 are spread evenly along
-   the rest (none covering its neighbour, see nodeClear) and the Boss stands at the road's end. No road listed → the usual rows of three. */
-const ART_BAND_H = 1250, ART_SIGN = 150;
+/* A world with map art (map_<世界id>) gets a band filled with the picture (cover, centred); its levels follow the road
+   painted in the picture: ART_ROADS[id] is that road from the bottom up, in picture fractions (x, y from the top).
+   The bottom of the road (behind the world sign) is skipped, the 15 monsters stand on the rest, evenly spaced, the Boss at
+   the road's end. Every band is only as tall as its road needs for MAP_GAP px between monsters (between ART_H_MIN and
+   ART_H_MAX), so all worlds are equally dense. No road listed → the usual rows of three. */
+const ART_H_MIN = 860, ART_H_MAX = 1600, ART_SIGN = 150, MAP_GAP = 10;
 const ART_ROADS = {
-  add: [[0.38,1.0],[0.52,0.86],[0.62,0.77],[0.52,0.70],[0.36,0.655],[0.30,0.61],[0.39,0.567],[0.56,0.53],[0.70,0.47],[0.67,0.42],[0.55,0.378],[0.45,0.342],[0.43,0.305],[0.52,0.265]],
-  // 雪山：小路从左下起，S 形绕上山（经过冰晶小岛左边），顶端弯钩处是 Boss；x 收在 0.30–0.70 以内，窄屏裁边后节点也不出界
+  // 森林：按原画里沙土小路的像素中线量出来（每只怪兽都站在路上），S 形绕两个弯，Boss 在山洞口
+  add: [[0.373,0.99],[0.398,0.94],[0.463,0.915],[0.542,0.89],[0.602,0.865],[0.631,0.84],[0.636,0.815],[0.617,0.79],[0.565,0.765],[0.476,0.74],[0.379,0.715],[0.321,0.69],[0.31,0.665],[0.33,0.64],[0.379,0.615],[0.454,0.59],[0.546,0.565],[0.62,0.54],[0.662,0.515],[0.672,0.49],[0.653,0.465],[0.592,0.44],[0.5,0.415],[0.426,0.39],[0.402,0.365],[0.413,0.34],[0.449,0.315],[0.494,0.29],[0.52,0.275]],
   // 洞穴：小路从左下起，S 形向上绕过两丛水晶，顶端 Boss 在出口小平台
   sub: [[0.33,1.0],[0.37,0.95],[0.46,0.89],[0.58,0.84],[0.63,0.79],[0.62,0.745],[0.52,0.71],[0.36,0.675],[0.31,0.645],[0.32,0.60],[0.40,0.56],[0.50,0.53],[0.62,0.50],[0.66,0.46],[0.63,0.415],[0.53,0.385],[0.44,0.35],[0.42,0.31],[0.48,0.27],[0.55,0.24]],
   // 火山：下半段和洞穴同一条 S 形小路，再绕过熔岩池往上，Boss 在上方路口
@@ -123,48 +145,66 @@ const ART_ROADS = {
   digit1: [[0.40,1.0],[0.44,0.95],[0.52,0.90],[0.595,0.875],[0.63,0.84],[0.63,0.80],[0.59,0.775],[0.505,0.75],[0.405,0.725],[0.335,0.70],[0.31,0.675],[0.32,0.65],[0.36,0.625],[0.425,0.60],[0.505,0.575],[0.59,0.55],[0.65,0.525],[0.67,0.50],[0.665,0.475],[0.62,0.45],[0.535,0.425],[0.44,0.40],[0.41,0.375],[0.41,0.35],[0.425,0.33],[0.48,0.30],[0.525,0.28],[0.56,0.26],[0.565,0.24],[0.525,0.22],[0.47,0.20],[0.45,0.18],[0.475,0.16]],
   // 城堡：紫色地毯 S 形绕过水晶喷泉，再笔直上台阶，Boss 站在城门拱顶前（地毯较短，终点再往上关卡才排得开）
   digit2: [[0.40,1.0],[0.44,0.95],[0.52,0.90],[0.595,0.875],[0.63,0.84],[0.63,0.80],[0.59,0.775],[0.505,0.75],[0.405,0.725],[0.335,0.70],[0.31,0.675],[0.32,0.65],[0.36,0.625],[0.425,0.60],[0.47,0.575],[0.50,0.55],[0.50,0.45],[0.50,0.40],[0.50,0.31]],
-  hundreds: [[0.30,0.88],[0.45,0.876],[0.58,0.852],[0.68,0.81],[0.70,0.76],[0.66,0.71],[0.55,0.677],[0.42,0.648],[0.34,0.615],[0.31,0.56],[0.32,0.51],[0.37,0.475],[0.48,0.445],[0.60,0.422],[0.68,0.38],[0.70,0.345],[0.66,0.318],[0.52,0.315],[0.38,0.305],[0.32,0.275],[0.33,0.24],[0.42,0.224],[0.55,0.222],[0.64,0.235]]
+  // 雪山 / 冰雪城堡（两张图的小路一样）：从左下起向右，S 形绕过中间的冰晶小岛，再绕一个弯到顶端，Boss 在小路尽头的弯钩处。
+  // 这些点是按原画里浅蓝色小路的像素中线量出来的（地图上每只怪兽都必须站在路上）
+  hundreds: [[0.304,0.877],[0.512,0.874],[0.645,0.852],[0.725,0.813],[0.737,0.765],[0.691,0.723],[0.588,0.696],[0.45,0.67],[0.36,0.628],[0.327,0.579],[0.33,0.529],[0.376,0.493],[0.454,0.471],[0.564,0.454],[0.65,0.4],[0.695,0.35],[0.65,0.328],[0.55,0.328],[0.45,0.333],[0.369,0.321],[0.321,0.29],[0.303,0.253],[0.36,0.232],[0.451,0.232],[0.55,0.231],[0.64,0.246],[0.662,0.259]]
 };
 // 冰雪城堡：和雪山同一条 S 形小路，Boss 在城堡前
 ART_ROADS.ice = ART_ROADS.hundreds;
-/* Does level b (placed after level a, so drawn on top of it) leave a alone? Their balls (NODE_D, the Boss BOSS_D) are at
-   least `gap` px further apart than touching, and b covers neither a's level badge (top-left) nor a's mode badge
-   (bottom-right). Boxes are [left, top, right, bottom] around the ball's centre, from .node .ball / .lv / .mb in head.html. */
-const NODE_D = 50, BOSS_D = 68, NODE_LV = [-31,-29,-5,-7], NODE_MB = [7,3,31,27];
+/* Does level b (placed after level a, so drawn on top of it) leave a alone? Their monsters (NODE_D, the Boss BOSS_D) are at
+   least `gap` px further apart than touching, and b covers neither a's level badge (top-left), a's mode badge
+   (bottom-right) nor a's stars (over its head). Boxes are [left, top, right, bottom] around the monster's centre,
+   from .node .ball / .lv / .mb / .stars in head.html. */
+const NODE_D = 54, BOSS_D = 76, NODE_LV = [-34,-34,-8,-10], NODE_MB = [10,8,34,32], NODE_ST = [-21,-42,21,-28];
 function nodeClear(a, b, gap, boss){
   const rb = (boss ? BOSS_D : NODE_D)/2, dx = b[0]-a[0], dy = b[1]-a[1];
   if(Math.hypot(dx, dy) < NODE_D/2 + rb + gap) return false;
   const hitsBall = ([l,t,r,bt]) => Math.hypot(Math.max(l-dx, 0, dx-r), Math.max(t-dy, 0, dy-bt)) < rb + 2;
   const box = ([l,t,r,bt], [L,T,R,B]) => l < R+dx && r > L+dx && t < B+dy && bt > T+dy;
-  return !hitsBall(NODE_LV) && !hitsBall(NODE_MB) && !box(NODE_LV, boss ? [-40,-38,6,-16] : NODE_LV) && !box(NODE_LV, NODE_MB);
+  return !hitsBall(NODE_LV) && !hitsBall(NODE_MB) && !hitsBall(NODE_ST) && !box(NODE_LV, boss ? [-42,-42,6,-20] : NODE_LV) && !box(NODE_LV, NODE_MB);
 }
 let MAPL = null;
+/* the 15 levels on world id's painted road in a W × H band: [x, y] px in the band, or null if they do not fit with
+   `gap` px between monsters. Each level goes at the first spot up the road that clears every level before it (nodeClear);
+   the largest gap that still leaves room for the Boss at the road's end wins, so the levels come out evenly spaced. */
+function roadLevels(id, W, H, gap){
+  const road = ART_ROADS[id], sz = ART_SIZE["map_"+id];
+  const k = Math.max(W/sz[0], H/sz[1]), dw = sz[0]*k, dh = sz[1]*k, ox = (dw-W)/2, oy = (dh-H)/2;
+  let P = road.map(([fx,fy])=>[fx*dw-ox, fy*dh-oy]);
+  const i0 = P.findIndex(p=>p[1] <= H-ART_SIGN);          // start above the world sign
+  if(i0>0){ const [a,b] = [P[i0-1], P[i0]], t = (a[1]-(H-ART_SIGN))/(a[1]-b[1]); P = [[a[0]+(b[0]-a[0])*t, H-ART_SIGN]].concat(P.slice(i0)); }
+  const cum = [0]; for(let i=1;i<P.length;i++) cum.push(cum[i-1] + Math.hypot(P[i][0]-P[i-1][0], P[i][1]-P[i-1][1]));
+  const L = cum[cum.length-1], at = d => { let i = 1; while(i<P.length-1 && cum[i]<d) i++; const t = (d-cum[i-1])/((cum[i]-cum[i-1])||1); return [P[i-1][0]+(P[i][0]-P[i-1][0])*t, P[i-1][1]+(P[i][1]-P[i-1][1])*t]; };
+  const end = at(L), top = end[1] - (BOSS_D-NODE_D)/2;   // no level may stick out above the Boss
+  const ok = (out, p, g, boss) => (boss || p[1] >= top) && out.every(a => nodeClear(a, p, g, boss));
+  const place = g => { const out = [at(0)]; let d = 0;
+    for(let l=1; l<NLV-1; l++){ while(d<=L && !ok(out, at(d), g, false)) d += 1; if(d>L) return null; out.push(at(d)); }
+    return ok(out, end, g, true) ? out.concat([end]) : null; };
+  if(gap!=null) return place(gap);
+  let lo = 0, hi = 200, best = place(0) || Array.from({length:NLV}, (_,l)=>at(L*l/(NLV-1)));
+  while(hi-lo > 0.5){ const m = (lo+hi)/2, r = place(m); if(r){ lo = m; best = r; } else hi = m; }
+  return best;
+}
+// the shortest band (10 px steps) whose road fits the 15 levels MAP_GAP apart
+function roadBandH(id, W){
+  if(!roadLevels(id, W, ART_H_MAX, MAP_GAP)) return ART_H_MAX;
+  let lo = ART_H_MIN, hi = ART_H_MAX;
+  if(roadLevels(id, W, lo, MAP_GAP)) return lo;
+  while(hi-lo > 10){ const m = Math.round((lo+hi)/2); if(roadLevels(id, W, m, MAP_GAP)) hi = m; else lo = m; }
+  return hi;
+}
+const LAYOUT_CACHE = {};
 function layoutMap(W){
-  const n = WORLDS_V2.length, hs = [], tops = [], pos = {}, artBand = [];
-  for(let w=0; w<n; w++){ artBand[w] = !!art("map_"+WORLDS_V2[w].id); hs[w] = artBand[w] ? ART_BAND_H : SEG_H; }
+  const n = WORLDS_V2.length, hs = [], tops = [], pos = {}, artBand = [], key = W+":"+WORLDS_V2.map(x=>art("map_"+x.id)?1:0).join("");
+  if(LAYOUT_CACHE[key]) return LAYOUT_CACHE[key];
+  const roadOK = w => artBand[w] && ART_ROADS[WORLDS_V2[w].id] && ART_SIZE["map_"+WORLDS_V2[w].id];
+  for(let w=0; w<n; w++){ artBand[w] = !!art("map_"+WORLDS_V2[w].id); hs[w] = !artBand[w] ? SEG_H : roadOK(w) ? roadBandH(WORLDS_V2[w].id, W) : ART_H_MAX; }
   let y = 0; for(let w=n-1; w>=0; w--){ tops[w] = y; y += hs[w]; }
   for(let w=0; w<n; w++){
-    const id = WORLDS_V2[w].id, road = ART_ROADS[id], sz = ART_SIZE["map_"+id], H = hs[w];
-    if(artBand[w] && road && sz){
-      const k = Math.max(W/sz[0], H/sz[1]), dw = sz[0]*k, dh = sz[1]*k, ox = (dw-W)/2, oy = (dh-H)/2;
-      let P = road.map(([fx,fy])=>[fx*dw-ox, fy*dh-oy]);
-      const i0 = P.findIndex(p=>p[1] <= H-ART_SIGN);          // start above the world sign
-      if(i0>0){ const [a,b] = [P[i0-1], P[i0]], t = (a[1]-(H-ART_SIGN))/(a[1]-b[1]); P = [[a[0]+(b[0]-a[0])*t, H-ART_SIGN]].concat(P.slice(i0)); }
-      const cum = [0]; for(let i=1;i<P.length;i++) cum.push(cum[i-1] + Math.hypot(P[i][0]-P[i-1][0], P[i][1]-P[i-1][1]));
-      const L = cum[cum.length-1], at = d => { let i = 1; while(i<P.length-1 && cum[i]<d) i++; const t = (d-cum[i-1])/((cum[i]-cum[i-1])||1); return [P[i-1][0]+(P[i][0]-P[i-1][0])*t, P[i-1][1]+(P[i][1]-P[i-1][1])*t]; };
-      // walk up the road: each level goes at the first spot that clears every level before it by `gap`; the largest gap
-      // that still leaves room for the Boss at the road's end wins, so the levels come out as evenly spaced as the road allows
-      const end = at(L), top = end[1] - (BOSS_D-NODE_D)/2;   // no level may stick out above the Boss
-      const ok = (out, p, gap, boss) => (boss || p[1] >= top) && out.every(a => nodeClear(a, p, gap, boss));
-      const place = gap => { const out = [at(0)]; let d = 0;
-        for(let l=1; l<NLV-1; l++){ while(d<=L && !ok(out, at(d), gap, false)) d += 1; if(d>L) return null; out.push(at(d)); }
-        return ok(out, end, gap, true) ? out.concat([end]) : null; };
-      let lo = 0, hi = 200, best = place(0) || Array.from({length:NLV}, (_,l)=>at(L*l/(NLV-1)));
-      while(hi-lo > 0.5){ const m = (lo+hi)/2, r = place(m); if(r){ lo = m; best = r; } else hi = m; }
-      best.forEach(([x,yy],l) => { pos[w+"-"+l] = [Math.round(x/W*1000)/10, Math.round(tops[w]+yy)]; });
-    } else for(let l=0;l<NLV;l++){ const [x,yb] = nodePos(l); pos[w+"-"+l] = [x, tops[w] + H - yb]; }
+    if(roadOK(w)) roadLevels(WORLDS_V2[w].id, W, hs[w]).forEach(([x,yy],l) => { pos[w+"-"+l] = [Math.round(x/W*1000)/10, Math.round(tops[w]+yy)]; });
+    else for(let l=0;l<NLV;l++){ const [x,yb] = nodePos(l); pos[w+"-"+l] = [x, tops[w] + hs[w] - yb]; }
   }
-  return {W, tops, hs, artBand, total: y + (artBand[0] ? 0 : MAP_OVER + 20), pos};
+  return LAYOUT_CACHE[key] = {W, tops, hs, artBand, total: y + (artBand[0] ? 0 : MAP_OVER + 20), pos};
 }
 const nodeX = (w,l) => MAPL.pos[w+"-"+l][0];
 // y (px from the top of the whole map) of a level's centre
@@ -248,9 +288,9 @@ function renderMap(focus, width){
     }
     const nx = st && m>=1 && m<4 ? ' nx" style="--nc:'+TIERS[m].c : '';
     nodes += '<button class="node'+cls+'" style="left:'+x+'%;top:'+y+'px" data-w="'+wi+'" data-l="'+li+'"'+(lo?"":" disabled")+' aria-label="'+WORLDS_V2[wi].name+' 第'+(li+1)+'关 '+MODE_NAME[mode]+'">'
-      + '<span class="ball'+nx+'">'+(lo?monImg(wi,li):img("🔒"))+'<span class="lv">'+(L.boss?"BOSS":li+1)+'</span>'
+      + '<span class="ball'+nx+'">'+monImg(wi,li)+(lo?'':'<span class="lk">'+img("🔒")+'</span>')+'<span class="lv">'+(L.boss?"BOSS":li+1)+'</span>'
       + (MODE_ICON[mode]?'<span class="mb">'+img(MODE_ICON[mode])+'</span>':'')+'</span>'
-      + '<span class="stars">'+stars+'</span>'+(here?'<span class="here">'+heroFace()+'</span>':'')+'</button>';
+      + (stars?'<span class="stars">'+stars+'</span>':'')+(here?'<span class="here">'+heroFace()+'</span>':'')+'</button>';
   });
   flashCur = false;
   // the drawn road skips painted islands: their picture has its own road, and their Boss stands at its end
@@ -309,7 +349,7 @@ function openPage(o){
   const m = $("modal");
   m.innerHTML = '<div class="page panel '+(o.cls||"")+'">'
     + (o.title ? '<div class="phead"><span class="ribbon '+(o.ribbon||"")+'">'+emo(o.title)+'</span></div>' : '')
-    + (o.back ? '<button class="ibtn round back" id="pgBack" aria-label="返回">'+chev()+'</button>' : '')
+    + (o.back ? '<button class="ibtn round back" id="pgBack" aria-label="返回">'+backIcon()+'</button>' : '')
     + '<div class="pbody" id="pbody">'+emo(o.body)+'</div><div class="bubble" id="bubble"></div></div>';
   m.hidden = false; pageClosable = !!o.back; pageOnClose = o.onClose || null;
   if(o.back) $("pgBack").onclick = ()=>{ sfx.click(); closePage(); };
@@ -327,7 +367,7 @@ function bubble(text){ const b = $("bubble"); if(!b) return; b.innerHTML = emo(t
 function openLevel(){
   const lv = S.heroLv||1, b = lvBonus(lv), nx = nextLvBonus(lv);
   openPage({title:"⭐ 勇士等级", back:true, onClose:renderMap, cls:"lvpage", body:
-    '<div class="rexp"><span class="rlv">Lv.<b class="num">'+lv+'</b></span><span class="xbar"><i style="width:'+pctOf(S.exp||0, expNeed(lv))+'%"></i></span><b class="num rgain">'+(S.exp||0)+'/'+expNeed(lv)+'</b></div>'
+    '<div class="rexp">'+img("📘", "rxi")+'<span class="rlv">Lv.<b class="num">'+lv+'</b></span><span class="xbar"><i style="width:'+pctOf(S.exp||0, expNeed(lv))+'%"></i></span><b class="num rgain">'+(S.exp||0)+'/'+expNeed(lv)+'</b></div>'
     + '<div class="lvstats"><div class="lvs">'+img("⚔️")+'<span>攻击</span><b class="num" id="lvAtk">+'+b.atk+'</b></div><div class="lvs">'+img("❤️")+'<span>心上限</span><b class="num" id="lvHeart">+'+b.hearts+'</b></div></div>'
     + (nx ? '<p>'+img("⬆️")+' 升到 <b class="num">Lv.'+nx.lv+'</b>：'+bonusText(nx)+'</p>' : '')
     + '<p class="muted"><small>每升 '+LV_ATK_EVERY+' 级攻击 +1，每升 '+LV_HEART_EVERY+' 级心 +1（最多 +'+LV_HEART_MAX+'）<br>打怪兽得经验；'+img("🏃")+' 逃跑会扣装备经验</small></p>'});
@@ -335,13 +375,15 @@ function openLevel(){
 }
 // 装备解锁的勇士：获得过这个品质（或更高）的装备
 const gearNeed = k => '获得过<b style="color:'+GEAR_QUALITY_MAP[k].col+'">'+GEAR_QUALITY_MAP[k].name+'色</b>或更好的装备';
+// 勇士选择页的头像：小勇士有原画（hero_base）就用原画，其他勇士是 3D 图
+const heroPic = i => i===0 && art("hero_base") ? artTag(art("hero_base"), "ei art", img(HEROES[0].e)) : img(HEROES[i].e);
 function openHeroes(){
   let view = S.hero;
   const render = first => {
     const h = HEROES[view], un = heroUnlocked(view);
-    const body = '<div class="herostage" style="--hcol:'+h.col+'">'+img(h.e)+'<div><b>'+h.n+'</b><p>'+img(h.shot)+' '+h.skill+'</p>'
+    const body = '<div class="herostage" style="--hcol:'+h.col+'">'+heroPic(view)+'<div><b>'+h.n+'</b><p>'+img(h.shot)+' '+h.skill+'</p>'
         + (un ? '' : '<p class="lockline">'+img("🔒")+' '+(h.gear ? gearNeed(h.gear) : '需要 '+h.need+' 颗 '+img("⭐"))+'</p>')+'</div></div>'
-      + '<div class="heroes">'+HEROES.map((x,i)=>'<button class="hcard'+(i===S.hero?" sel":"")+(heroUnlocked(i)?"":" lock")+(i===view?" view":"")+'" data-i="'+i+'">'+img(x.e)+(heroUnlocked(i)?"":'<span class="lk">'+img("🔒")+'</span>')+'</button>').join("")+'</div>'
+      + '<div class="heroes">'+HEROES.map((x,i)=>'<button class="hcard'+(i===S.hero?" sel":"")+(heroUnlocked(i)?"":" lock")+(i===view?" view":"")+'" data-i="'+i+'">'+heroPic(i)+(heroUnlocked(i)?"":'<span class="lk">'+img("🔒")+'</span>')+'</button>').join("")+'</div>'
       + '<p>'+img("✨")+' 金色光环：所有勇士暴击多打 1 滴血'+(goldAura() ? '（已获得）' : '<br><small>拿到橙色或更好的装备就能获得</small>')+'</p>'
       + '<button class="btn green" id="hGo">'+img("⚔️")+' 出发！</button>';
     if(first) openPage({title:"选择勇士", back:true, onClose:renderMap, body}); else setBody(body);
@@ -572,9 +614,7 @@ function startLevel(w,l,run){
   B = {w,l,W:Wd,L,h,mode,board:null,sel:null,diff,run:run||null,hp,maxHp:hp,rage,dmg:RAGE[rage].dmg,maxH,hearts:run?run.hearts:maxH,combo:0,q:null,busy:true,charge:0,qt:0,over:false,recent:[],enraged:false,hintOpen:false,step:0,lastTick:0,wrongThisQ:false,
        gs, shield:(h.shield||0)+gs.shield, lucky:(h.lucky||0)+gs.lucky, frozenUntil:0, fleeUntil:0, lvAtk:lb.atk, urged:false};
   const cur = B, bt = $("battle");
-  $("arena").style.setProperty("--wbg", sceneURL(Wd.id));
-  $("arena").querySelectorAll(".deco").forEach(d=>d.remove());
-  $("arena").insertAdjacentHTML("afterbegin", decoHTML(Wd.id, .7));
+  setArenaBg(Wd.id);
   bt.classList.toggle("boss", !!L.boss); bt.classList.remove("enraged");
   bt.classList.toggle("rage", rage>0);
   bt.classList.toggle("boardmode", BOARD_TIME[mode]>0); $("board").innerHTML = ""; $("board").hidden = !BOARD_TIME[mode];
@@ -613,6 +653,15 @@ function startLevel(w,l,run){
   setTimeout(()=>{ if(B===cur && !B.over) BOARD_TIME[mode] ? startBoard() : nextQuestion(); }, delay);
   cancelAnimationFrame(rafId); lastT = performance.now(); rafId = requestAnimationFrame(loop);
 }
+/* 战斗背景：有原画 bg_<世界id> 就铺满战斗区（地面在下方），否则是画出来的场景 + 装饰；原画加载失败也退回 */
+function setArenaBg(id){
+  const a = $("arena"), bg = art("bg_"+id);
+  const drawn = () => { a.classList.remove("artbg"); a.style.setProperty("--wbg", sceneURL(id)); a.querySelectorAll(".deco").forEach(d=>d.remove()); a.insertAdjacentHTML("afterbegin", decoHTML(id, .7)); };
+  if(!bg) return drawn();
+  a.querySelectorAll(".deco").forEach(d=>d.remove());
+  a.classList.add("artbg"); a.style.setProperty("--wbg", 'url("'+bg+'")');
+  const t = new Image(); t.onerror = () => { if(B && B.W.id===id) drawn(); }; t.src = bg;
+}
 function banner(html, ms){
   $("banner").innerHTML = emo(html);
   const el = $("banner").firstChild; if(el) el.style.animation = "bannerIn "+(ms/1000)+"s forwards";
@@ -626,7 +675,11 @@ function toast(e, text){
 function drawHearts(broke, gained){
   let h = "";
   $("hearts").classList.toggle("many", B.maxH>5);
-  for(let i=0;i<B.maxH;i++) h += '<span class="'+(i<B.hearts ? (gained && i===B.hearts-1 ? "gain" : "") : (broke && i<B.hearts+(+broke) ? "break" : "lost"))+'">'+img("❤️")+'</span>';
+  const empty = art("icon_heart_empty");
+  for(let i=0;i<B.maxH;i++){
+    const cls = i<B.hearts ? (gained && i===B.hearts-1 ? "gain" : "") : (broke && i<B.hearts+(+broke) ? "break" : "lost");
+    h += '<span class="'+cls+(cls==="lost" && empty ? " ic" : "")+'">'+img(cls==="lost" && empty ? "🤍" : "❤️")+'</span>';
+  }
   $("hearts").innerHTML = h;
 }
 function drawHP(){
@@ -1174,7 +1227,7 @@ function dropRow(g, tag, id, canDrop){
 }
 function rewardHTML(r){
   const res = r.res;
-  let h = '<div class="rexp"><span class="rlv">Lv.<b class="num" id="rLv">'+r.lvBefore+'</b></span><span class="xbar"><i id="xFill" style="width:'+pctOf(r.expBefore, expNeed(r.lvBefore))+'%"></i></span><b class="num rgain">+'+res.exp+'</b></div>';
+  let h = '<div class="rexp">'+img("📘", "rxi")+'<span class="rlv">Lv.<b class="num" id="rLv">'+r.lvBefore+'</b></span><span class="xbar"><i id="xFill" style="width:'+pctOf(r.expBefore, expNeed(r.lvBefore))+'%"></i></span><b class="num rgain">+'+res.exp+'</b></div>';
   if(res.gearExp.length) h += '<div class="rgx">装备经验'+res.gearExp.map(x=>{ const g = gearById(x.id); return g ? '<span class="rgp q-'+g.quality+'" style="--qc:'+qCol(g)+'">'+gearImg(g)+'<b class="num">'+(x.levels.length?'Lv'+g.lv+'↑':'+'+x.gain)+'</b></span>' : ''; }).join("")+'</div>';
   const rows = [];
   res.rewards.forEach(rw=>rw.items.forEach(it=>{ if(it.gear) rows.push(dropRow(it.gear, "升级奖励", "lvg_"+it.gear.id, false)); }));
@@ -1342,7 +1395,7 @@ function startRun(mode){
 function runGain(info){
   const res = info.reward && info.reward.res; if(!res) return "";
   const gear = (res.gear ? [res.gear] : []).concat(res.rewards.flatMap(x=>x.items).map(x=>x.gear).filter(Boolean));
-  return '<div class="rchips">'+'<span class="rchip">'+img("⭐")+'经验<b class="num">+'+res.exp+'</b></span>'
+  return '<div class="rchips">'+'<span class="rchip">'+img("📘")+'经验<b class="num">+'+res.exp+'</b></span>'
     + (res.levels.length ? '<span class="rchip">升级 <b class="num">Lv.'+S.heroLv+'</b></span>' : '')
     + gear.map(g=>'<span class="rchip q-'+g.quality+'" style="--qc:'+qCol(g)+'">'+gearImg(g)+g.name+'</span>').join("")
     + (res.item ? '<span class="rchip">'+img(ITEMS[res.item].e)+'<b class="num">+1</b></span>' : '')
@@ -1351,7 +1404,7 @@ function runGain(info){
 function showRunNext(info){
   const run = info.run, [w,l] = run.seq[run.i];
   sfx.win(); confetti(100);
-  let hearts = ""; for(let i=0;i<5;i++) hearts += '<span style="'+(i<run.hearts?"":"filter:grayscale(1);opacity:.3")+'">'+img("❤️")+'</span>';
+  let hearts = ""; for(let i=0;i<5;i++) hearts += i<run.hearts ? img("❤️") : art("icon_heart_empty") ? img("🤍") : '<span style="filter:grayscale(1);opacity:.3">'+img("❤️")+'</span>';
   openPage({title:"第 "+run.i+" 战胜利！", ribbon:"gold", body:'<div class="rprog">'+runProgress(run)+'</div>'
     + '<div style="font-size:30px">'+hearts+'</div>'+runGain(info)+'<p>下一战：'+monImg(w,l)+' '+WORLDS_V2[w].levels[l].name+'</p>'
     + '<div class="btnrow"><button class="ibtn" id="rQuit" aria-label="放弃">'+img("🏳️")+'</button><button class="btn green" id="rGo">'+img("⚔️")+' 下一战</button></div>'});
