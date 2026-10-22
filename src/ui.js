@@ -215,10 +215,17 @@ const ART_H_MIN = 860, ART_H_MAX = 1600, ART_SIGN = 150, MAP_GAP = 10;
      世界牌放在所有地图段上面的一层（.wsign.ov），不会被接缝盖住。
    - 原画比地图宽（cover 按高度铺满），每段左右平移（MAPL.ox），让这段小路的入口 x 对准下面那段小路的出口（Boss 处）的 x；
      平移不能让小路上的关卡出画（留 MAP_EDGE px），对不齐时尽量靠近。
-   - 有过渡图 trans_<下面世界>_<上面世界>（铺满宽度，小路从下穿到上）就插在两段之间，两头也各叠化 MAP_SEAM px。 */
-const MAP_SEAM = 160, MAP_EDGE = 34, TRANS_H = 180;
-// 过渡图里小路的 x（图宽的比例）：[底部进来的地方, 顶部出去的地方]，按原画量的
-const TRANS_ROADS = {add_sub:[0.45,0.48], sub_ten:[0.45,0.6], ten_ice:[0.5,0.5], ice_tens:[0.55,0.55], tens_hundreds:[0.48,0.5], hundreds_digit1:[0.57,0.48], digit1_digit2:[0.55,0.5]};
+   - 有过渡图 trans_<下面世界>_<上面世界>（铺满宽度，小路从下穿到上）就插在两段之间（家长第三轮：原来过渡段将近一屏、
+     上面没有关卡，像一大片空白）。现在只显示原画中间 TRANS_CROP 这一截（约半屏），两头各和上下两段叠化 TRANS_SEAM px；
+     上面那个世界的世界牌挪到过渡图底部，它的第 1、2 关站在过渡图的小路上（TRANS_LV），第 3 关起才在自己的地图段上。 */
+const MAP_SEAM = 160, MAP_EDGE = 34, TRANS_H = 180, TRANS_SEAM = 124, TRANS_SIGN = 110, TRANS_CROP = [0.14, 0.88], TRANS_N = 2;
+// 个别过渡图多露一点底部：熔岩火山的 Boss 站得很靠上，世界牌要夹在 Boss 和下一个世界的第 1 关之间
+const TRANS_CROP_AT = {ten_ice:[0.14, 1.0]};
+// 过渡图里小路的 x（图宽的比例）：[显示部分底边进来的地方, 顶边出去的地方]，按原画里小路的中线量的
+const TRANS_ROADS = {add_sub:[0.62,0.5], sub_ten:[0.625,0.51], ten_ice:[0.6,0.6], ice_tens:[0.7,0.57], tens_hundreds:[0.57,0.53], hundreds_digit1:[0.7,0.55], digit1_digit2:[0.6,0.5]};
+// 站在过渡图小路上的上面那个世界的第 1、2 关：[x, y]（整张原画的比例，y 从上往下）
+const TRANS_LV = {add_sub:[[0.495,0.624],[0.409,0.399]], sub_ten:[[0.569,0.624],[0.41,0.399]], ten_ice:[[0.413,0.549],[0.642,0.449]],
+  ice_tens:[[0.454,0.624],[0.432,0.424]], tens_hundreds:[[0.619,0.624],[0.5,0.474]], hundreds_digit1:[[0.36,0.6],[0.68,0.42]], digit1_digit2:[[0.485,0.624],[0.5,0.46]]};
 const ART_ROADS = {
   // 森林：按原画里沙土小路的像素中线量出来（每只怪兽都站在路上），S 形绕两个弯，Boss 在山洞口
   add: [[0.373,0.99],[0.398,0.94],[0.463,0.915],[0.542,0.89],[0.602,0.865],[0.631,0.84],[0.636,0.815],[0.617,0.79],[0.565,0.765],[0.476,0.74],[0.379,0.715],[0.321,0.69],[0.31,0.665],[0.33,0.64],[0.379,0.615],[0.454,0.59],[0.546,0.565],[0.62,0.54],[0.662,0.515],[0.672,0.49],[0.653,0.465],[0.592,0.44],[0.5,0.415],[0.426,0.39],[0.402,0.365],[0.413,0.34],[0.449,0.315],[0.494,0.29],[0.52,0.275]],
@@ -259,7 +266,8 @@ function artGeo(id, W, H){
   const sz = ART_SIZE["map_"+id], k = Math.max(W/sz[0], H/sz[1]), dw = sz[0]*k, dh = sz[1]*k;
   return {dw, dh, ox0:(dw-W)/2, oy:(dh-H)/2};
 }
-function roadLevels(id, W, H, gap, ox, sign){
+function roadLevels(id, W, H, gap, ox, sign, n){
+  n = n || NLV;
   const road = ART_ROADS[id], g = artGeo(id, W, H), dw = g.dw, dh = g.dh, oy = g.oy, SG = sign==null ? ART_SIGN : sign;
   if(ox==null) ox = g.ox0;
   let P = road.map(([fx,fy])=>[fx*dw-ox, fy*dh-oy]);
@@ -270,16 +278,16 @@ function roadLevels(id, W, H, gap, ox, sign){
   const end = at(L), top = end[1] - (BOSS_D-NODE_D)/2;   // no level may stick out above the Boss
   const ok = (out, p, g, boss) => (boss || p[1] >= top) && out.every(a => nodeClear(a, p, g, boss));
   const place = g => { const out = [at(0)]; let d = 0;
-    for(let l=1; l<NLV-1; l++){ while(d<=L && !ok(out, at(d), g, false)) d += 1; if(d>L) return null; out.push(at(d)); }
+    for(let l=1; l<n-1; l++){ while(d<=L && !ok(out, at(d), g, false)) d += 1; if(d>L) return null; out.push(at(d)); }
     return ok(out, end, g, true) ? out.concat([end]) : null; };
   if(gap!=null) return place(gap);
-  let lo = 0, hi = 200, best = place(0) || Array.from({length:NLV}, (_,l)=>at(L*l/(NLV-1)));
+  let lo = 0, hi = 200, best = place(0) || Array.from({length:n}, (_,l)=>at(L*l/(n-1)));
   while(hi-lo > 0.5){ const m = (lo+hi)/2, r = place(m); if(r){ lo = m; best = r; } else hi = m; }
   return best;
 }
 // the shortest band (10 px steps) whose road fits the 15 levels MAP_GAP apart
-function roadBandH(id, W, sign){
-  const fit = H => roadLevels(id, W, H, MAP_GAP, null, sign);
+function roadBandH(id, W, sign, n){
+  const fit = H => roadLevels(id, W, H, MAP_GAP, null, sign, n);
   if(!fit(ART_H_MAX)) return ART_H_MAX;
   let lo = ART_H_MIN, hi = ART_H_MAX;
   if(fit(lo)) return lo;
@@ -296,11 +304,11 @@ function roadXAt(id, g, y){
    bottom) at inX — where the road below ends (the Boss of the world below, or the top of a transition picture) — and its
    road's end (the Boss) sits at outX, where the transition picture above starts its road. With both, the shift splits the
    difference. Only the part of the road the levels stand on (above the sign) has to stay MAP_EDGE inside the screen. */
-function bandShift(id, W, H, inX, outX, sign){
+function bandShift(id, W, H, inX, outX, sign, seam){
   const g = artGeo(id, W, H), rd = ART_ROADS[id], xs = rd.filter(([,fy])=>fy*g.dh-g.oy <= H-sign).map(([fx])=>fx*g.dw);
   const lo = Math.max(0, Math.max(...xs) - W + MAP_EDGE), hi = Math.min(g.dw - W, Math.min(...xs) - MAP_EDGE);
   const wants = [];
-  if(inX!=null) wants.push(roadXAt(id, g, H - MAP_SEAM) - inX);
+  if(inX!=null) wants.push(roadXAt(id, g, H - (seam||MAP_SEAM)) - inX);
   if(outX!=null) wants.push(rd[rd.length-1][0]*g.dw - outX);
   const want = wants.length ? wants.reduce((a,b)=>a+b)/wants.length : g.ox0;
   return lo > hi ? Math.max(0, Math.min(g.dw - W, g.ox0)) : Math.max(lo, Math.min(hi, want));
@@ -310,33 +318,41 @@ const transX = (w, W, end) => { const t = TRANS_ROADS[WORLDS_V2[w].id+"_"+WORLDS
 const LAYOUT_CACHE = {};
 const transName = w => "trans_"+WORLDS_V2[w].id+"_"+WORLDS_V2[w+1].id;   // between world w and the one above it
 function layoutMap(W){
-  const n = WORLDS_V2.length, hs = [], tops = [], pos = {}, artBand = [], ox = [], sign = [], trans = [];
+  const n = WORLDS_V2.length, hs = [], tops = [], pos = {}, artBand = [], ox = [], sign = [], trans = [], nb = [];
   const key = W+":"+WORLDS_V2.map((x,w)=>(art("map_"+x.id)?1:0)+(w<n-1 && art(transName(w))?"t":"")).join("");
   if(LAYOUT_CACHE[key]) return LAYOUT_CACHE[key];
   const roadOK = w => artBand[w] && ART_ROADS[WORLDS_V2[w].id] && ART_SIZE["map_"+WORLDS_V2[w].id];
   for(let w=0; w<n; w++) artBand[w] = !!art("map_"+WORLDS_V2[w].id);
   const seamBelow = w => w>0 && artBand[w] && (artBand[w-1] || trans[w-1]);
-  for(let w=0; w<n-1; w++) if(artBand[w] && artBand[w+1] && art(transName(w))){ const sz = ART_SIZE[transName(w)]; trans[w] = {name:transName(w), h: sz ? Math.round(W*sz[1]/sz[0]) : TRANS_H}; }
-  for(let w=0; w<n; w++){ sign[w] = ART_SIGN; hs[w] = !artBand[w] ? SEG_H : roadOK(w) ? roadBandH(WORLDS_V2[w].id, W, sign[w]) : ART_H_MAX; }
+  // 过渡图：整张按宽度铺满是 full 高，只显示中间 TRANS_CROP 那一截（h 高，背景往上挪 off）
+  for(let w=0; w<n-1; w++) if(artBand[w] && artBand[w+1] && art(transName(w))){ const sz = ART_SIZE[transName(w)], full = sz ? W*sz[1]/sz[0] : TRANS_H/(TRANS_CROP[1]-TRANS_CROP[0]);
+    const cr = TRANS_CROP_AT[transName(w).slice(6)] || TRANS_CROP;
+    trans[w] = {name:transName(w), full, off: full*cr[0], h: Math.round(full*(cr[1]-cr[0]))}; }
+  // 下面有过渡图的地图段：前 TRANS_N 关在过渡图上，这段只排剩下的；世界牌也不在这段底部，底部只留 TRANS_SIGN
+  const onTrans = w => w>0 && trans[w-1] && roadOK(w) && TRANS_LV[trans[w-1].name.slice(6)];
+  for(let w=0; w<n; w++){ nb[w] = onTrans(w) ? NLV-TRANS_N : NLV; sign[w] = onTrans(w) ? TRANS_SIGN : ART_SIGN;
+    hs[w] = !artBand[w] ? SEG_H : roadOK(w) ? roadBandH(WORLDS_V2[w].id, W, sign[w], nb[w]) : ART_H_MAX; }
   for(let w=0; w<n; w++){
     if(!roadOK(w)) continue;
     const id = WORLDS_V2[w].id, below = w>0 && roadOK(w-1) ? WORLDS_V2[w-1].id : null;
     const inX = w>0 && trans[w-1] ? transX(w-1, W, "top") : below ? ART_ROADS[below][ART_ROADS[below].length-1][0]*artGeo(below, W, hs[w-1]).dw - ox[w-1] : null;
     const outX = w<n-1 && trans[w] ? transX(w, W, "bottom") : null;
-    ox[w] = bandShift(id, W, hs[w], inX, outX, sign[w]);
+    ox[w] = bandShift(id, W, hs[w], inX, outX, sign[w], w>0 && trans[w-1] ? TRANS_SEAM : MAP_SEAM);
   }
   // stack from the top world down; painted neighbours overlap by MAP_SEAM
   let y = 0;
   for(let w=n-1; w>=0; w--){
     tops[w] = y; y += hs[w];
-    if(w>0 && trans[w-1]){ y -= MAP_SEAM; trans[w-1].top = y; y += trans[w-1].h - MAP_SEAM; }
+    if(w>0 && trans[w-1]){ y -= TRANS_SEAM; trans[w-1].top = y; y += trans[w-1].h - TRANS_SEAM; }
     else if(w>0 && seamBelow(w)) y -= MAP_SEAM;
   }
   for(let w=0; w<n; w++){
-    if(roadOK(w)) roadLevels(WORLDS_V2[w].id, W, hs[w], null, ox[w], sign[w]).forEach(([x,yy],l) => { pos[w+"-"+l] = [Math.round(x/W*1000)/10, Math.round(tops[w]+yy)]; });
+    const k = NLV - nb[w];
+    if(k){ const t = trans[w-1]; TRANS_LV[t.name.slice(6)].forEach(([fx,fy],l) => { pos[w+"-"+l] = [Math.round(fx*1000)/10, Math.round(t.top + fy*t.full - t.off)]; }); }
+    if(roadOK(w)) roadLevels(WORLDS_V2[w].id, W, hs[w], null, ox[w], sign[w], nb[w]).forEach(([x,yy],l) => { pos[w+"-"+(l+k)] = [Math.round(x/W*1000)/10, Math.round(tops[w]+yy)]; });
     else for(let l=0;l<NLV;l++){ const [x,yb] = nodePos(l); pos[w+"-"+l] = [x, tops[w] + hs[w] - yb]; }
   }
-  return LAYOUT_CACHE[key] = {W, tops, hs, artBand, ox, sign, trans, seam: w => w<n-1 && artBand[w] && (trans[w] || seamBelow(w+1)), total: y + (artBand[0] ? 0 : MAP_OVER + 20), pos};
+  return LAYOUT_CACHE[key] = {W, tops, hs, artBand, ox, sign, trans, nb, seam: w => w<n-1 && artBand[w] && (trans[w] || seamBelow(w+1)), total: y + (artBand[0] ? 0 : MAP_OVER + 20), pos};
 }
 const nodeX = (w,l) => MAPL.pos[w+"-"+l][0];
 // y (px from the top of the whole map) of a level's centre
@@ -403,12 +419,13 @@ function renderMap(focus, width){
       return '<span class="deco" style="'+(side?'right':'left')+':'+(6+(r%2)*3)+'%;top:'+y+'px;font-size:'+Math.round(Math.min(sz,64)*.8)+'px">'+img(e)+'</span>'; }).join("")).join("");
     const bossDone = starOf(wi, NLV-1)>0;
     // the band's top fades into whatever is above it (the next world or a transition picture)
-    segs += '<div class="band'+(bg?" art":"")+(MAPL.seam(wi)?" fade":"")+'" data-w="'+wi+'" style="top:'+top+'px;height:'+bh+'px;--seam:'+MAP_SEAM+'px">'+(bg?'':'<div class="cliff" data-w="'+wi+'"></div>')+deco+'</div>';
+    const trUp = MAPL.trans[wi], tr = wi>0 && MAPL.trans[wi-1];
+    segs += '<div class="band'+(bg?" art":"")+(MAPL.seam(wi)?" fade":"")+'" data-w="'+wi+'" style="top:'+top+'px;height:'+bh+'px;--seam:'+(trUp?TRANS_SEAM:MAP_SEAM)+'px">'+(bg?'':'<div class="cliff" data-w="'+wi+'"></div>')+deco+'</div>';
     // the sign at the band's bottom goes on a layer above all bands, so a seam fading over it never hides it
-    signs += '<div class="wsign ov'+(worldOpen(wi)?"":" locked")+'" data-w="'+wi+'" style="top:'+(top+bh)+'px"><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><span class="wsub2"><small>'+w.sub+'</small>'
+    // 世界牌在这个世界的起点：下面有过渡图（第 1、2 关在过渡图上）就在过渡图底部（下面世界的 Boss 太靠上就再往上挪，不盖住 Boss），否则在地图段底部
+    signs += '<div class="wsign ov'+(worldOpen(wi)?"":" locked")+'" data-w="'+wi+'" style="top:'+(tr && MAPL.nb[wi]<NLV ? Math.min(tr.top+tr.h, nodeY(wi-1, NLV-1) - 48) : top+bh)+'px"><span class="ribbon'+(wi===WORLDS_V2.length-1?" blue":"")+'"><span class="num">'+(wi+1)+'</span> · '+w.name+'</span><span class="wsub2"><small>'+w.sub+'</small>'
       + (bossDone ? '<button class="btn white wrun" data-w="'+wi+'">'+img("🏅")+'连闯</button>' : '')+'</span></div>';
-    const tr = wi>0 && MAPL.trans[wi-1];
-    if(tr) segs += '<div class="band trans fade" data-t="'+(wi-1)+'" style="top:'+tr.top+'px;height:'+tr.h+'px;--seam:'+MAP_SEAM+'px;background-image:url(&quot;'+art(tr.name)+'&quot;)"></div>';
+    if(tr) segs += '<div class="band trans fade" data-t="'+(wi-1)+'" style="top:'+tr.top+'px;height:'+tr.h+'px;--seam:'+TRANS_SEAM+'px"></div>';
   }
   for(let wi=0; wi<WORLDS_V2.length; wi++) WORLDS_V2[wi].levels.forEach((L,li)=>{
     const lo = levelOpen(wi,li), st = starOf(wi,li), m = mastery(wi,li), x = nodeX(wi,li), y = nodeY(wi,li), mode = L.boss ? "battle" : LEVEL_MODES[wi].modes[li];
@@ -446,6 +463,12 @@ function renderMap(focus, width){
     el.style.backgroundImage = 'url("'+bg+'")';
     if(MAPL.ox[wi]!=null){ const g = artGeo(id, MAPL.W, MAPL.hs[wi]); el.style.backgroundSize = g.dw.toFixed(1)+"px "+g.dh.toFixed(1)+"px"; el.style.backgroundPosition = (-MAPL.ox[wi]).toFixed(1)+"px "+(-g.oy).toFixed(1)+"px"; }
     const t = new Image(); t.onerror = strip; t.src = bg; });
+  // 过渡图：背景按宽度铺满，只露出中间那一截；图坏了就用上下两个世界的颜色渐变，不会留一大块空白
+  mp.querySelectorAll(".band.trans").forEach(el=>{ const tw = +el.dataset.t, tr = MAPL.trans[tw], url = art(tr.name);
+    const flat = () => { el.style.backgroundImage = "linear-gradient("+SCENES[WORLDS_V2[tw+1].id].h[1]+","+SCENES[WORLDS_V2[tw].id].h[0]+")"; el.style.backgroundSize = "100% 100%"; el.style.backgroundPosition = "0 0"; };
+    if(!url) return flat();
+    el.style.backgroundImage = 'url("'+url+'")'; el.style.backgroundSize = MAPL.W+"px "+tr.full.toFixed(1)+"px"; el.style.backgroundPosition = "0 "+(-tr.off).toFixed(1)+"px";
+    const t = new Image(); t.onerror = flat; t.src = url; });
   const sc = $("lscroll");
   // first render can be measured before the layout settles: redo once if the real width differs
   if(sc.clientWidth && Math.abs(sc.clientWidth - MAPL.W) > 2 && !width) return renderMap(focus, sc.clientWidth);
@@ -513,9 +536,12 @@ function openLevel(){
 // 装备解锁的勇士：获得过这个品质（或更高）的装备
 const gearNeed = k => '获得过<b style="color:'+GEAR_QUALITY_MAP[k].col+'">'+GEAR_QUALITY_MAP[k].name+'色</b>或更好的装备';
 /* 勇士原画：小勇士按身上盔甲的品质换整套外观（hero_<品质>，没穿是 hero_base）；其他勇士各一张 hero2_<名字>。
-   人形勇士（小勇士、忍者、宇航员、装备国王）手里拿武器、盾牌原画；机器人、霸王龙、神龙、独角兽不叠。没有原画就是 3D 图 */
+   所有勇士都拿武器、盾牌原画（家长第三轮：非人形勇士也要看得出装备）。HERO_HANDS 是每个勇士拿东西的位置，
+   都是原画的比例：fr / fl = 右手（画面左边）/ 左手（画面右边）的 x，fy = 手的 y；float = 没有手（独角兽），
+   武器和盾牌悬浮在身体两侧轻轻上下浮动。霸王龙用短短的前爪，神龙用前爪，机器人用机械手。
+   穿了盔甲：脚下多一圈盔甲品质颜色的光环（.aura）。没有原画就是 3D 图 */
 const HERO_ART = ["", "hero2_ninja", "hero2_robot", "hero2_astronaut", "hero2_trex", "hero2_dragon", "hero2_unicorn", "hero2_king"];
-const HERO_HANDS = [true, true, false, true, false, false, false, true];
+const HERO_HANDS = [{}, {}, {fr:.17, fl:.84, fy:.73}, {fr:.20, fl:.82, fy:.74}, {fr:.40, fl:.80, fy:.60}, {fr:.17, fl:.84, fy:.74}, {fr:.02, fl:.98, fy:.56, float:true}, {}];
 const heroArtFor = (i, eq) => i===0 ? ((eq && eq.armor && art("hero_"+eq.armor.quality)) || art("hero_base")) : art(HERO_ART[i]);
 // 勇士选择页的头像（没解锁的在选择页里涂成剪影）
 const heroPic = i => { const u = heroArtFor(i, null); return u ? artTag(u, "ei art", img(HEROES[i].e)) : img(HEROES[i].e); };
@@ -564,11 +590,13 @@ const heroFace = () => { const u = heroArtURL(S.equipped); return u ? artTag(u, 
 function avatarHTML(eq){
   const base = heroArtURL(eq);
   if(base){
-    const hi = HEROES.indexOf(hero()), hands = HERO_HANDS[hi];
-    const hand = (slot, side) => hands && eq[slot] && art(slot+"_"+eq[slot].quality) ? artTag(art(slot+"_"+eq[slot].quality), "hand "+side+" q-"+eq[slot].quality, "", "--qc:"+qCol(eq[slot])) : "";
+    const hi = HEROES.indexOf(hero()), hp = HERO_HANDS[hi] || {};
+    const hand = (slot, side) => eq[slot] && art(slot+"_"+eq[slot].quality) ? artTag(art(slot+"_"+eq[slot].quality), "hand "+side+" q-"+eq[slot].quality, "", "--qc:"+qCol(eq[slot])) : "";
     // fists sit a little differently per look (小勇士的盔甲品质，或别的勇士 h1…h7)
     const look = hi ? "h"+hi : eq.armor && art("hero_"+eq.armor.quality) ? eq.armor.quality : "base";
-    return '<span class="av lay a-'+look+'">'+artTag(base, "ei art", img(hero().e))+hand("weapon","rh")+hand("shield","lh")+'</span>';
+    const grip = ["fr","fl","fy"].filter(k=>hp[k]!=null).map(k=>"--"+k+":"+hp[k]).join(";");
+    const aura = eq.armor ? '<span class="aura q-'+eq.armor.quality+'" style="--qc:'+qCol(eq.armor)+'"></span>' : '';
+    return '<span class="av lay a-'+look+(hp.float?" float":"")+'"'+(grip?' style="'+grip+'"':'')+'>'+aura+artTag(base, "ei art", img(hero().e))+hand("weapon","rh")+hand("shield","lh")+'</span>';
   }
   return '<span class="av">'+img(hero().e)+SLOT_KEYS.map(k=>eq[k] ? '<span class="ag '+k+' q-'+eq[k].quality+'" style="--qc:'+qCol(eq[k])+'">'+img(eq[k].e)+'</span>' : '').join("")+'</span>';
 }
@@ -655,7 +683,8 @@ function openSynth(back){
   const render = () => {
     const pool = bagOf(q), ok = picked.length===3;
     const pages = Math.max(1, Math.ceil(pool.length/PER)); pg = Math.min(pg, pages-1);
-    let body = '<p class="gsay">'+img("✨")+' 选 3 件一样颜色的 → 换 1 件更好的</p>'
+    const plan = synthPlan();
+    let body = '<div class="synhead"><p class="gsay">'+img("✨")+' 3 件同色 → 1 件更好的</p><button class="btn purple bagsm" id="sAuto"'+(plan.length?'':' disabled')+'>'+img("⚡")+'一键合成</button></div>'
       + '<div class="qtabs">'+Q_ORDER.slice(0,5).map(k=>'<button class="qtab q-'+k+(k===q?" on":"")+'" data-q="'+k+'" style="--qc:'+GEAR_QUALITY_MAP[k].col+'">'+GEAR_QUALITY_MAP[k].name+'<b class="num">'+bagOf(k).length+'</b></button>').join("")+'</div>'
       + (pool.length ? '<div class="ggrid">'+pool.slice(pg*PER, pg*PER+PER).map(g=>gearTile(g, picked.includes(g.id)?"sel picked":"", 'data-id="'+g.id+'" data-lv="Lv'+(g.lv||1)+'"')).join("")+'</div>'+pagerHTML(pg, pages)
                      : '<div class="gnone">'+img("🎒")+'<span>没有'+GEAR_QUALITY_MAP[q].name+'色的空闲装备</span></div>')
@@ -667,6 +696,7 @@ function openSynth(back){
     if($("gPrev")) $("gPrev").onclick = ()=>{ pg--; render(); };
     if($("gNext")) $("gNext").onclick = ()=>{ pg++; render(); };
     $("sBack").onclick = ()=>{ sfx.click(); back(); };
+    $("sAuto").onclick = tapOnce(()=>{ sfx.click(); confirmAuto(); });
     $("sGo").onclick = tapOnce(()=>{
       const r = synthGear(picked); if(!r.ok) return;
       sfx.chest(); confetti(140); say("合成成功！"+r.gear.name+"！");
@@ -674,6 +704,27 @@ function openSynth(back){
         + '<div class="btnrow"><button class="btn white" id="sBack">回背包</button>'+wearBtn(r.gear, "sWear")+'</div>');
       $("sBack").onclick = ()=>{ sfx.click(); back(); };
       if(!isWorn(r.gear)) $("sWear").onclick = tapOnce(()=>{ equipGear(r.gear.id); applySpareExp(); save(); sfx.right(); back(); });
+    });
+  };
+  /* 一键合成：先说清楚「将用 N 件 x 色装备合成 M 件 y 色装备」（每一档一行），确认后一次合完，列出得到的装备 */
+  const qName = k => '<b style="color:'+GEAR_QUALITY_MAP[k].col+'">'+GEAR_QUALITY_MAP[k].name+'色</b>';
+  const confirmAuto = () => {
+    const plan = synthPlan(); if(!plan.length) return;
+    setBody('<p class="gsay">'+img("⚡")+' 一键合成</p><div class="synplan">'
+      + plan.map(x=>'<p>将用 <b class="num">'+x.use+'</b> 件'+qName(x.q)+'装备合成 <b class="num">'+x.make+'</b> 件'+qName(x.nq)+'装备</p>').join("")+'</div>'
+      + '<p class="muted"><small>穿在身上的装备不会被合掉</small></p>'
+      + '<div class="btnrow"><button class="btn white" id="aNo">取消</button><button class="btn green" id="aGo">确认合成</button></div>');
+    say(plan.map(x=>"将用"+x.use+"件"+GEAR_QUALITY_MAP[x.q].name+"色装备，合成"+x.make+"件"+GEAR_QUALITY_MAP[x.nq].name+"色装备").join("，"));
+    $("aNo").onclick = ()=>{ sfx.click(); render(); };
+    $("aGo").onclick = tapOnce(()=>{
+      const got = autoSynth(); if(!got.length){ render(); return; }
+      sfx.chest(); confetti(160); say("合成成功！得到"+got.length+"件装备！");
+      got.sort((a,b)=>QIDX[b.quality]-QIDX[a.quality]);
+      setBody('<p class="gsay">'+img("✨")+' 合成成功！得到 <b class="num">'+got.length+'</b> 件装备</p>'
+        + '<div class="ggrid haul" id="autoGot">'+got.slice(0,12).map(g=>gearTile(g, "", 'data-id="'+g.id+'" data-lv="Lv1"')).join("")+'</div>'
+        + (got.length>12 ? '<p>还有 <b class="num">'+(got.length-12)+'</b> 件，都放进背包啦</p>' : '<p>都放进背包啦</p>')
+        + '<div class="btnrow"><button class="btn green" id="sBack">回背包</button></div>');
+      $("sBack").onclick = ()=>{ sfx.click(); back(); };
     });
   };
   render();
@@ -692,11 +743,11 @@ function openParent(tab){
   tab = tab || "set";
   let confirmReset = false;
   const render = first => {
-    const tg = (id,label,on)=>'<button class="toggle'+(on?" on":"")+'" id="'+id+'"><span>'+label+'</span><span class="sw"></span></button>';
+    const tg = (id,label,on)=>'<button class="toggle'+(on?" on":"")+'" id="'+id+'"><span class="tl">'+label+'</span><span class="sw"></span></button>';
     let body = '<div class="tabs">'+[["set","⚙️","设置"],["voice","🔊","声音"],["rep","📊","报告"]].map(([k,e,t])=>'<button class="tab'+(tab===k?" on":"")+'" data-t="'+k+'">'+img(e)+' '+t+'</button>').join("")+'</div>';
     if(tab==="set"){
-      body += '<div>'+tg("tTimer","怪兽限时攻击",S.timer)
-        + '<div class="toggle"><span>插入拼音题</span><span class="seg3">'+[[0,"关"],[0.25,"偶尔"],[0.5,"经常"]].map(([v,t])=>'<button data-py="'+v+'" class="'+(S.py===v?"on":"")+'">'+t+'</button>').join("")+'</span></div>'
+      body += '<div class="tgls">'+tg("tTimer","怪兽限时攻击",S.timer)
+        + '<div class="toggle"><span class="tl">插入拼音题</span><span class="seg3">'+[[0,"关"],[0.25,"偶尔"],[0.5,"经常"]].map(([v,t])=>'<button data-py="'+v+'" class="'+(S.py===v?"on":"")+'">'+t+'</button>').join("")+'</span></div>'
         + tg("tOpen","全部关卡直接开放",S.openAll)
         + tg("tVoice","语音读题",S.voice)
         + tg("tSound","音效",S.sound)+'</div>'
