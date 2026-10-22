@@ -1115,6 +1115,7 @@ function answer(btn){
     $("answers").querySelectorAll(".ans").forEach(b=>b.disabled=true);
     B.busy = true;
     B.combo = B.wrongThisQ ? 0 : B.combo+1;
+    if(dodgeCheck(B, dodgeForce!=null ? dodgeForce : Math.random())) return monsterDodge();
     heroAttack();
   } else {
     btn.classList.add("wrong","shake"); btn.disabled = true;
@@ -1194,6 +1195,31 @@ function punchFx(crit){
   el.style.left = cx+"px"; el.style.top = cy+"px"; el.innerHTML = '<i class="ring"></i><i class="ring r2"></i>';
   $("arena").appendChild(el); setTimeout(()=>el.remove(), 500 + FX_HOLD);
 }
+/* 怪物闪避（第五轮）：答对后有 DODGE_RATE 的机会怪物闪开（显示「闪避！」+ 闪避动作，不掉血，自动换下一题，连击不断）。
+   不会连续两次闪避；第 1 大关前 3 关不闪避；Boss 这一下可能打倒它（血量 ≤ 单次伤害上限）时不闪避。 */
+const DODGE_RATE = 0.04;
+let dodgeForce = null;   // 测试用（__t.setDodge）：固定闪避用的随机数
+function dodgeCheck(b, r){
+  if(!b || b.lastDodge) return false;
+  if(!b.run && b.w===0 && b.l<3) return false;
+  if(b.L && b.L.boss && b.hp <= Math.max(1, Math.floor(b.maxHp/4))) return false;
+  return r < DODGE_RATE;
+}
+function monsterDodge(){
+  const cur = B; B.lastDodge = true; B.dodges = (B.dodges||0)+1;
+  const hs = $("heroSprite"), hr = hs.getBoundingClientRect(), mr = $("monSprite").getBoundingClientRect();
+  hs.style.setProperty("--dash", Math.max(20, mr.left - hr.right + hr.width*.4)+"px");
+  play(hs, S.equipped && S.equipped.weapon ? "atk-slash" : "atk-punch"); sfx.slash();
+  setTimeout(()=>{
+    if(B!==cur || B.over) return;
+    play($("monSprite"), "dodge"); sfx.pop();
+    const [cx,cy] = monCenter(0, -40), d = document.createElement("span");
+    d.className = "dmg hitn dodgetxt"; d.innerHTML = '<b>闪避！</b>'; d.style.left = cx+"px"; d.style.top = cy+"px";
+    $("arena").appendChild(d); setTimeout(()=>d.remove(), 1000 + FX_HOLD);
+    say("闪避！");
+  }, DASH_HIT-40);
+  setTimeout(()=>{ if(B===cur && !B.over) nextQuestion(); }, 1100 + FX_HOLD);
+}
 function breakCombo(){ B.combo = 0; const c = $("combo"); c.textContent = ""; c.className = "combo"; $("arena").dataset.combo = "0"; }
 /* 伤害（家长 10-21 平衡）：普通攻击 = 1 + floor(装备攻击总和 / 3)；暴击 = 勇士暴击伤害 + 金色光环 + 装备暴击伤害 + 同样的攻击加成；
    再加等级加成（lvBonus：每 2 级 +1）。每一下最多打掉怪兽总血量的 1/4（向下取整，至少 1），所以一关也至少要答对 4 题。
@@ -1204,6 +1230,7 @@ const DASH_HIT = 170;   // 冲刺动作（.dash 480ms）在 35% 处碰到怪兽
 function heroAttack(board){   // board = {dmg, crit} for 消除 / 连连看
   const cur = B, h = B.h;
   const gs = B.gs;
+  if(!board) B.lastDodge = false;
   const crit = board ? !!board.crit : (B.combo >= (h.critAt||3) || Math.random()*100 < Math.min(CRIT_CAP, gs.critRate));
   const dmg = board ? board.dmg : Math.min(B.hp, hitCap(), (crit ? (h.critDmg||2)+(goldAura()?1:0)+gs.critDmg+atkBonus() : 1+atkBonus()) + B.lvAtk);
   const wpn = S.equipped && S.equipped.weapon, hs = $("heroSprite");
