@@ -736,7 +736,7 @@ function statsHTML(){
    （💎×1，品质升一档）；「合成」= 3 件同品质未穿的 → 1 件高一档；旧宝箱一次「一键全开」。 */
 function openBag(slot){
   slot = slot || SLOT_KEYS.find(k=>S.equipped[k] || S.bag.some(g=>g && g.slot===k)) || "weapon";   // open on a slot that has something
-  let sel = null, pg = 0, note = "", gone = null;   // gone: exp from the piece just salvaged → a card with no buttons in its place
+  let sel = null, pg = 0, note = "", gone = null, goneH = 0;   // gone: exp from the piece just salvaged → a card with no buttons in its place
   const PER = 8;
   const render = first => {
     const list = S.bag.filter(g=>g && g.slot===slot), worn = S.equipped[slot];
@@ -749,7 +749,8 @@ function openBag(slot){
       + '<button class="btn white bagsm" id="synthBtn">'+img("✨")+'合成'+(synthOK?'<span class="badge pulse">!</span>':'')+'</button>'
       + (S.chests>0 ? '<button class="btn bagsm" id="chestAll">'+img("🎁")+'一键全开<b class="num" id="chestN">×'+S.chests+'</b></button>' : '')+'</div></div></div>'
       + '<div class="tabs">'+SLOT_KEYS.map(k=>'<button class="tab'+(k===slot?" on":"")+'" data-s="'+k+'">'+img(GEAR_SLOTS[k].e)+GEAR_SLOTS[k].name+'</button>').join("")+'</div>';
-    if(gone!==null) body += '<div class="gnone ggone" id="gGone">'+img("♻️")+'<span>已分解成 <b class="num">'+gone+'</b> 点经验</span></div>';
+    // 分解后的卡片和原来的装备卡一样高：下面的格子不往上跳，连点第二下不会点到别的装备
+    if(gone!==null) body += '<div class="gnone ggone" id="gGone"'+(goneH ? ' style="min-height:'+goneH+'px;box-sizing:border-box"' : '')+'>'+img("♻️")+'<span>已分解成 <b class="num">'+gone+'</b> 点经验</span></div>';
     else if(cur){
       const nq = nextQuality(cur.quality), maxed = (cur.lv||1) >= GEAR_LV_MAX;
       let btns = isWorn(cur) ? '<button class="btn white gwear" id="gOff">卸下</button>'
@@ -769,7 +770,8 @@ function openBag(slot){
     const on = (id,f) => { if($(id)) $(id).onclick = f; };
     on("gOn", tapOnce(()=>{ wearWithPop(cur.id); applySpareExp(); save(); sel = cur.id; sfx.right(); render(false); }));
     on("gOff", tapOnce(()=>{ unequipGear(slot); sel = cur.id; sfx.click(); render(false); }));
-    on("gSalvage", tapOnce(()=>{ const r = salvageGear(cur.id); if(!r.ok) return; sfx.click(); sel = null; gone = r.exp; say("分解成"+r.exp+"点装备经验"); render(false); }));
+    on("gSalvage", tapOnce(()=>{ const card = $("pbody").querySelector(".gcard"); goneH = card ? card.offsetHeight : 0;
+      const r = salvageGear(cur.id); if(!r.ok) return; sfx.click(); sel = null; gone = r.exp; say("分解成"+r.exp+"点装备经验"); render(false); }));
     on("gAscend", tapOnce(()=>{ const r = ascendGear(cur.id); if(!r.ok) return; sfx.chest(); confetti(120); sel = cur.id; note = '进阶成功！变成 <b style="color:'+qCol(r.gear)+'">'+GEAR_QUALITY_MAP[r.gear.quality].name+'色</b> 啦'; say("进阶成功！"); render(false); }));
     on("gPrev", ()=>{ pg--; render(false); });
     on("gNext", ()=>{ pg++; render(false); });
