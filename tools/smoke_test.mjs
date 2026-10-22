@@ -13,7 +13,7 @@
 import { chromium } from 'playwright';
 import { wpCheck, invCheck, qbankCheck, r5Check } from './wp_check.mjs';
 import { mkdirSync } from 'fs';
-import { r5Systems, r5Growth, r5Heroes } from './r5_systems.mjs';
+import { r5Systems, r5Growth, r5Heroes, r5Mystic } from './r5_systems.mjs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -1131,6 +1131,7 @@ async function r5Run(view) {
   await r5Systems(p, o);
   await r5Growth(p, o);
   await r5Heroes(p, o);
+  await r5Mystic(p, o);
   await ctx.close();
 }
 const VIEWS = [{ name: '375', viewport: { width: 375, height: 667 }, dpr: 2, safe: { top: 0, bottom: 0 } }, { name: '393', viewport: { width: 393, height: 852 }, dpr: 3, safe: { top: 59, bottom: 34 } }];

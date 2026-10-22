@@ -2096,7 +2096,9 @@ const HEROES = [
   {e:"🐲",n:"神龙",need:65,shot:"🌈",fx:"🌈",col:"#ec4899",good:"trap"},
   // gear: 获得过这个品质（或更高）的装备就解锁；set: 旧存档里集齐过贴纸的孩子照样保留
   {e:"🦄",n:"独角兽",gear:"purple",set:"n",shot:"✨",fx:"🌟",col:"#f0abfc",good:"word"},
-  {e:"🤴",n:"装备国王",gear:"red",set:"l",shot:"👑",fx:"🎆",col:"#facc15",good:"pic4"}
+  {e:"🤴",n:"装备国王",gear:"red",set:"l",shot:"👑",fx:"🎆",col:"#facc15",good:"pic4"},
+  // 神秘勇士：集齐 6 位按星星解锁的普通勇士后，去「结伴探险」寻找（见 MYSTIC_*）；能力是每道选择题少一个错误选项
+  {e:"🦸",n:"神秘勇士",mystic:true,shot:"✨",fx:"🌟",col:"#fbbf24",good:null}
 ];
 const STK = {
   n:{name:"普通", list:["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🐔","🐧","🐤","🦉","🐝","🐞","🦋","🐢","🐙","🐬","🐳","🦖","🦕","🚗","🚓","🚒","🚑","🚜","🏎️","🚀","🛸","🚁","⛵","🚂","⚽"]},
@@ -2313,13 +2315,13 @@ const HERO_BOOST = 0.125;   // 擅长的那类题出现率提高这么多（绝�
 /* 包一层出题器：先按家长开关把关掉的类别换掉（最多重抽 40 次，实在不行出一道这一大关的计算题），
    再按勇士擅长的类别加量：这类题在这关原本占 s，就以 HERO_BOOST/(1−s) 的机会把别的题换成这一类，总共正好多出约 HERO_BOOST。 */
 function qFilter(gen, w){
-  const share = {};   // 这关每个类别原本的占比（第一次要用时抽样 400 道估出来）
+  const share = {};   // 这关每个类别原本的占比（第一次要用时抽样 800 道估出来）
   const base = () => { let q = gen(); for(let k=0; k<40 && !qOn(qCat(q)); k++) q = gen(); return qOn(qCat(q)) ? q : GOOD_GEN.calc(w); };
   return () => {
     let q = base();
     const c = hero().good;
     if(!c || !qOn(c) || qCat(q)===c) return q;
-    if(share[c]==null){ let n = 0; for(let i=0;i<400;i++) if(qCat(base())===c) n++; share[c] = n/400; }
+    if(share[c]==null){ let n = 0; for(let i=0;i<800;i++) if(qCat(base())===c) n++; share[c] = n/800; }
     if(Math.random() >= Math.min(.9, HERO_BOOST/(1-share[c]))) return q;
     for(let k=0; k<40; k++){ const q2 = base(); if(qCat(q2)===c) return q2; }
     return GOOD_GEN[c] ? GOOD_GEN[c](w) : q;
@@ -2394,7 +2396,45 @@ const ITEMS = {heal:{e:"💖",n:"加心",tip:"💖 加一颗心"}, cut:{e:"🧹"
 const qRank = k => ["white","blue","pink","purple","orange","red"].indexOf(k);
 const hasBest = k => qRank(S.bestQ||"") >= qRank(k);
 const goldAura = () => hasBest("orange") || setDone("r");
-const heroUnlocked = i => { const h = HEROES[i]; return h.gear ? (hasBest(h.gear) || setDone(h.set)) : totalStars()>=h.need; };
+const heroUnlocked = i => { const h = HEROES[i]; return h.mystic ? !!(S.mystic && S.mystic.found) : h.gear ? (hasBest(h.gear) || setDone(h.set)) : totalStars()>=h.need; };
+/* 神秘勇士「结伴探险」（第五轮）：6 位普通勇士（按星星解锁的）都解锁后出现；每天 1 次，选两位已解锁的勇士结伴，
+   做 MYSTIC_Q 道加难题（本大关 Boss 关的题），答对 ≥ MYSTIC_PASS 道算成功。成功后 MYSTIC_FIND 的机会找到；
+   没找到得 1 块寻宝地图碎片，集满 MYSTIC_FRAGS 块必得。失败什么都不扣，明天再来。 */
+const MYSTIC_Q = 10, MYSTIC_PASS = 8, MYSTIC_FIND = 0.2, MYSTIC_FRAGS = 5;
+const normalHeroesDone = () => HEROES.every((h,i)=>h.need==null || heroUnlocked(i));
+const mysticIdx = () => HEROES.findIndex(h=>h.mystic);
+const questToday = () => S.mystic.day===today();
+// 一次探险的结果：right = 答对几道，r = 随机数（测试可以传）。返回 {pass, found, frag}
+function questResult(right, r){
+  S.mystic.day = today();
+  const out = {pass: right>=MYSTIC_PASS, found:false, frag:false};
+  if(out.pass && !S.mystic.found){
+    if((r==null ? Math.random() : r) < MYSTIC_FIND) out.found = true;
+    else { S.mystic.frags = Math.min(MYSTIC_FRAGS, S.mystic.frags+1); out.frag = true; if(S.mystic.frags>=MYSTIC_FRAGS) out.found = true; }
+    if(out.found) S.mystic.found = true;
+  }
+  save();
+  return out;
+}
+// 神秘勇士的能力：选择题去掉一个错误选项（至少留 2 个）
+function mysticTrim(q){
+  if(!q || !Array.isArray(q.options) || q.options.length<=2) return q;
+  const wrong = q.options.filter(o=>String(o)!==String(q.answer));
+  const drop = pick(wrong);
+  return Object.assign({}, q, {options: q.options.filter(o=>o!==drop), trimmed:true});
+}
+// 对对碰少一对：去掉一对上面没有压着别的卡、自己也没被压着的卡（两层的棋盘也一样能用）
+function boardDropPair(board){
+  const cards = board && (board.cards || board); if(!Array.isArray(cards)) return board;
+  // 两层的棋盘：拿走一对上层的卡，压在下面的卡跟着露出来
+  const free = v => cards.filter(c=>c.value===v).every(c=>!(c.coveredBy||[]).length);
+  const vals = [...new Set(cards.map(c=>c.value))].filter(free);
+  if(!vals.length) return board;
+  const v = pick(vals), gone = new Set(cards.filter(c=>c.value===v).map(c=>c.id));
+  const keep = cards.filter(c=>!gone.has(c.id)).map(c=>Object.assign(c, {coveredBy:(c.coveredBy||[]).filter(id=>!gone.has(id))}));
+  if(board.cards){ board.cards = keep; return board; }
+  return keep;
+}
 const stickerCount = () => Object.keys(S.stickers).length;
 function hero(){ if(!heroUnlocked(S.hero)) S.hero=0; return HEROES[S.hero]; }
 
