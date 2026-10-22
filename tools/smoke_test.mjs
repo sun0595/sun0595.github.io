@@ -88,6 +88,23 @@ async function shotCheck(p, view, dir, name) {
       if (r.right > W + 0.5) why.push(`right ${Math.round(r.right)} > ${W}`);
       if (why.length) out.push(desc(el) + ': ' + why.join(', '));
     }
+    // GUI icons are candy art (icon_*) or the drawn candy SVGs, never a Fluent 3D emoji picture. Allowed to stay 3D:
+    // question / teaching content (题目、答案、玩法棋盘、小老师), map scenery and battle effects, the characters
+    // (monsters, heroes) and the pictures of gear items that have no candy icon (短剑、长弓、披风 …).
+    const rev = {}; for (const k in __t.IMG) rev[__t.IMG[k]] = k;
+    const chars = new Set([...__t.HEROES.map(h => h.e), ...__t.WORLDS_V2.flatMap(w => w.levels.map(l => l.emoji)),
+      ...Object.values(__t.GEAR_SLOTS).flatMap(s => s.pool.map(x => x.e)).filter(e => !__t.ICON_SVG[e])]);
+    const CONTENT = '#qText, #answers, #board, #tutor, .deco, .fx, .part, .snow, .dmg, .punchfx';
+    const seen = new Set();
+    for (const im of document.querySelectorAll('img.ei:not(.art)')) {
+      const e = rev[im.getAttribute('src')];
+      if (!e || chars.has(e) || im.closest(CONTENT) || seen.has(e)) continue;
+      if (!im.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+      const r = im.getBoundingClientRect();
+      if (r.width < 1 || r.bottom < 0 || r.top > H || r.right < 0 || r.left > W) continue;
+      seen.add(e); const c = im.parentElement.closest('[id], [class]');
+      out.push(`3D emoji ${e} in the GUI (${c ? desc(c).slice(0, 60) : '?'})`);
+    }
     return out;
   }, { ...view.safe, sel: KEY_UI, spare: SPARE });
   for (const x of bad) problems.push(`[${view.name}] ${name}: ${x}`);
