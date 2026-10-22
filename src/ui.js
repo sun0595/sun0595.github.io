@@ -1287,7 +1287,9 @@ function answer(btn){
     sfx.wrong();
     breakCombo();
     const first = !B.wrongThisQ;
-    if(first){
+    // 颜色题答错只记「颜色题记录」，不进错题本、不算进正确率
+    if(first && q.kind==="color") B.wrongThisQ = true;
+    else if(first){
       B.wrongThisQ = true; st.w++;
       const d = q.disp || (x=>x);
       // 选项和关卡也记下来，家长点「这题有问题」时一起交上去
