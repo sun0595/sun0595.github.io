@@ -26,6 +26,13 @@ const SAVE = { stars, stickers: { '🐶': 3, '🐱': 2, '💎': 2 }, medals: { a
 // buttons, titles and panels that must stay fully on screen and out of the safe areas
 // a page (openPage) must leave at least this much height free, see shotCheck
 const SPARE = 16;
+// 界面里会重画自己的按钮（穿上、分解、合成、一键合成 → 确认合成……）用 tapOnce() 挡掉 400ms 内的第二下（防孩子手快连点）。
+// 测试点得比孩子快得多，在快的电脑上第二下会落进这 400ms 被挡掉（主持人 macOS 上「一键合成」后的 #aGo 就这样没点上）：
+// 点这些按钮时，离上一次点它们至少隔 TAP_GAP（别的按钮照常，消除的快速连击测试还要很快地连点）。
+const TAP_GAP = 420, GUARDED = /#(gOn|gOff|gSalvage|gAscend|sAuto|aGo|sGo|sWear|wcWear)\b|\.(dwear|ddrop|mrep)\b/;
+const tapper = p => { let last = 0; return async sel => {
+  if (GUARDED.test(sel)) { const wait = last + TAP_GAP - Date.now(); if (wait > 0) await p.waitForTimeout(wait); last = Date.now(); }
+  return p.click(sel, { force: true }); }; };
 const KEY_UI = 'button, .btn, .ibtn, .ribbon, .ttl, .wintitle, .pill, .tab, .ans, .item, .node, .wtitle, .nexthero, #bTitle, .qcard, .hint, .note, .page, .mboard, .lboard, .wview';
 
 async function newPage(view) {
@@ -121,7 +128,7 @@ async function playAll(view) {
   await p.evaluate(([k, s]) => localStorage.setItem(k, JSON.stringify(s)), [V1, SAVE]);
   await p.reload(); await p.waitForTimeout(600);
   const shot = name => shotCheck(p, view, SHOTS, name);
-  const tap = sel => p.click(sel, { force: true });
+  const tap = tapper(p);
   // where a node sits inside the scrolled map: in view? how far from the middle?
   const centred = sel => p.evaluate(sel => { const n = document.querySelector(sel), s = document.getElementById('lscroll'); if (!n) return { missing: sel }; const a = n.getBoundingClientRect(), b = s.getBoundingClientRect(); const c = (a.top + a.bottom) / 2; return { inView: a.top >= b.top - 1 && a.bottom <= b.bottom + 1, off: Math.round(Math.abs(c - (b.top + b.bottom) / 2)) }; }, sel);
   const scrollToBand = async w => { await p.evaluate(w => { const b = document.querySelector(`.band[data-w="${w}"]`), s = document.getElementById('lscroll'); s.scrollTop = b.offsetTop + b.offsetHeight - s.clientHeight; }, w); await p.waitForTimeout(250); };
@@ -1137,7 +1144,7 @@ async function r5Run(view) {
   await p.goto('file://' + path.join(ROOT, 'build', 'test.html'));
   await p.evaluate(([k, s]) => localStorage.setItem(k, JSON.stringify(s)), [V1, SAVE]);
   await p.reload(); await p.waitForTimeout(600);
-  const o = { view, problems, shot: name => shotCheck(p, view, SHOTS, name), tap: sel => p.click(sel, { force: true }) };
+  const o = { view, problems, shot: name => shotCheck(p, view, SHOTS, name), tap: tapper(p) };
   await r5Systems(p, o);
   await r5Growth(p, o);
   await r5Heroes(p, o);
