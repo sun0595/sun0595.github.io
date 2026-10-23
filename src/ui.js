@@ -555,7 +555,12 @@ const HERO_HEAD = [{hx:.49, hy:.13, hw:.51}, {hx:.5, hy:.13, hw:.51}, {hx:.5, hy
    小勇士按盔甲品质 grow_<品质>_<阶段>（没穿或没有这张就 grow_base_<阶段>）；神秘勇士是小勇士的剪影，跟着小勇士长大。
    没有这张原画就退回第 1 阶段的原画。GROW_POSE 是长大后手和头的位置（同 HERO_HANDS / HERO_HEAD 的写法）。 */
 const GROW_NAME = ["base","ninja","robot","astronaut","trex","dragon","unicorn","king"];
-const GROW_POSE = {};
+const GROW_POSE = {
+  dragon_2:{fr:.2, fl:.8, fy:.6, hx:.5, hy:.17, hw:.34}, dragon_3:{fr:.3, fl:.72, fy:.54, hx:.5, hy:.15, hw:.3}, dragon_4:{fr:.3, fl:.72, fy:.52, hx:.5, hy:.13, hw:.27},
+  trex_2:{fr:.36, fl:.76, fy:.58, hx:.55, hy:.13, hw:.4}, trex_3:{fr:.3, fl:.7, fy:.5, hx:.42, hy:.1, hw:.32},
+  unicorn_2:{fy:.56, hx:.45, hy:.18, hw:.38}, unicorn_3:{fy:.5, hx:.68, hy:.13, hw:.28},
+  king_2:{fr:.2, fl:.8, fy:.6, hx:.5, hy:.11, hw:.4}, king_3:{fr:.25, fl:.75, fy:.55, hx:.5, hy:.1, hw:.3}, king_4:{fr:.25, fl:.75, fy:.53, hx:.5, hy:.1, hw:.28}
+};
 const growKey = (i, st) => st>=2 ? (HEROES[i] && HEROES[i].mystic ? "base" : GROW_NAME[i]||"base")+"_"+st : "";
 const growArt = (i, eq, st) => { if(!(st>=2)) return null; const mys = HEROES[i] && HEROES[i].mystic;
   if(i===0 && eq && eq.armor && art("grow_"+eq.armor.quality+"_"+st)) return art("grow_"+eq.armor.quality+"_"+st);
