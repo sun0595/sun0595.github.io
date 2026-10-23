@@ -104,7 +104,7 @@ async function shotCheck(p, view, dir, name) {
     const rev = {}; for (const k in __t.IMG) rev[__t.IMG[k]] = k;
     const chars = new Set([...__t.HEROES.map(h => h.e), ...__t.WORLDS_V2.flatMap(w => w.levels.map(l => l.emoji)),
       ...Object.values(__t.GEAR_SLOTS).flatMap(s => s.pool.map(x => x.e)).filter(e => !__t.ICON_SVG[e])]);
-    const CONTENT = '#qText, #answers, #board, #tutor, .deco, .fx, .part, .dmg';
+    const CONTENT = '#qText, #answers, #board, #tutor, .deco, .fx, .part, .dmg, .helm';   // .helm：戴在勇士头上的头盔是角色的一部分，用 3D 图
     const seen = new Set();
     for (const im of document.querySelectorAll('img.ei:not(.art)')) {
       const e = rev[im.getAttribute('src')];
