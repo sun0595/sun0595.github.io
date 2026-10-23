@@ -15,6 +15,7 @@ import { wpCheck, invCheck, qbankCheck, r5Check } from './wp_check.mjs';
 import { mkdirSync } from 'fs';
 import { r5Systems, r5Growth, r5Heroes, r5Mystic, r5Parent, r5Migrate } from './r5_systems.mjs';
 import { r5Knowledge } from './r5_knowledge.mjs';
+import { r6Pressure } from './r6_pressure.mjs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -78,9 +79,9 @@ async function shotCheck(p, view, dir, name) {
     const bt = document.getElementById('battle');
     if (!bt.hidden) {
       const a = document.getElementById('answers').getBoundingClientRect(); if (a.bottom > H - bottom + 1) out.push(`answers bottom ${Math.round(a.bottom)} > ${H - bottom}`);
-      const hs = document.getElementById('hearts'), ar = document.getElementById('arena').getBoundingClientRect(), hr = hs.getBoundingClientRect();
-      if (!hs.checkVisibility()) out.push('hearts hidden');
-      else if (hr.top < ar.top - 0.5 || hr.left < ar.left - 0.5 || hr.bottom > ar.bottom + 0.5) out.push(`hearts cut off by the arena (${Math.round(hr.top)} < ${Math.round(ar.top)})`);
+      const hs = document.getElementById('heroBar'), ar = document.getElementById('arena').getBoundingClientRect(), hr = hs.getBoundingClientRect();
+      if (!hs.checkVisibility()) out.push('hero life bar hidden');
+      else if (hr.top < ar.top - 0.5 || hr.left < ar.left - 0.5 || hr.bottom > ar.bottom + 0.5) out.push(`hero life bar cut off by the arena (${Math.round(hr.top)} < ${Math.round(ar.top)})`);
     }
     const desc = el => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\s+/).join('.') : '') + (el.textContent.trim() ? ` "${el.textContent.trim().slice(0, 12)}"` : '');
     // the long map is the one thing allowed to scroll: what is inside it may be scrolled out of sight (the .wview box itself is checked)
@@ -128,6 +129,9 @@ async function playAll(view) {
   await p.goto('file://' + path.join(ROOT, 'build', 'test.html'));
   await p.evaluate(([k, s]) => localStorage.setItem(k, JSON.stringify(s)), [V1, SAVE]);
   await p.reload(); await p.waitForTimeout(600);
+  // 怪兽伤害的随机数固定成「不浮动、不暴击」：一下 = 10 × 当天狂暴倍数 × 怪兽狂暴倍数（hitOf）
+  const fixRoll = () => p.evaluate(() => __t.setMonRoll([0.5, 0.99]));
+  await fixRoll();
   const shot = name => shotCheck(p, view, SHOTS, name);
   const tap = tapper(p);
   // where a node sits inside the scrolled map: in view? how far from the middle?
@@ -187,14 +191,15 @@ async function playAll(view) {
   // 换题降一档：两位数 → 一位数，进位 → 不进位，整百 → 整十
   const easy = await p.evaluate(() => { const r = {}; for (const [w, l] of [[6, 0], [5, 0], [6, 7]]) { const L = __t.levelDef(w, l); let q0 = L.math(); for (let k = 0; k < 500 && !(q0.parts && q0.answer > 20); k++) q0 = L.math(); const out = []; for (let i = 0; i < 30; i++) { const e = L.easy(q0); if (e.parts) out.push(e); } r[w + '-' + l] = Math.max(...out.map(q => Math.max(...q.parts.filter(x => /^\d+$/.test(x)).map(Number)))); } return r; });
   if (!(easy['5-0'] < 200)) problems.push(`[${view.name}] 换题 on 整百 should give 整十 questions: ${JSON.stringify(easy)}`);
-  // 答错：心立刻少一颗（怪兽马上扑过来，不等蓄力）；挨完打，小老师的提示在画面中央弹出（战斗区大小不变），弹窗开着时蓄力暂停
+  // 答错：血量立刻少 10（怪兽马上扑过来，不等蓄力）；挨完打，小老师的提示在画面中央弹出（战斗区大小不变），弹窗开着时蓄力暂停
   const arenaBox = () => p.evaluate(() => { const r = document.getElementById('arena').getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round).join(','); });
   const wrong = await p.evaluate(() => { const B = __t.B; B.lucky = 0; B.shield = 0; const a = String(B.q.answer); return [...document.querySelectorAll('.ans')].map(b => b.dataset.v).find(v => v !== a); });
   await p.waitForTimeout(300);
-  const box0 = await arenaBox(), h0 = await p.evaluate(() => { const B = __t.B; B.qt = 0.5; B.charge = 0.5; return { h: B.hearts, d: B.dmg }; });
+  const box0 = await arenaBox(), h0 = await p.evaluate(() => { const B = __t.B; B.qt = 0.5; B.charge = 0.5; return { h: B.life, d: __t.monsterHit(B.dmg, B.fury, 0.5, 0.99).dmg }; });
   await tap(`.ans[data-v="${wrong}"]`); await p.waitForTimeout(260);
-  const h1 = await p.evaluate(() => ({ h: __t.B.hearts, qt: __t.B.qt, c: __t.B.charge }));
-  if (h1.h !== h0.h - h0.d) problems.push(`[${view.name}] a wrong answer should cost ${h0.d} heart(s) at once (within 260 ms): ${h0.h} → ${h1.h}`);
+  const h1 = await p.evaluate(() => ({ h: __t.B.life, qt: __t.B.qt, c: __t.B.charge, txt: document.getElementById('lifeText').textContent }));
+  if (h0.d !== 10 || h1.h !== h0.h - h0.d) problems.push(`[${view.name}] a wrong answer should cost ${h0.d} (= 10) life at once (within 260 ms): ${h0.h} → ${h1.h}`);
+  if (h1.txt.replace(/\s+/g, '') !== h1.h + '/' + await p.evaluate(() => __t.B.maxLife)) problems.push(`[${view.name}] the hero life bar should read 「${h1.h} / max」: ${h1.txt}`);
   // 答错后重新计时、蓄力清零：一题内不会「蓄力 + 答错 + 超时」连着挨 3 下
   if (h1.qt > 0.05 || h1.c > 0.05) problems.push(`[${view.name}] a wrong answer should restart the question timer and the charge: ${JSON.stringify(h1)}`);
   await shot('05a-wrong-hit');
@@ -402,7 +407,7 @@ async function playAll(view) {
   if (!await p.evaluate(() => /部分美术由 AI 生成/.test(document.getElementById('pbody').textContent))) problems.push(`[${view.name}] the parent page should say 「部分美术由 AI 生成」 at the bottom`);
   await tap('.tab[data-t="rep"]'); await shot('12-report'); await tap('#pgBack');
   await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.openAll = true; s.mapWorld = 2; localStorage.setItem(k, JSON.stringify(s)); }, V1);
-  await p.reload(); await p.waitForTimeout(500);
+  await p.reload(); await p.waitForTimeout(500); await fixRoll();
   await tapNode(2, 14); await p.waitForTimeout(2700); await shot('13-boss');
   if (await p.evaluate(() => __t.B.mode !== 'battle' || !__t.B.L.boss)) problems.push(`[${view.name}] level 15 must be a Boss battle`);
   if (!/必掉装备/.test(await p.textContent('#dropTag'))) problems.push(`[${view.name}] a Boss should show 「必掉装备」`);
@@ -431,7 +436,7 @@ async function playAll(view) {
       for (let i = 0; i < 5000 && !q; i++) { const x = d.math(); if (x.intro) q = x; }
       __t.closeHint(); __t.nextQuestion(q); return __t.qTime();
     }, [w, l]);
-    if (t <= 15) problems.push(`[${view.name}] the first chain-inverse question should get the word-problem time (40 s), got ${t}`);
+    if (t < 35) problems.push(`[${view.name}] the first chain-inverse question should get the word-problem time (35 s), got ${t}`);
     await p.waitForTimeout(300); await shot(`14c-chain-intro-${name}-q`);
     await tap('#hintBtn'); await p.waitForTimeout(300);
     while (await p.$('#stNext')) await tap('#stNext');
@@ -510,23 +515,23 @@ async function playAll(view) {
   const runBag = await p.evaluate(() => __t.S.bag.length);
   await tap('.card[data-i="0"]'); await p.waitForTimeout(700); await shot('15b-run-card');
   if (await p.evaluate(() => __t.S.bag.length) !== runBag + 1) problems.push(`[${view.name}] run treasure card did not give gear`);
-  // 颜色题答错不扣心：这里关掉颜色题，免得第一题刚好是颜色题
-  // 当天第 16 次通关前起进入「狂暴 ×2」：怪兽每次攻击扣 2 颗心、每题 10 秒
+  // 颜色题答错不扣血：这里关掉颜色题，免得第一题刚好是颜色题
+  // 当天第 16 次通关前起进入「狂暴 ×2」：怪兽每次攻击 ×2（20 血）、每题 8 秒
   await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.mapWorld = 0; s.equipped = { weapon: null, helmet: null, armor: null, shield: null }; s.qOn = Object.assign(s.qOn || {}, { color: false }); localStorage.setItem(k, JSON.stringify(s)); }, V1);
-  await p.reload(); await p.waitForTimeout(500);
+  await p.reload(); await p.waitForTimeout(500); await fixRoll();
   await p.evaluate(() => __t.setDaily(15)); await p.waitForTimeout(200); await shot('17-map-rage');
   if ((await p.textContent('#dayTag')).trim() !== '狂暴中') problems.push(`[${view.name}] map day tag should say 狂暴中`);
   await tapNode(0, 1); await p.waitForTimeout(1900); await shot('18-battle-rage');
-  const rage = await p.evaluate(() => ({ rage: __t.B.rage, t: __t.qTime(), tag: document.getElementById('rageTag').textContent.trim(), tagShown: !document.getElementById('rageTag').hidden, hearts: __t.B.hearts }));
+  const rage = await p.evaluate(() => ({ rage: __t.B.rage, t: __t.qTime(), tag: document.getElementById('rageTag').textContent.trim(), tagShown: !document.getElementById('rageTag').hidden, life: __t.B.life }));
   if (rage.rage !== 1 || !rage.tagShown || rage.tag.replace(/\s+/g, '') !== '狂暴×2') problems.push(`[${view.name}] rage x2 not shown: ${JSON.stringify(rage)}`);
-  if (Math.abs(rage.t - 10) > 1e-9) problems.push(`[${view.name}] rage x2 time limit should be 10 s, got ${rage.t}`);
+  if (Math.abs(rage.t - 8) > 1e-9) problems.push(`[${view.name}] rage x2 time limit should be 8 s, got ${rage.t}`);
   const rc = await p.evaluate(() => __t.chargeTime());
   if (Math.abs(rc - rage.t) > 1e-9) problems.push(`[${view.name}] rage x2: the one timer bar = the time limit (${rage.t} s), got ${rc}`);
   await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 0; });
   const wrong2 = await p.evaluate(() => { const a = String(__t.B.q.answer); return [...document.querySelectorAll('.ans')].map(b => b.dataset.v).find(v => v !== a); });
   await tap(`.ans[data-v="${wrong2}"]`); await p.waitForTimeout(900); await shot('19-rage-hit');
-  const lost = rage.hearts - await p.evaluate(() => __t.B.hearts);
-  if (lost !== 2) problems.push(`[${view.name}] rage x2 hit should cost 2 hearts, cost ${lost}`);
+  const lost = rage.life - await p.evaluate(() => __t.B.life);
+  if (lost !== 20) problems.push(`[${view.name}] rage x2 hit should cost 20 life, cost ${lost}`);
   // 最后 5 秒的大数字：怪兽（超时）打过来以后，同一个数字不能再弹一次；「⏰ 太慢啦！」在道具提示时也看得见
   await p.evaluate(() => __t.closeHint());
   await p.waitForFunction(() => __t.B && !__t.B.busy && !__t.B.over, null, { timeout: 4000 });
@@ -595,18 +600,18 @@ async function playAll(view) {
   if (!s5.punch || !/atk-punch/.test(s5.hero) || s5.slash) problems.push(`[${view.name}] without a weapon the hero should punch: ${JSON.stringify(s5)}`);
   // 拳击特效只有光圈，界面上不能冒出系统拳头 emoji 👊
   if (s5.fist) problems.push(`[${view.name}] the punch effect must not show the 👊 emoji: ${JSON.stringify(s5)}`);
-  // 蓄力 = 本题限时：普通关 15 秒蓄满打一下；过 70% 道具按钮闪「快用去错！」
+  // 蓄力 = 本题限时：普通关 12 秒蓄满打一下；过 70% 道具按钮闪「快用去错！」
   await ready();
   const ct = await p.evaluate(() => __t.chargeTime());
-  if (Math.abs(ct - 15) > 1e-9) problems.push(`[${view.name}] a normal monster should attack after the 15 s time limit, got ${ct}`);
+  if (Math.abs(ct - 12) > 1e-9) problems.push(`[${view.name}] a normal monster should attack after the 12 s time limit, got ${ct}`);
   await p.evaluate(() => { const B = __t.B; __t.S.items.cut = 2; __t.S.items.swap = 2; __t.renderItems(); B.qt = 0.75; }); await p.waitForTimeout(200); await shot('55-urge-cut');
   const ug = await p.evaluate(() => ({ txt: document.getElementById('urge').hidden ? '' : document.getElementById('urge').textContent, btn: !!document.querySelector('.item.nudge[data-it="cut"]:not(:disabled)') }));
   if (!/快用去错/.test(ug.txt) || !ug.btn) problems.push(`[${view.name}] over 70% the 去错 button should flash with 「快用去错！」: ${JSON.stringify(ug)}`);
-  const ch0 = await p.evaluate(() => { const B = __t.B; B.lucky = 0; B.shield = 0; B.qt = 0.995; return B.hearts; }); await p.waitForTimeout(450);
-  const ch1 = await p.evaluate(() => __t.B.hearts);
-  if (ch1 !== ch0 - 1) problems.push(`[${view.name}] a full charge should make the monster hit: ${ch0} → ${ch1}`);
+  const ch0 = await p.evaluate(() => { const B = __t.B; B.lucky = 0; B.shield = 0; B.qt = 0.995; return B.life; }); await p.waitForTimeout(450);
+  const ch1 = await p.evaluate(() => __t.B.life);
+  if (ch1 !== ch0 - 10) problems.push(`[${view.name}] a full charge should make the monster hit: ${ch0} → ${ch1}`);
   await leaveBattle(); await p.waitForTimeout(300);
-  // 逃跑：🗺️ 先确认；跑不掉怪兽打一下（扣心）、留在战斗里；跑掉扣身上装备经验、回地图；切到后台不算逃跑
+  // 逃跑：🗺️ 先确认；跑不掉怪兽打一下（扣血）、留在战斗里；跑掉扣身上装备经验、回地图；切到后台不算逃跑
   await p.evaluate(() => { equipGear({ id: 'flee_w', slot: 'weapon', quality: 'white', name: '测试·木剑', e: '🗡️', lv: 2, exp: 25, affixes: [{ id: 'atk', val: 1 }] }); });
   await tapNode(0, 1); await p.waitForTimeout(1900);
   await p.evaluate(() => { document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('pagehide')); window.dispatchEvent(new Event('blur')); });
@@ -615,10 +620,10 @@ async function playAll(view) {
   await tap('#bBack'); await p.waitForTimeout(300); await shot('34-flee-confirm');
   if (!(await p.isVisible('#fGo')) || !/扣除装备经验/.test(await p.textContent('#pbody'))) problems.push(`[${view.name}] 🗺️ in battle should ask 「真的要逃跑吗？」 first`);
   for (const id of ['fStay', 'fGo']) if (await p.evaluate(id => { const w = document.createTreeWalker(document.getElementById(id), NodeFilter.SHOW_TEXT); let n, r = document.createRange(); while ((n = w.nextNode())) { if (!n.textContent.trim()) continue; r.selectNodeContents(n); if (new Set([...r.getClientRects()].map(x => Math.round(x.top))).size > 1) return true; } return false; }, id)) problems.push(`[${view.name}] flee confirm button #${id} wraps onto two lines`);
-  const fl0 = await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 0; window.__rnd = Math.random; Math.random = () => 0.99; return { h: __t.B.hearts, d: __t.B.dmg }; });
+  const fl0 = await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 0; window.__rnd = Math.random; Math.random = () => 0.99; return { h: __t.B.life, d: __t.monsterHit(__t.B.dmg, __t.B.fury, 0.5, 0.99).dmg }; });
   await tap('#fGo'); await p.waitForTimeout(250); await shot('34b-flee-fail'); await p.waitForTimeout(700);
-  const fl1 = await p.evaluate(() => { Math.random = window.__rnd; return { h: __t.B.hearts, over: __t.B.over, battle: !document.getElementById('battle').hidden, modal: !document.getElementById('modal').hidden }; });
-  if (fl1.h !== fl0.h - fl0.d || fl1.over || !fl1.battle || fl1.modal) problems.push(`[${view.name}] a failed flee should cost ${fl0.d} heart(s) and keep fighting: ${JSON.stringify({ fl0, fl1 })}`);
+  const fl1 = await p.evaluate(() => { Math.random = window.__rnd; return { h: __t.B.life, over: __t.B.over, battle: !document.getElementById('battle').hidden, modal: !document.getElementById('modal').hidden }; });
+  if (fl1.h !== fl0.h - fl0.d || fl1.over || !fl1.battle || fl1.modal) problems.push(`[${view.name}] a failed flee should cost ${fl0.d} life and keep fighting: ${JSON.stringify({ fl0, fl1 })}`);
   // 逃跑失败后 5 秒内地图按钮变灰、显示倒数，点了也不会再问「要逃跑吗」
   await shot('34b2-flee-cooldown');
   // 冷却时连点地图按钮：只提示一次「几秒后才能再逃跑」（试玩报告：不要每点一下都响一次）
@@ -681,7 +686,7 @@ async function playAll(view) {
     return bad;
   });
   for (const x of all) problems.push(`[${view.name}] level ${x}`);
-  // 算术消除（1 层）：点错扣心，配对打怪，消完就赢
+  // 算术消除（1 层）：点错扣血，配对打怪，消完就赢
   const unc = () => p.evaluate(() => (__t.B.board.cards || __t.B.board).filter(c => !c.coveredBy.length).map(c => ({ id: c.id, v: c.value })));
   const playMatch = async (name) => {
     for (let i = 0; i < 20; i++) {
@@ -697,10 +702,10 @@ async function playAll(view) {
   };
   await p.evaluate(() => __t.startLevel(0, 3)); await p.waitForTimeout(1800); await shot('24-match');
   await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 0; });
-  const mw = await p.evaluate(() => { const cs = (__t.B.board.cards || __t.B.board).filter(c => !c.coveredBy.length); const a = cs[0], b = cs.find(c => c.value !== a.value); return { a: a.id, b: b.id, h: __t.B.hearts, d: __t.B.dmg }; });
+  const mw = await p.evaluate(() => { const cs = (__t.B.board.cards || __t.B.board).filter(c => !c.coveredBy.length); const a = cs[0], b = cs.find(c => c.value !== a.value); return { a: a.id, b: b.id, h: __t.B.life, d: __t.monsterHit(__t.B.dmg, __t.B.fury, 0.5, 0.99).dmg }; });
   await tap(`.mcard[data-id="${mw.a}"]`); await tap(`.mcard[data-id="${mw.b}"]`); await p.waitForTimeout(250); await shot('24b-match-wrong'); await p.waitForTimeout(700);
-  const mLost = mw.h - await p.evaluate(() => __t.B.hearts);
-  if (mLost !== mw.d) problems.push(`[${view.name}] a wrong pair in 算术消除 should cost ${mw.d} heart(s), cost ${mLost}`);
+  const mLost = mw.h - await p.evaluate(() => __t.B.life);
+  if (mLost !== mw.d) problems.push(`[${view.name}] a wrong pair in 算术消除 should cost ${mw.d} life, cost ${mLost}`);
   await playMatch('24c-match-pair');
   // 手感：配对成功后马上点下一对也能配上（动画不锁输入）
   // 快速连击：0.5 秒内连着配成两对，第二下 ≥3；隔 3 秒再配，伤害回到 1；血量打到 0 就提前胜利，快速连点只结算一次
@@ -761,10 +766,10 @@ async function playAll(view) {
   if (lk.missingEmoji.length) problems.push(`[${view.name}] 连连看 dropped the emoji of characters that have one in PY: ${lk.missingEmoji}`);
   if (!lk.emojiN) problems.push(`[${view.name}] 连连看 should carry the emoji of characters that are in PY`);
   await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 0; });
-  const lw = await p.evaluate(() => { const bd = __t.B.board, l = bd.left[0], r = bd.right.find(x => x.hz !== l.hz); return { l: l.id, r: r.id, h: __t.B.hearts, d: __t.B.dmg }; });
+  const lw = await p.evaluate(() => { const bd = __t.B.board, l = bd.left[0], r = bd.right.find(x => x.hz !== l.hz); return { l: l.id, r: r.id, h: __t.B.life, d: __t.monsterHit(__t.B.dmg, __t.B.fury, 0.5, 0.99).dmg }; });
   await tap(`.lnk[data-id="${lw.l}"]`); await tap(`.lnk[data-id="${lw.r}"]`); await p.waitForTimeout(950);
-  const lLost = lw.h - await p.evaluate(() => __t.B.hearts);
-  if (lLost !== lw.d) problems.push(`[${view.name}] a wrong link should cost ${lw.d} heart(s), cost ${lLost}`);
+  const lLost = lw.h - await p.evaluate(() => __t.B.life);
+  if (lLost !== lw.d) problems.push(`[${view.name}] a wrong link should cost ${lw.d} life, cost ${lLost}`);
   for (let i = 0; i < 4; i++) {
     const pr = await p.evaluate(() => { const bd = __t.B.board, l = bd.left.find(x => !x.matched); if (!l || __t.B.over) return null; return { l: l.id, r: bd.right.find(x => x.hz === l.hz).id }; });
     if (!pr) break;
@@ -1001,11 +1006,11 @@ async function playAll(view) {
   const cBag = await candy(); if (cBag.length) problems.push(`[${view.name}] bag is not candy style: ${cBag.slice(0, 4)}`);
   await tap('#pgBack'); await p.evaluate(() => { __t.S.sound = false; }); await p.waitForTimeout(200);
   await tapNode(0, 1); await p.waitForTimeout(1900);
-  // one heart lost (empty-heart picture), all three items in stock
-  await p.evaluate(() => { const B = __t.B; __t.S.items.heal = 2; __t.S.items.cut = 2; __t.S.items.swap = 2; B.lucky = 0; B.shield = 0; B.hearts = B.maxH - 2; __t.renderItems(); });
+  // some life lost, all three items in stock
+  await p.evaluate(() => { const B = __t.B; __t.S.items.heal = 2; __t.S.items.cut = 2; __t.S.items.swap = 2; B.lucky = 0; B.shield = 0; B.life = B.maxLife - 20; __t.renderItems(); });
   await p.evaluate(() => __t.useItem('heal')); await p.waitForTimeout(1400);
   await shot('63-candy-battle');
-  const cBat = await candy(), iBat = await p.evaluate(() => ({ items: document.querySelectorAll('#items img.icon').length + document.querySelectorAll('#items svg.cs').length, svg: document.querySelectorAll('#items svg.cs').length, hearts: document.querySelectorAll('#hearts img.icon').length, empty: document.querySelectorAll('#hearts .lost img.icon').length, back: !!document.querySelector('#bBack img.icon') }));
+  const cBat = await candy(), iBat = await p.evaluate(() => ({ items: document.querySelectorAll('#items img.icon').length + document.querySelectorAll('#items svg.cs').length, svg: document.querySelectorAll('#items svg.cs').length, hearts: document.querySelectorAll('#bStat img.icon').length, back: !!document.querySelector('#bBack img.icon') }));
   if (cBat.length) problems.push(`[${view.name}] battle is not candy style: ${cBat.slice(0, 4)}`);
   if (iBat.items !== 3 || iBat.svg !== 2 || !iBat.hearts || !iBat.back) problems.push(`[${view.name}] battle should use the painted heart / potion / map icons and the candy 去错 / 换题 icons: ${JSON.stringify(iBat)}`);
   await p.evaluate(() => __t.setDrops(() => ({ exp: 15, gear: rollGear(10, false, { slot: 'weapon', quality: 'purple' }), item: 'cut', stone: 1, gearExp: 10 })));
@@ -1144,7 +1149,7 @@ async function itemMigration() {
 }
 
 // 第五轮系统（闪避、成长显示、大关宝箱、勇士擅长、结伴探险、题型开关、家长新页签）：见 r5_systems.mjs。
-// 只跑这一部分：ONLY=r5 node tools/smoke_test.mjs
+// 只跑这一部分：ONLY=r5 node tools/smoke_test.mjs（第六轮战斗压迫感 r6_pressure.mjs：ONLY=r6）
 async function r5Run(view) {
   const SHOTS = path.join(ROOT, 'build', 'shots', view.name); mkdirSync(SHOTS, { recursive: true });
   const { ctx, p } = await newPage(view);
@@ -1152,17 +1157,19 @@ async function r5Run(view) {
   await p.evaluate(([k, s]) => localStorage.setItem(k, JSON.stringify(s)), [V1, SAVE]);
   await p.reload(); await p.waitForTimeout(600);
   const o = { view, problems, shot: name => shotCheck(p, view, SHOTS, name), tap: tapper(p) };
+  if (process.env.ONLY === 'r6') { await r6Pressure(p, o, V1); await ctx.close(); return; }
   await r5Systems(p, o);
   await r5Growth(p, o);
   await r5Heroes(p, o);
   await r5Mystic(p, o);
   await r5Parent(p, o);
   await r5Knowledge(p, o);
+  await r6Pressure(p, o, V1);
   await r5Migrate(p, o, V1);
   await ctx.close();
 }
 const VIEWS = [{ name: '375', viewport: { width: 375, height: 667 }, dpr: 2, safe: { top: 0, bottom: 0 } }, { name: '393', viewport: { width: 393, height: 852 }, dpr: 3, safe: { top: 59, bottom: 34 } }];
-if (process.env.ONLY !== 'r5') {
+if (!['r5', 'r6'].includes(process.env.ONLY)) {
   await itemMigration();
   for (const v of VIEWS) await playAll(v);
   await betaCheck();
