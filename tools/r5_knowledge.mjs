@@ -1,7 +1,7 @@
 // 第五轮知识题测试（smoke_test.mjs 的 r5Run 里调用，截图前缀 85-）：
 //   kCheck：小知识 / 实物辨认 / 颜色题每类抽样 2000 次——答案在选项里、选项不重复、图片都存在、蛋按真实大小缩放、鸽子蛋不和鸡蛋同题、
 //           颜色题选项颜色不同、混色结果对、基本色明暗差得开；再统计各大关里三类题的比例、不连着出、第 1 大关的话题
-//   r5Knowledge：每类题面截图（375 / 393），颜色题答错写进颜色题记录且不扣心，关掉开关后不再出现
+//   r5Knowledge：每类题面截图（375 / 393），颜色题答错写进颜色题记录且不扣血，关掉开关后不再出现
 export async function kCheck(p, n = 2000) {
   return p.evaluate(n => {
     const T = __t, out = [], stats = {};
@@ -92,15 +92,15 @@ export async function r5Knowledge(p, { view, problems, shot, tap }) {
     await shot('85-' + name);
     if (['fact-pic', 'spot-egg', 'color-mix'].includes(name)) { await p.evaluate(() => __t.showHint()); await p.waitForTimeout(200); await shot('85-' + name + '-hint'); await p.evaluate(() => __t.closeHint()); }
   }
-  // 颜色题答错：写进颜色题记录（题目颜色、孩子选的颜色），不扣心
+  // 颜色题答错：写进颜色题记录（题目颜色、孩子选的颜色），不扣血
   await p.evaluate(() => { __t.S.colorLog = []; __t.closeHint(); __t.nextQuestion(__t.G.color(99, 'shade')); }); await p.waitForTimeout(250);
-  const before = await p.evaluate(() => ({ h: __t.B.hearts, m: __t.S.mistakes.length, a: __t.B.q.answer, wrong: __t.B.q.options.find(o => o !== __t.B.q.answer) }));
+  const before = await p.evaluate(() => ({ h: __t.B.life, m: __t.S.mistakes.length, a: __t.B.q.answer, wrong: __t.B.q.options.find(o => o !== __t.B.q.answer) }));
   await tap(`#answers .ans[data-v="${before.wrong}"]`); await p.waitForTimeout(700);
-  const after = await p.evaluate(() => ({ h: __t.B.hearts, m: __t.S.mistakes.length, log: __t.S.colorLog[0], n: __t.S.colorLog.length, busy: __t.B.busy }));
+  const after = await p.evaluate(() => ({ h: __t.B.life, m: __t.S.mistakes.length, log: __t.S.colorLog[0], n: __t.S.colorLog.length, busy: __t.B.busy }));
   const COL = await p.evaluate(() => __t.COLORS);
   if (after.n !== 1 || after.log.q.name !== COL[before.a][0] || after.log.pick.name !== COL[before.wrong][0] || !after.log.t) bad('颜色题答错应记下题目颜色、孩子选的颜色和时间: ' + JSON.stringify(after.log));
   if (after.m !== before.m) bad('颜色题答错不该进错题本（只记颜色题记录）');
-  if (after.h !== before.h || after.busy) bad('颜色题答错不该扣心、要能接着选: ' + JSON.stringify({ before, after }));
+  if (after.h !== before.h || after.busy) bad('颜色题答错不该扣血、要能接着选: ' + JSON.stringify({ before, after }));
   await p.evaluate(() => __t.closeHint()); await tap(`#answers .ans[data-v="${before.a}"]`); await p.waitForTimeout(900);
   await p.evaluate(() => __t.toMap()); await tap('#parentBtn'); await p.waitForTimeout(250); await tap('.tab[data-t="color"]'); await p.waitForTimeout(200); await shot('85-color-log-real');
   if ((await p.evaluate(() => document.querySelectorAll('.clog li').length)) !== 1) bad('家长看板颜色题记录应显示这一条');
