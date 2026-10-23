@@ -556,10 +556,14 @@ const HERO_HEAD = [{hx:.49, hy:.13, hw:.51}, {hx:.5, hy:.13, hw:.51}, {hx:.5, hy
    没有这张原画就退回第 1 阶段的原画。GROW_POSE 是长大后手和头的位置（同 HERO_HANDS / HERO_HEAD 的写法）。 */
 const GROW_NAME = ["base","ninja","robot","astronaut","trex","dragon","unicorn","king"];
 const GROW_POSE = {
-  dragon_2:{fr:.2, fl:.8, fy:.6, hx:.5, hy:.17, hw:.34}, dragon_3:{fr:.3, fl:.72, fy:.54, hx:.5, hy:.15, hw:.3}, dragon_4:{fr:.3, fl:.72, fy:.52, hx:.5, hy:.13, hw:.27},
-  trex_2:{fr:.36, fl:.76, fy:.58, hx:.55, hy:.13, hw:.4}, trex_3:{fr:.3, fl:.7, fy:.5, hx:.42, hy:.1, hw:.32},
-  unicorn_2:{fy:.56, hx:.45, hy:.18, hw:.38}, unicorn_3:{fy:.5, hx:.68, hy:.13, hw:.28},
-  king_2:{fr:.2, fl:.8, fy:.6, hx:.5, hy:.11, hw:.4}, king_3:{fr:.25, fl:.75, fy:.55, hx:.5, hy:.1, hw:.3}, king_4:{fr:.25, fl:.75, fy:.53, hx:.5, hy:.1, hw:.28}
+  dragon_2:{fr:.2, fl:.8, fy:.6, hx:.5, hy:.17, hw:.41}, dragon_3:{fr:.3, fl:.72, fy:.54, hx:.5, hy:.15, hw:.36}, dragon_4:{fr:.3, fl:.72, fy:.52, hx:.5, hy:.13, hw:.32},
+  trex_2:{fr:.36, fl:.76, fy:.58, hx:.55, hy:.13, hw:.48}, trex_3:{fr:.3, fl:.7, fy:.5, hx:.42, hy:.1, hw:.38},
+  unicorn_2:{fy:.56, hx:.45, hy:.18, hw:.46}, unicorn_3:{fy:.5, hx:.68, hy:.13, hw:.34},
+  trex_4:{fr:.22, fl:.74, fy:.48, hx:.45, hy:.1, hw:.38}, unicorn_4:{fy:.5, hx:.7, hy:.13, hw:.31},
+  robot_2:{fr:.15, fl:.85, fy:.56, hx:.5, hy:.12, hw:.50}, robot_3:{fr:.13, fl:.87, fy:.55, hx:.5, hy:.1, hw:.36}, robot_4:{fr:.11, fl:.89, fy:.55, hx:.5, hy:.1, hw:.36},
+  astronaut_2:{fr:.12, fl:.88, fy:.55, hx:.5, hy:.08, hw:.48}, astronaut_3:{fr:.12, fl:.88, fy:.55, hx:.5, hy:.08, hw:.46}, astronaut_4:{fr:.12, fl:.88, fy:.53, hx:.5, hy:.08, hw:.43},
+  ninja_4:{fr:.2, fl:.8, fy:.5, hx:.5, hy:.09, hw:.38}, base_3:{fr:.16, fl:.84, fy:.54, hx:.5, hy:.09, hw:.46},
+  king_2:{fr:.2, fl:.8, fy:.6, hx:.5, hy:.11, hw:.48}, king_3:{fr:.25, fl:.75, fy:.55, hx:.5, hy:.1, hw:.36}, king_4:{fr:.25, fl:.75, fy:.53, hx:.5, hy:.1, hw:.34}
 };
 const growKey = (i, st) => st>=2 ? (HEROES[i] && HEROES[i].mystic ? "base" : GROW_NAME[i]||"base")+"_"+st : "";
 const growArt = (i, eq, st) => { if(!(st>=2)) return null; const mys = HEROES[i] && HEROES[i].mystic;
