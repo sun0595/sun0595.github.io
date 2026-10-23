@@ -720,7 +720,8 @@ function avatarHTML(eq, st){
     const hp = gp ? Object.assign({}, HERO_HANDS[hi], gp) : HERO_HANDS[hi] || {};
     const hand = (slot, side) => eq[slot] && art(slot+"_"+eq[slot].quality) ? artTag(art(slot+"_"+eq[slot].quality), "hand "+side+" q-"+eq[slot].quality, "", "--qc:"+qCol(eq[slot])) : "";
     // fists sit a little differently per look (小勇士的盔甲品质，或别的勇士 h1…h7)
-    const look = gk ? "g"+st : hi ? "h"+hi : eq.armor && art("hero_"+eq.armor.quality) ? eq.armor.quality : "base";
+    // 神秘勇士长大了也保持剪影 + 金光（a-h8），位置照样用 GROW_POSE
+    const look = HEROES[hi] && HEROES[hi].mystic ? "h"+hi : gk ? "g"+st : hi ? "h"+hi : eq.armor && art("hero_"+eq.armor.quality) ? eq.armor.quality : "base";
     const hd = gp ? Object.assign({}, HERO_HEAD[hi] || HERO_HEAD[0], gp) : HERO_HEAD[hi] || HERO_HEAD[0];
     const grip = ["fr","fl","fy"].filter(k=>hp[k]!=null).map(k=>"--"+k+":"+hp[k]).concat(["hx","hy","hw"].map(k=>"--"+k+":"+hd[k])).join(";");
     // 头盔：用这件头盔自己的 3D 图（铁盔 / 王冠 / 战帽 / 法帽，不用界面线条图标），带品质颜色的光
@@ -1814,7 +1815,8 @@ let evolving = false;
 function maybeEvolve(){
   const st = heroStage(), from = S.seenStage || 1;
   // 测试版（build.py --test）里 __t.noEvolve 默认为真：自动走查时不弹，免得挡住后面的点击
-  if(evolving || st <= from || !$("battle").hidden || (window.__t && window.__t.noEvolve)) return false;
+  // 战斗进行中不演；打完了（结算页，B.over）可以演
+  if(evolving || st <= from || (!$("battle").hidden && !(B && B.over)) || (window.__t && window.__t.noEvolve)) return false;
   evolving = true; S.seenStage = st; save();
   const h = hero(), hi = HEROES.indexOf(h), eq = S.equipped;
   const ov = document.createElement("div"); ov.className = "evo"; ov.id = "evo";
