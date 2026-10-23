@@ -532,10 +532,10 @@ function openLevel(){
   const lv = S.heroLv||1, b = lvBonus(lv), nx = nextLvBonus(lv);
   openPage({title:"⭐ 勇士等级", back:true, onClose:renderMap, cls:"lvpage", body:
     '<div class="rexp">'+img("📘", "rxi")+'<span class="rlv">Lv.<b class="num">'+lv+'</b></span><span class="xbar"><i style="width:'+pctOf(S.exp||0, expNeed(lv))+'%"></i></span><b class="num rgain">'+(S.exp||0)+'/'+expNeed(lv)+'</b></div>'
-    + '<div class="lvstats"><div class="lvs">'+img("⚔️")+'<span>攻击</span><b class="num" id="lvAtk">+'+b.atk+'</b></div><div class="lvs">'+img("❤️")+'<span>心上限</span><b class="num" id="lvHeart">+'+b.hearts+'</b></div></div>'
+    + '<div class="lvstats"><div class="lvs">'+img("⚔️")+'<span>攻击</span><b class="num" id="lvAtk">+'+b.atk+'</b></div><div class="lvs">'+img("❤️")+'<span>血量上限</span><b class="num" id="lvHeart">+'+b.hp+'</b></div></div>'
     + (nx ? '<p>'+img("⬆️")+' 升到 <b class="num">Lv.'+nx.lv+'</b>：'+bonusText(nx)+'</p>' : '')
-    + '<p class="muted"><small>每升 '+LV_ATK_EVERY+' 级攻击 +1，每升 '+LV_HEART_EVERY+' 级心 +1（最多 +'+LV_HEART_MAX+'）<br>打怪兽得经验；'+img("🏃")+' 逃跑会扣装备经验</small></p>'});
-  say("勇士"+lv+"级，攻击加"+b.atk+"，心加"+b.hearts);
+    + '<p class="muted"><small>每升 '+LV_ATK_EVERY+' 级攻击 +1，每升 '+LV_HP_EVERY+' 级血量 +'+LV_HP_STEP+'（最多 +'+LV_HP_MAX+'）<br>打怪兽得经验；'+img("🏃")+' 逃跑会扣装备经验</small></p>'});
+  say("勇士"+lv+"级，攻击加"+b.atk+"，血量加"+b.hp);
 }
 // 装备解锁的勇士：获得过这个品质（或更高）的装备
 const gearNeed = k => '获得过<b style="color:'+GEAR_QUALITY_MAP[k].col+'">'+GEAR_QUALITY_MAP[k].name+'色</b>或更好的装备';
@@ -665,14 +665,14 @@ function openHeroes(){
   render(true);
 }
 
-/* 成长看得见（第五轮）：勇士现在的攻击（普通一下打掉几滴血）和心上限（普通关），穿装备前后对比 */
+/* 成长看得见（第五轮）：勇士现在的攻击（普通一下打掉几滴血）和血量上限（普通关），穿装备前后对比 */
 function heroPower(eq){
   const gs = gearStats(eq || S.equipped), lb = lvBonus(S.heroLv||1);
-  return {atk: 1 + Math.floor(gs.atk/3) + lb.atk, hearts: 3 + lb.hearts, shield: gs.shield, lucky: gs.lucky, time: gs.time, crit: gs.critRate};
+  return {atk: 1 + Math.floor(gs.atk/3) + lb.atk, hp: HERO_HP + lb.hp, shield: gs.shield, lucky: gs.lucky, time: gs.time, crit: gs.critRate};
 }
-const battleStatHTML = () => { if(!B) return ""; return '<span class="bst" id="bStat">'+img("⚔️")+'<b class="num">'+(1+atkBonus()+B.lvAtk)+'</b>'+img("❤️")+'<b class="num">'+B.maxH+'</b></span>'; };
+const battleStatHTML = () => { if(!B) return ""; return '<span class="bst" id="bStat">'+img("⚔️")+'<b class="num">'+(1+atkBonus()+B.lvAtk)+'</b>'+img("❤️")+'<b class="num">'+B.maxLife+'</b></span>'; };
 // 穿上 / 换装备：弹出「⚔️ 攻击 3 → 5」这样的对比（变了的都列出来；都没变就只写攻击）
-const POWER_ROWS = [["atk","⚔️","攻击"],["hearts","❤️","心"],["shield","🛡️","每关挡住"],["lucky","🍀","答错不扣心"],["time","⏳","多给秒数"],["crit","🎯","暴击机会"]];
+const POWER_ROWS = [["atk","⚔️","攻击"],["hp","❤️","血量"],["shield","🛡️","护盾挡一半"],["lucky","🍀","答错伤害减半"],["time","⏳","多给秒数"],["crit","🎯","暴击机会"]];
 function powerDiff(a, b){
   const rows = POWER_ROWS.filter(([k])=>a[k]!==b[k]);
   return (rows.length ? rows : POWER_ROWS.slice(0,1)).map(([k,e,n])=>'<p>'+img(e)+' '+n+' <b class="num">'+a[k]+'</b> → <b class="num'+(b[k]>a[k]?' up':b[k]<a[k]?' down':'')+'">'+b[k]+'</b></p>').join("");
@@ -686,11 +686,11 @@ function statPop(before){
 }
 // 穿上装备，并弹出前后对比
 function wearWithPop(id){ const before = heroPower(); equipGear(id); statPop(before); }
-// 词缀用孩子听得懂的话：「每题多打 1 下」「每关挡住 1 次攻击」……
+// 词缀用孩子听得懂的话：「每题多打 1 下」「每关挡住 1 次攻击的一半伤害」……
 const AFX_KID = {
   atk: v => v>=3 ? "每题多打 "+Math.floor(v/3)+" 下" : "攻击 +"+v+"（攒满 3 点每题多打 1 下）",
   critRate: v => "多 "+v+"% 机会暴击", critDmg: v => "暴击多打 "+v+" 下", time: v => "每题多 "+v+" 秒",
-  shield: v => "每关挡住 "+v+" 次攻击", comboHeal: v => "连对 5 题回 "+v+" 颗心", lucky: v => "每关答错 "+v+" 次不扣心", slow: v => "怪兽蓄力慢 "+v+"%"};
+  shield: v => "每关挡住 "+v+" 次攻击的一半伤害", comboHeal: v => "连对 5 题回 "+v*10+"% 血量", lucky: v => "每关答错 "+v+" 次伤害减半", slow: v => "怪兽蓄力慢 "+v+"%"};
 const gearKid = g => g.affixes.filter(a=>AFX_KID[a.id]).map(a=>AFX_KID[a.id](afxVal(g,a))).join("，");
 
 /* ================= gear (装备)：掉落卡、背包、主角穿戴预览 =================
@@ -700,7 +700,7 @@ const SLOT_KEYS = ["weapon","helmet","armor","shield"];
 const QIDX = Object.fromEntries(GEAR_QUALITIES.map((q,i)=>[q.key,i]));
 const qCol = g => (GEAR_QUALITY_MAP[g.quality]||GEAR_QUALITIES[0]).col;
 // affixes are shown as icon + number, e.g. ⚔️+3  ⏳+2秒
-const AFX_NUM = {atk:v=>"+"+v, critRate:v=>"+"+v+"%", critDmg:v=>"+"+v, time:v=>"+"+v+"秒", shield:v=>"+"+v, comboHeal:v=>"+"+v, lucky:v=>"+"+v, slow:v=>"+"+v+"%"};
+const AFX_NUM = {atk:v=>"+"+v, critRate:v=>"+"+v+"%", critDmg:v=>"+"+v, time:v=>"+"+v+"秒", shield:v=>"+"+v, comboHeal:v=>"+"+v*10+"%", lucky:v=>"+"+v, slow:v=>"+"+v+"%"};
 const afxVal = (g, a) => Math.round((a.val||0) * (1 + 0.2*((g.lv||1)-1)));   // what the battle uses at this gear level
 const afxChip = (id, v) => '<span class="afx">'+img(GEAR_AFFIXES[id].e)+'<b class="num">'+AFX_NUM[id](v)+'</b></span>';
 // how good a piece is: quality first, then each affix as a share of its best possible (red) value
@@ -982,11 +982,11 @@ function startLevel(w,l,run){
   const L = run ? Object.assign({}, L0, {g:L0.math}) : L0;   // 连闯里一律出本关的计算题（拼读关也不例外）
   const diff = run ? 0 : diffOf(w,l), rage = rageLevel();
   const lb = lvBonus(S.heroLv||1);
-  const maxH = run ? 5 : (L.boss ? 5 : 3) + lb.hearts;   // 等级加成：心上限（连闯固定 5 心）
+  const maxLife = run ? RUN_HP : (L.boss ? HERO_HP_BOSS : HERO_HP) + lb.hp;   // 等级加成：血量上限（连闯固定 50）
   const h = hero(), gs = gearStats(S.equipped);
   // 消除 / 连连看：怪兽血量固定（BOARD_HP），连击打得快就能提前打倒；慢慢配完最后一对也一定赢
   const hp = BOARD_HP[mode] || L.hp + 2*diff;
-  B = {w,l,W:Wd,L,h,mode,board:null,sel:null,diff,run:run||null,hp,maxHp:hp,rage,dmg:RAGE[rage].dmg,maxH,hearts:run?run.hearts:maxH,combo:0,q:null,busy:true,charge:0,qt:0,over:false,recent:[],enraged:false,hintOpen:false,step:0,lastTick:0,wrongThisQ:false,
+  B = {w,l,W:Wd,L,h,mode,board:null,sel:null,diff,run:run||null,hp,maxHp:hp,rage,dmg:RAGE[rage].dmg,maxLife,life:run?Math.max(1,Math.min(RUN_HP,runLife(run))):maxLife,fury:1,furyT:1,combo:0,q:null,busy:true,charge:0,qt:0,over:false,recent:[],enraged:false,hintOpen:false,step:0,lastTick:0,wrongThisQ:false,
        gs, shield:gs.shield, lucky:gs.lucky, fleeUntil:0, lvAtk:lb.atk, urged:false};
   const cur = B, bt = $("battle");
   setArenaBg(Wd.id);
@@ -1001,8 +1001,8 @@ function startLevel(w,l,run){
   $("heroSprite").className = "sprite"; $("heroSprite").innerHTML = avatarHTML(S.equipped); $("heroName").innerHTML = emo((S.crown?"👑":"")+h.n)+battleStatHTML();
   $("shield").hidden = !B.shield; $("shield").className = "shield";
   const ms = $("monSprite"); ms.className = "sprite"; ms.innerHTML = monImg(w,l);
-  $("monGrow").style.transform = ""; $("monBox").classList.remove("angry");
-  $("monName").textContent = (diff?TIERS[diff].n+"·":"")+L.n;
+  $("monGrow").style.transform = ""; $("monBox").classList.remove("angry","fury","bossfury"); $("furyFx").innerHTML = "";
+  $("monName").textContent = (diff?TIERS[diff].n+"·":"")+L.n; $("furyTag").hidden = true;
   $("monName").style.boxShadow = diff ? "0 0 0 2px "+TIERS[diff].c : "";
   // what this monster may drop: 「🪖 头盔 20%」, a Boss always drops gear
   const md = monsterDrop(Wd.id, l+1);
@@ -1012,7 +1012,7 @@ function startLevel(w,l,run){
   $("combo").textContent = ""; $("qTag").hidden = true;
   $("tutor").hidden = true; $("answers").innerHTML = ""; $("qText").innerHTML = ""; $("qcard").className = "qcard panel";
   $("arena").dataset.combo = "0"; $("arena").classList.remove("hitstop","urging"); fleeTick();
-  drawHearts(); drawHP(); drawCharge(); renderItems();
+  drawLife(); drawHP(); drawCharge(); renderItems();
   let delay;
   if(L.boss){
     banner('<div class="warn"><b>⚠ WARNING ⚠</b><span>'+L.n+' 来袭！</span></div>', 2300);
@@ -1056,15 +1056,16 @@ function toast(e, text){
   $("toast").innerHTML = '<div>'+img(e)+'<span>'+emo(text)+'</span></div>';
   const el = $("toast").firstChild; setTimeout(()=>{ if($("toast").firstChild===el) $("toast").innerHTML = ""; }, 1350);
 }
-function drawHearts(broke, gained){
-  let h = "";
-  $("hearts").classList.toggle("many", B.maxH>5);
-  const empty = art("icon_heart_empty");
-  for(let i=0;i<B.maxH;i++){
-    const cls = i<B.hearts ? (gained && i===B.hearts-1 ? "gain" : "") : (broke && i<B.hearts+(+broke) ? "break" : "lost");
-    h += '<span class="'+cls+(cls==="lost" && empty ? " ic" : "")+'">'+img(cls==="lost" && empty ? "🤍" : "❤️")+'</span>';
-  }
-  $("hearts").innerHTML = h;
+/* 勇士血条（家长 10-23：和怪兽血条一样，带数字）：低于 LOW_LIFE 变红闪烁；挨打抖一下，回血亮一下 */
+const LOW_LIFE = 0.3;
+const lifeBarHTML = (v, max, id) => '<div class="bar life'+(v<max*LOW_LIFE?" low":"")+'"'+(id?' id="'+id+'"':'')+'><i style="width:'+pctOf(v,max)+'%"></i><span>'+v+' / '+max+'</span></div>';
+function drawLife(hurt, gained){
+  const el = $("heroBar");
+  $("lifeFill").style.width = (B.life/B.maxLife*100)+"%";
+  $("lifeText").textContent = B.life+" / "+B.maxLife;
+  el.classList.toggle("low", B.life < B.maxLife*LOW_LIFE);
+  if(hurt) restart(el, "lhurt");   // 不能叫 hurt：那是勇士挨打的动画类
+  if(gained) restart(el, "gain");
 }
 function drawHP(){
   $("hpFill").style.width = (B.hp/B.maxHp*100)+"%";
@@ -1072,10 +1073,10 @@ function drawHP(){
 }
 /* 勇士技能 + 装备词缀的叠加规则：一律相加。
    时间：(档位秒数 + 装备 ⏳) × (1 + 减速%)，减速% = 勇士时间减速 30% + 装备 ❄️，合计封顶 60%；
-   护盾次数、幸运免伤次数、暴击伤害、攻击、连对回心都直接相加；暴击率（装备 🎯）封顶 60%。 */
+   护盾次数、幸运减伤次数、暴击伤害、攻击、连对回血都直接相加；暴击率（装备 🎯）封顶 60%。 */
 const SLOW_CAP = 60, CRIT_CAP = 60;
-// 消除、连连看是整盘限时（狂暴档按比例缩短）；超时怪兽打一下，计时重来
-const BOARD_TIME = {match:60, link:45}, LINK_N = 4;
+// 消除、连连看是整盘限时（狂暴档按比例缩短；家长 10-23 和答题一起缩短到 0.8：60 → 48、45 → 36）；超时怪兽打一下，计时重来
+const BOARD_TIME = {match:48, link:36}, LINK_N = 4;
 const BOARD_HP = {match:10, link:6};
 /* 消除 / 连连看的快速连击（时间窗口可调）：上一对配成后
    - COMBO_FAST 秒内又配成：闪电连击，这一下 +2（装备暴击率还有机会再 +1）
@@ -1084,17 +1085,19 @@ const BOARD_HP = {match:10, link:6};
    装备攻击仍不加到这里。 */
 const COMBO_FAST = 1.0, COMBO_WINDOW = 2.5;
 function qTime(){
-  // fixed 15 s per question (word problems 40 s), shortened by the day's rage level
+  // fixed 12 s per question (word problems 35 s), shortened by the day's rage level and by an enraged monster (B.furyT)
   const t = RAGE[B.rage].t;
   const base = BOARD_TIME[B.mode] ? Math.round(BOARD_TIME[B.mode]*t/Q_TIME)
     : B.q && B.q.kind==="word" ? Math.max(WORD_MIN, Math.round(WORD_TIME*t/Q_TIME)) : t;
   const slow = Math.min(SLOW_CAP, B.gs.slow);
-  return (base + B.gs.time) * (1 + slow/100);
+  // 最少 Q_MIN 秒（Fable 审查：每天第 46 关起 Boss 暴怒只剩 3.75 秒）
+  return Math.max(Q_MIN, (base + B.gs.time) * (1 + slow/100) * (B.furyT||1));
 }
+const Q_MIN = 4;
 /* 战斗手感（家长试玩反馈：要像成熟手游）。数字都在这里调：
-   - 怪兽蓄力 = 本题限时（家长 10-22：只留一条计时条，在怪兽血条正下方）：一题 15 秒（狂暴 10 / 8 / 6），蓄满怪兽就打一下；
+   - 怪兽蓄力 = 本题限时（家长 10-22：只留一条计时条，在怪兽血条正下方）：一题 12 秒（狂暴 8 / 6.5 / 5，怪兽狂暴再 ×0.8），蓄满怪兽就打一下；
      答对一题，怪兽被打断，蓄力清零；答错立刻挨一下，蓄力也重来。
-   - 道具：加心 +1；去错（4 选 1 变 3 选 1，消除 / 连连看里亮出一对正确的）；换题（同类型简单一档）。蓄力过 URGE_AT 道具按钮闪烁提示。
+   - 道具：加血（回 30% 血量）；去错（4 选 1 变 3 选 1，消除 / 连连看里亮出一对正确的）；换题（同类型简单一档）。蓄力过 URGE_AT 道具按钮闪烁提示。
    - 打击：命中瞬间定格 HITSTOP_MS（暴击 / Boss 更久）；连击 COMBO_TIERS = 3 / 5 / 10 三档光效和音效。
    - 逃跑失败后 FLEE_LOCK_SEC 秒内地图按钮变灰。 */
 const URGE_AT = 0.7;
@@ -1110,7 +1113,7 @@ function drawCharge(){
   const c = Math.min(1,B.qt);
   $("chargeFill").style.width = c*100+"%";
   $("chargeWrap").classList.toggle("hot", c>.65);
-  $("monGrow").style.transform = "scale("+(1+c*.35)+")";
+  $("monGrow").style.transform = "scale("+(1+c*.35)*(B.enraged?1.1:1)+")";   // 狂暴：身体大 1.1 倍
   $("monBox").classList.toggle("angry", S.timer && c>.65 && !B.over);
   urgeItems(c);
 }
@@ -1152,7 +1155,7 @@ function fleeTick(){
   const txt = lock ? String(left) : "";
   if(bb.dataset.left!==txt) bb.dataset.left = txt;
 }
-/* 道具图标：加心用原画药水（icon_potion），去错 / 换题用同风格的糖果 SVG（cs()，见文件开头的 ICON_SVG） */
+/* 道具图标：加血用原画药水（icon_potion），去错 / 换题用同风格的糖果 SVG（cs()，见文件开头的 ICON_SVG） */
 const ITEM_SVG = {
   // 去错：一张答案卡，被红色粗 × 划掉
   cut: cs('<rect x="5" y="5" width="30" height="35" rx="7" fill="'+CC.w+'"/><path class="ln" d="M13 15 H27 M13 22 H23" fill="none" stroke-width="3.5"/>'
@@ -1163,10 +1166,10 @@ const ITEM_SVG = {
     + '<path d="M23 0 L33 6 L23 12 Z" fill="'+CC.g+'" stroke-width="3"/><path d="M25 48 L15 42 L25 36 Z" fill="'+CC.g+'" stroke-width="3"/>')
 };
 const itemImg = k => ITEM_SVG[k] || img(ITEMS[k].e);
-// 这一刻用得上吗：加心要没满；去错要有能去掉的错误选项（或棋盘上还有没配的）；换题只在答题时
+// 这一刻用得上吗：加血要没满；去错要有能去掉的错误选项（或棋盘上还有没配的）；换题只在答题时
 function itemUsable(k){
   if(!B || B.over) return false;
-  if(k==="heal") return B.hearts<B.maxH;
+  if(k==="heal") return B.life<B.maxLife;
   if(B.busy || !B.q) return false;
   if(k==="cut") return B.mode==="match" || B.mode==="link" ? !!(B.board && hintPair()) : !!$("answers").querySelector(".ans:not(.gone):not(.wrong):not([data-v='"+String(B.q.answer).replace(/'/g,"\\'")+"'])") && $("answers").querySelectorAll(".ans:not(.gone):not(.wrong)").length>2;
   if(k==="swap") return !BOARD_TIME[B.mode] && !!B.L.easy;
@@ -1176,7 +1179,7 @@ function renderItems(){
   if(!B) return;
   $("items").innerHTML = Object.keys(ITEMS).map(k=>{
     const n = S.items[k]||0;
-    const useless = k==="heal" ? B.hearts>=B.maxH : k==="swap" && BOARD_TIME[B.mode];
+    const useless = k==="heal" ? B.life>=B.maxLife : k==="swap" && BOARD_TIME[B.mode];
     return '<button class="item" data-it="'+k+'"'+(n<=0||useless||B.over?" disabled":"")+' aria-label="'+ITEMS[k].tip+'">'+itemImg(k)+'<b class="cnt">'+n+'</b></button>';
   }).join("");
   $("items").querySelectorAll(".item").forEach(b=>b.onclick=()=>useItem(b.dataset.it));
@@ -1184,7 +1187,7 @@ function renderItems(){
 function useItem(k){
   if(!B || B.over || !(S.items[k]>0) || !itemUsable(k)) return;
   S.items[k]--; save();
-  if(k==="heal"){ B.hearts = Math.min(B.maxH, B.hearts+1); drawHearts(false,true); toast("💖","+1 颗心"); sfx.heal(); tint("#f472b6"); }
+  if(k==="heal"){ const n = Math.min(B.maxLife-B.life, healAmt(B.maxLife, HEAL_PCT)); B.life += n; drawLife(false,true); lifePop(n, false, "", true); toast("💖","血量 +"+n); sfx.heal(); tint("#f472b6"); }
   if(k==="cut") cutWrong();
   if(k==="swap") swapQuestion();
   renderItems(); drawCharge();
@@ -1329,18 +1332,19 @@ function answer(btn){
     // 答错立刻挨一下（不等蓄力）；第一次答错，挨完打再弹出小老师的提示
     // 答错也重新计时、蓄力清零：答错这一下之后至少还有一整轮蓄力，一题内不会「蓄力 + 答错 + 超时」连挨 3 下
     B.qt = 0; B.charge = 0; B.lastTick = 0;
-    // 颜色题只是穿插题：答错记进「颜色题记录」，不扣心、不卡关，再选一次
+    // 颜色题只是穿插题：答错记进「颜色题记录」，不扣血、不卡关，再选一次；幸运光环在 monsterAttack 里减半
     if(q.kind==="color"){ if(first) colorMiss(q, v); toast("🎨","再仔细看看颜色！"); B.busy = false; }
-    else if(B.lucky>0){
-      B.lucky--; sfx.shield();
-      toast("🍀","幸运光环！不扣心");
-    } else monsterAttack("wrong");
+    else monsterAttack("wrong");
     if(first && (q.hint || q.steps)){ const cur = B; setTimeout(()=>{ if(B===cur && !B.over && B.q===q && !B.hintOpen) showHint(); }, 700); }
   }
 }
-function popAt(cls, text){
-  const d = document.createElement("span"); d.className = "dmg "+cls; d.innerHTML = emo(text);
-  $("arena").appendChild(d); setTimeout(()=>d.remove(), 850);
+// 勇士头上的大号伤害数字（-12，暴击写「暴击！」，护盾 / 幸运写「减半」）；回血是绿色的 +9
+function lifePop(n, crit, guard, heal){
+  const a = $("arena").getBoundingClientRect(), h = $("heroSprite").getBoundingClientRect();
+  const d = document.createElement("span"); d.className = "dmg hitn me"+(crit?" crit":"")+(heal?" heal":"");
+  d.innerHTML = (crit ? '<i>暴击！</i>' : guard ? '<i>'+(guard==="lucky"?"幸运":"护盾")+'减半</i>' : '')+'<b>'+(heal?"+":"-")+n+'</b>';
+  d.style.left = (h.left - a.left + h.width/2)+"px"; d.style.top = (h.top - a.top + h.height*.35)+"px";
+  $("arena").appendChild(d); setTimeout(()=>d.remove(), 900 + FX_HOLD);
 }
 // 怪兽身上的大号描边伤害数字；暴击更大、更黄，上面写「暴击!」
 function dmgPop(n, crit){
@@ -1456,27 +1460,45 @@ function heroAttack(board){   // board = {dmg, crit} for 消除 / 连连看
     else if(crit) burst(8,[h.fx,"✨"]);
     const stop = hitStop((crit ? HITSTOP_CRIT : HITSTOP_MS) + (heavy ? HITSTOP_BOSS : 0));
     B.hp = Math.max(0, B.hp - dmg); drawHP();
-    // gear 💖 heals gs.comboHeal every 5 combo
-    const heal = gs.comboHeal && B.combo>0 && B.combo%5===0 ? gs.comboHeal : 0;
-    if(heal && B.hearts<B.maxH){
-      B.hearts = Math.min(B.maxH, B.hearts+heal); drawHearts(false,true); renderItems(); sfx.heal();
-      setTimeout(()=>toast("💖", "连对回心 +"+heal+" 颗心"), 200);
+    // gear 💖 heals gs.comboHeal × 10% of the max life every 5 combo
+    const heal = gs.comboHeal && B.combo>0 && B.combo%5===0 ? Math.min(B.maxLife-B.life, healAmt(B.maxLife, COMBO_HEAL_PCT*gs.comboHeal)) : 0;
+    if(heal>0){
+      B.life += heal; drawLife(false,true); renderItems(); sfx.heal();
+      setTimeout(()=>{ toast("💖", "连对回血 +"+heal); lifePop(heal, false, "", true); }, 200);
     }
     if(B.hp<=0) return win();
+    const fury = enrageCheck();   // 血量 ≤ 40%（Boss 半血）：狂暴
     if(board) return;
-    if(B.L.boss && !B.enraged && B.hp <= B.maxHp/2){
-      B.enraged = true;
-      $("battle").classList.add("enraged");
-      sfx.roar(); shake();
-      banner('<div class="ribbon">'+B.L.n+' 暴怒了！小心！</div>', 1500);
-      say(B.L.n+"暴怒了！");
-      setTimeout(()=>{ if(B===cur && !B.over) nextQuestion(); }, 1500 + stop);
-      return;
-    }
-    setTimeout(()=>{ if(B===cur && !B.over) nextQuestion(); }, 550 + stop);
+    setTimeout(()=>{ if(B===cur && !B.over) nextQuestion(); }, (fury ? 1500 : 550) + stop);
   }, DASH_HIT);
 }
+/* 怪兽狂暴（家长 10-23，所有怪兽）：血量 ≤ 40% 进入狂暴（Boss 半血暴怒），一场一次。攻击 ×1.5、蓄力快 20%（Boss ×1.8、快 25%）。
+   形象不画新图：CSS 让它偏红变暗、眼睛发红光、头上冒 💢、身后冒黑红蒸汽（Boss 是红色闪电光环）、变大 1.1 倍并一直抖；
+   进入时低沉吼叫、震屏、横幅「××狂暴了！」、语音；名牌旁写「狂暴 ⚔️×1.5」。 */
+function enrageCheck(){
+  const boss = !!B.L.boss, F = boss ? BOSS_FURY : FURY;
+  if(B.enraged || B.over || B.hp > B.maxHp*F.at) return false;
+  B.enraged = true; B.fury = F.atk; B.furyT = F.t;
+  $("battle").classList.add("enraged");
+  const mb = $("monBox"); mb.classList.add("fury"); mb.classList.toggle("bossfury", boss);
+  $("furyFx").innerHTML = furyFxHTML(boss);
+  $("furyTag").innerHTML = (boss?"暴怒 ":"狂暴 ")+img("⚔️")+'<b class="num">×'+F.atk+'</b>'; $("furyTag").hidden = false;
+  sfx.growl(); shake(); tint("#ff2a2a"); restart($("vig"),"on");
+  try{ navigator.vibrate && navigator.vibrate([80,40,160]); }catch(e){}
+  const word = boss ? "暴怒了" : "狂暴了";
+  banner('<div class="ribbon fury">💢 '+B.L.n+' '+word+'！</div>', 1500);
+  say(B.L.n+word+"！小心！");
+  drawCharge();
+  return true;
+}
+// 狂暴特效层（在 #monGrow 里，跟着怪兽一起变大、抖）：身后的蒸汽 / Boss 的闪电、眼睛的红光、头上的 💢
+function furyFxHTML(boss){
+  const bolt = (d, x) => '<path d="'+d+'" transform="translate('+x+' 0)"/>';
+  return (boss ? '<svg class="bolts" viewBox="0 0 100 100" aria-hidden="true">'+bolt("M14 8 L6 34 L15 34 L5 62", 0)+bolt("M86 4 L95 30 L85 31 L96 58", 0)+bolt("M50 -6 L44 12 L53 13 L46 30", 0)+'</svg>' : '')
+    + '<span class="steam"><i></i><i></i><i></i></span><span class="eyes"><i></i><i></i></span><span class="anger">'+img("💢")+'</span>';
+}
 // 怪兽攻击：蓄力满（charge）、超时（timeout）、答错 / 配错（wrong）、逃跑失败（flee）。扑过来 150ms 就打到
+let monRollForce = null;   // 测试用（__t.setMonRoll([浮动, 暴击])）：固定怪兽伤害的两个随机数
 function monsterAttack(reason){
   if(!B || B.over) return;
   const cur = B;
@@ -1487,24 +1509,27 @@ function monsterAttack(reason){
   setTimeout(()=>{
     if(B!==cur || B.over) return;
     B.charge = 0;
-    if(B.shield>0){
-      B.shield--; sfx.shield(); tint("#38bdf8");
+    // 保护只减伤（家长 10-23）：答错时先用幸运光环，不然用护盾，这一下伤害减半
+    const guard = reason==="wrong" && B.lucky>0 ? "lucky" : B.shield>0 ? "shield" : "";
+    if(guard==="lucky"){ B.lucky--; toast("🍀","幸运光环！伤害减半"); }
+    if(guard==="shield"){
+      B.shield--; tint("#38bdf8");
       const sh = $("shield"); restart(sh,"pop"); setTimeout(()=>{ if(B.shield>0) sh.className = "shield"; else sh.hidden = true; }, 500);
-      toast("🛡️","护盾挡住了！");
-      drawCharge();
-      setTimeout(()=>{ if(B===cur && !B.over) B.busy = false; }, 450);
-      return;
+      toast("🛡️","护盾挡住一半！");
     }
+    if(guard) sfx.shield();
+    const [r1, r2] = monRollForce || [Math.random(), Math.random()];
+    const hit = monsterHit(B.dmg, B.fury, r1, r2, !!guard, B.life>=B.maxLife ? B.maxLife-1 : 0);
+    B.monHit = Object.assign({reason, guard}, hit);
     sfx.hit();
     restart($("flash"),"on");
     shake();
     play($("heroSprite"),"hurt");
-    try{ navigator.vibrate && navigator.vibrate([120,60,120]); }catch(e){}
-    const dmg = Math.min(B.hearts, B.dmg);
-    popAt("me", "-"+B.dmg);
-    B.hearts -= dmg; drawHearts(dmg); renderItems();
+    try{ navigator.vibrate && navigator.vibrate(hit.crit ? [160,50,160,50,160] : [120,60,120]); }catch(e){}
+    lifePop(hit.dmg, hit.crit, guard);
+    B.life = Math.max(0, B.life - hit.dmg); drawLife(true); renderItems();
     drawCharge();
-    if(B.hearts<=0) return lose();
+    if(B.life<=0) return lose();
     setTimeout(()=>{ if(B===cur && !B.over) B.busy = false; }, 450);
   }, 150);
 }
@@ -1586,8 +1611,7 @@ function boardWrong(els){
   sfx.wrong(); breakCombo(); B.bcombo = 0; B.lastPair = -1e9;
   const st = S.stats[B.W.id] || (S.stats[B.W.id]={r:0,w:0}); st.w++; save();
   setTimeout(()=>els.forEach(el=>{ if(el && B===cur) el.classList.remove("shake","bad"); }), 600);
-  if(B.lucky>0){ B.lucky--; B.charge = B.qt = 0; sfx.shield(); toast("🍀","幸运光环！不扣心"); }
-  else monsterAttack("wrong");
+  monsterAttack("wrong");   // 幸运光环在 monsterAttack 里减半
 }
 function pickCard(id, el){
   if(!B || B.over || !B.board) return;
@@ -1616,11 +1640,13 @@ function pickLink(id, el){
 }
 
 /* ================= results ================= */
+const STAR2_LOST = 0.4;
 function win(){
   B.over = true; B.busy = true;
   const cur = B;
-  const lostH = B.maxH - B.hearts;
-  const stars = B.run ? 3 : lostH===0 ? 3 : lostH===1 ? 2 : 1;
+  // 星星：一点血没掉 3 颗；掉的血不超过最大血量的 STAR2_LOST 2 颗；再多 1 颗（原来是掉 0 / 1 / 更多颗心）
+  const lost = B.maxLife - B.life;
+  const stars = B.run ? 3 : lost<=0 ? 3 : lost<=B.maxLife*STAR2_LOST ? 2 : 1;
   const before = totalStars();
   const key = lvKey(B.w,B.l);
   const prevBest = starOf(B.w,B.l);
@@ -1631,7 +1657,7 @@ function win(){
     newWorld: B.l===NLV-1 && B.w<WORLDS_V2.length-1 && prevBest===0 && !S.openAll ? WORLDS_V2[B.w+1] : null};
   if(!B.run && stars===3 && (S.lv.tier[key]||0)===B.diff && B.diff<4){ S.lv.tier[key] = B.diff+1; info.tierUp = B.diff+1; }
   if(info.boss){ info.firstMedal = !S.medals[B.W.id]; S.medals[B.W.id] = true; }
-  if(B.run){ B.run.hearts = Math.min(5, B.hearts+1); B.run.i++; info.runDone = B.run.i>=B.run.seq.length; }
+  if(B.run){ B.run.hp = Math.min(RUN_HP, B.life+RUN_HEAL); delete B.run.hearts; B.run.i++; info.runDone = B.run.i>=B.run.seq.length; }
   // 奖励（家长 10-21）：每关给勇士经验（升级时直接发装备）+ 身上装备经验，掉落变稀缺；不再开宝箱，Boss 也直接给
   const lvBefore = S.heroLv||1, expBefore = S.exp||0;
   const drops = (dropOverride || rollVictoryDrops)(B.W.id, B.l+1, info.boss, stars);
@@ -1694,9 +1720,9 @@ function rewardHTML(r){
   if(rows.length || chips.length) h += '<div class="rdrops" id="rDrops">'+rows.slice(0,2).join("")+(chips.length?'<div class="rchips">'+chips.join("")+'</div>':'')+'</div>';
   return h + '<div class="lvup" id="lvUp" hidden></div>';
 }
-// 等级加成的文字：「⚔️攻击 +1 ❤️心 +1」
-const bonusText = b => [b.atk ? img("⚔️")+'攻击 <b class="num">+'+b.atk+'</b>' : '', b.hearts ? img("❤️")+'心 <b class="num">+'+b.hearts+'</b>' : ''].filter(Boolean).join(" ");
-function bonusUp(from, to){ const a = lvBonus(from), z = lvBonus(to); return bonusText({atk:z.atk-a.atk, hearts:z.hearts-a.hearts}); }
+// 等级加成的文字：「⚔️攻击 +1 ❤️血量 +10」
+const bonusText = b => [b.atk ? img("⚔️")+'攻击 <b class="num">+'+b.atk+'</b>' : '', b.hp ? img("❤️")+'血量 <b class="num">+'+b.hp+'</b>' : ''].filter(Boolean).join(" ");
+function bonusUp(from, to){ const a = lvBonus(from), z = lvBonus(to); return bonusText({atk:z.atk-a.atk, hp:z.hp-a.hp}); }
 // the hero's bar fills up; on a level-up it bursts, shows 「升级！」 and starts again from the new level
 function animateReward(r){
   const res = r.res, fill = $("xFill"), seq = pageSeq;
@@ -1854,7 +1880,7 @@ function toMap(){
 
 /* ================= Boss 连闯（地图上的特别挑战） =================
    规则：打败某个世界的 Boss（第 15 关）后，地图右上角出现「🏅 连闯」：
-   - 世界连闯：一口气打这个世界第 5 关、第 10 关的怪兽和 Boss，3 场全是答题打怪；5 颗心带到下一场，每赢一场 +1。
+   - 世界连闯：一口气打这个世界第 5 关、第 10 关的怪兽和 Boss，3 场全是答题打怪；50 血量带到下一场，每赢一场 +10。
    - 勇者远征：8 个世界的 Boss 全部打败后开放，一口气打 8 个 Boss，奖励更多并得到勇者王冠。
    中途输了就要从头再来；打完翻宝藏牌拿装备。 */
 const runDef = mode => mode==="epic"
@@ -1874,14 +1900,14 @@ function openRunMenu(w){
       + '<div class="rrw">'+img("🎴")+'×'+rw.cards+' '+img("🎒")+'×'+rw.items+(rw.crown?' '+img("👑"):'')+'</div>'
       + (ok?'':'<span class="lk">'+img("🔒")+' '+lock+'</span>')+'</button>'; };
   openPage({title:"👹 Boss 连闯", ribbon:"blue", back:true, onClose:renderMap,
-    body:'<p>一口气打到底，中途不能停！<br>'+img("❤️")+' 会带到下一战，每赢一场 +1</p>'
+    body:'<p>一口气打到底，中途不能停！<br>'+img("❤️")+' 血量会带到下一战，每赢一场 +'+RUN_HEAL+'</p>'
       + card(id, worldOK, "先打败"+WORLDS_V2[w].name+"的 Boss", "")
       + card("epic", epicOK, "打败全部 8 个 Boss（现在 "+bosses+" 个）", "epic")});
   $("run_world").onclick = ()=>{ if(worldOK){ pageOnClose = null; closePage(); startRun(id); } };
   $("run_epic").onclick = ()=>{ if(epicOK){ pageOnClose = null; closePage(); startRun("epic"); } };
 }
 function startRun(mode){
-  const run = {mode, seq:runDef(mode).seq, i:0, hearts:5};
+  const run = {mode, seq:runDef(mode).seq, i:0, hp:RUN_HP};
   const [w,l] = run.seq[0];
   startLevel(w,l,run);
 }
@@ -1898,9 +1924,9 @@ function runGain(info){
 function showRunNext(info){
   const run = info.run, [w,l] = run.seq[run.i];
   sfx.win(); confetti(100);
-  let hearts = ""; for(let i=0;i<5;i++) hearts += i<run.hearts ? img("❤️") : art("icon_heart_empty") ? img("🤍") : '<span style="filter:grayscale(1);opacity:.3">'+img("❤️")+'</span>';
+  const life = runLife(run);
   openPage({title:"第 "+run.i+" 战胜利！", ribbon:"gold", body:'<div class="rprog">'+runProgress(run)+'</div>'
-    + '<div style="font-size:30px">'+hearts+'</div>'+runGain(info)+'<p>下一战：'+monImg(w,l)+' '+WORLDS_V2[w].levels[l].name+'</p>'
+    + lifeBarHTML(life, RUN_HP, "runLife")+runGain(info)+'<p>下一战：'+monImg(w,l)+' '+WORLDS_V2[w].levels[l].name+'</p>'
     + '<div class="btnrow"><button class="ibtn" id="rQuit" aria-label="放弃">'+img("🏳️")+'</button><button class="btn green" id="rGo">'+img("⚔️")+' 下一战</button></div>'});
   say("胜利！准备下一战！");
   $("rGo").onclick = ()=>{ closePage(); startLevel(w,l,run); };
@@ -1980,7 +2006,7 @@ function fireworks(ms){
 
 /* ================= wiring ================= */
 /* 逃跑（家长 10-21）：战斗中点左上角地图按钮先确认；FLEE_RATE 的机会跑掉（扣身上装备经验，fleePenalty），
-   跑不掉怪兽打一下（按狂暴档扣心）再接着打。App 切到后台、锁屏都不算逃跑（这里只听这个按钮）。 */
+   跑不掉怪兽打一下（按狂暴档扣血）再接着打。App 切到后台、锁屏都不算逃跑（这里只听这个按钮）。 */
 $("bBack").onclick = ()=>{
   if(B && !B.over && B.fleeUntil > performance.now()){   // 逃跑失败后的冷却（按钮是灰的）：连点只提示一次，不放音效
     if(!B.fleeWarned){ B.fleeWarned = true; toast("⏳", Math.ceil((B.fleeUntil - performance.now())/1000)+" 秒后才能再逃跑"); }
