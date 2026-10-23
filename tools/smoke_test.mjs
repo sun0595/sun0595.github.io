@@ -195,7 +195,7 @@ async function playAll(view) {
   const arenaBox = () => p.evaluate(() => { const r = document.getElementById('arena').getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round).join(','); });
   const wrong = await p.evaluate(() => { const B = __t.B; B.lucky = 0; B.shield = 0; const a = String(B.q.answer); return [...document.querySelectorAll('.ans')].map(b => b.dataset.v).find(v => v !== a); });
   await p.waitForTimeout(300);
-  const box0 = await arenaBox(), h0 = await p.evaluate(() => { const B = __t.B; B.qt = 0.5; B.charge = 0.5; return { h: B.life, d: __t.monsterHit(B.dmg, B.fury, 0.5, 0.99).dmg }; });
+  const box0 = await arenaBox(), h0 = await p.evaluate(() => { const B = __t.B; B.qt = 0.5; B.charge = 0.5; return { h: B.life, d: __t.monsterHit(B.dmg, B.fury, 0.5, 0.99, false, __t.B.life >= __t.B.maxLife ? __t.B.maxLife - 1 : 0).dmg }; });
   await tap(`.ans[data-v="${wrong}"]`); await p.waitForTimeout(260);
   const h1 = await p.evaluate(() => ({ h: __t.B.life, qt: __t.B.qt, c: __t.B.charge, txt: document.getElementById('lifeText').textContent }));
   if (h0.d !== 10 || h1.h !== h0.h - h0.d) problems.push(`[${view.name}] a wrong answer should cost ${h0.d} (= 10) life at once (within 260 ms): ${h0.h} → ${h1.h}`);
@@ -525,9 +525,9 @@ async function playAll(view) {
   const rage = await p.evaluate(() => ({ rage: __t.B.rage, t: __t.qTime(), tag: document.getElementById('rageTag').textContent.trim(), tagShown: !document.getElementById('rageTag').hidden, life: __t.B.life }));
   if (rage.rage !== 1 || !rage.tagShown || rage.tag.replace(/\s+/g, '') !== '狂暴×2') problems.push(`[${view.name}] rage x2 not shown: ${JSON.stringify(rage)}`);
   if (Math.abs(rage.t - 8) > 1e-9) problems.push(`[${view.name}] rage x2 time limit should be 8 s, got ${rage.t}`);
-  // 一下最多打掉一半最大血量（狂暴 ×3 的 Boss 暴击也不能一击打倒满血的勇士）
-  const capHit = await p.evaluate(() => [__t.monsterHit(3, 1.8, 1, 0, false, 30).dmg, __t.monsterHit(3, 1.8, 1, 0, false, 50).dmg, __t.monsterHit(1, 1, 0.5, 0.99, false, 30).dmg]);
-  if (capHit.join() !== '15,25,10') problems.push(`[${view.name}] monster hit cap (half of max life): ${capHit}`);
+  // 满血时一下最多扣到剩 1 点（狂暴 ×3 的 Boss 暴击也不能一击打倒满血的勇士）
+  const capHit = await p.evaluate(() => [__t.monsterHit(3, 1.8, 1, 0, false, 29).dmg, __t.monsterHit(3, 1.8, 1, 0, false, 49).dmg, __t.monsterHit(1, 1, 0.5, 0.99, false, 29).dmg]);
+  if (capHit.join() !== '29,49,10') problems.push(`[${view.name}] full life must survive one hit (cap = max − 1): ${capHit}`);
   const rc = await p.evaluate(() => __t.chargeTime());
   if (Math.abs(rc - rage.t) > 1e-9) problems.push(`[${view.name}] rage x2: the one timer bar = the time limit (${rage.t} s), got ${rc}`);
   await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 0; });
@@ -623,7 +623,7 @@ async function playAll(view) {
   await tap('#bBack'); await p.waitForTimeout(300); await shot('34-flee-confirm');
   if (!(await p.isVisible('#fGo')) || !/扣除装备经验/.test(await p.textContent('#pbody'))) problems.push(`[${view.name}] 🗺️ in battle should ask 「真的要逃跑吗？」 first`);
   for (const id of ['fStay', 'fGo']) if (await p.evaluate(id => { const w = document.createTreeWalker(document.getElementById(id), NodeFilter.SHOW_TEXT); let n, r = document.createRange(); while ((n = w.nextNode())) { if (!n.textContent.trim()) continue; r.selectNodeContents(n); if (new Set([...r.getClientRects()].map(x => Math.round(x.top))).size > 1) return true; } return false; }, id)) problems.push(`[${view.name}] flee confirm button #${id} wraps onto two lines`);
-  const fl0 = await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 0; window.__rnd = Math.random; Math.random = () => 0.99; return { h: __t.B.life, d: __t.monsterHit(__t.B.dmg, __t.B.fury, 0.5, 0.99).dmg }; });
+  const fl0 = await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 0; window.__rnd = Math.random; Math.random = () => 0.99; return { h: __t.B.life, d: __t.monsterHit(__t.B.dmg, __t.B.fury, 0.5, 0.99, false, __t.B.life >= __t.B.maxLife ? __t.B.maxLife - 1 : 0).dmg }; });
   await tap('#fGo'); await p.waitForTimeout(250); await shot('34b-flee-fail'); await p.waitForTimeout(700);
   const fl1 = await p.evaluate(() => { Math.random = window.__rnd; return { h: __t.B.life, over: __t.B.over, battle: !document.getElementById('battle').hidden, modal: !document.getElementById('modal').hidden }; });
   if (fl1.h !== fl0.h - fl0.d || fl1.over || !fl1.battle || fl1.modal) problems.push(`[${view.name}] a failed flee should cost ${fl0.d} life and keep fighting: ${JSON.stringify({ fl0, fl1 })}`);
@@ -705,7 +705,7 @@ async function playAll(view) {
   };
   await p.evaluate(() => __t.startLevel(0, 3)); await p.waitForTimeout(1800); await shot('24-match');
   await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 0; });
-  const mw = await p.evaluate(() => { const cs = (__t.B.board.cards || __t.B.board).filter(c => !c.coveredBy.length); const a = cs[0], b = cs.find(c => c.value !== a.value); return { a: a.id, b: b.id, h: __t.B.life, d: __t.monsterHit(__t.B.dmg, __t.B.fury, 0.5, 0.99).dmg }; });
+  const mw = await p.evaluate(() => { const cs = (__t.B.board.cards || __t.B.board).filter(c => !c.coveredBy.length); const a = cs[0], b = cs.find(c => c.value !== a.value); return { a: a.id, b: b.id, h: __t.B.life, d: __t.monsterHit(__t.B.dmg, __t.B.fury, 0.5, 0.99, false, __t.B.life >= __t.B.maxLife ? __t.B.maxLife - 1 : 0).dmg }; });
   await tap(`.mcard[data-id="${mw.a}"]`); await tap(`.mcard[data-id="${mw.b}"]`); await p.waitForTimeout(250); await shot('24b-match-wrong'); await p.waitForTimeout(700);
   const mLost = mw.h - await p.evaluate(() => __t.B.life);
   if (mLost !== mw.d) problems.push(`[${view.name}] a wrong pair in 算术消除 should cost ${mw.d} life, cost ${mLost}`);
@@ -769,7 +769,7 @@ async function playAll(view) {
   if (lk.missingEmoji.length) problems.push(`[${view.name}] 连连看 dropped the emoji of characters that have one in PY: ${lk.missingEmoji}`);
   if (!lk.emojiN) problems.push(`[${view.name}] 连连看 should carry the emoji of characters that are in PY`);
   await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 0; });
-  const lw = await p.evaluate(() => { const bd = __t.B.board, l = bd.left[0], r = bd.right.find(x => x.hz !== l.hz); return { l: l.id, r: r.id, h: __t.B.life, d: __t.monsterHit(__t.B.dmg, __t.B.fury, 0.5, 0.99).dmg }; });
+  const lw = await p.evaluate(() => { const bd = __t.B.board, l = bd.left[0], r = bd.right.find(x => x.hz !== l.hz); return { l: l.id, r: r.id, h: __t.B.life, d: __t.monsterHit(__t.B.dmg, __t.B.fury, 0.5, 0.99, false, __t.B.life >= __t.B.maxLife ? __t.B.maxLife - 1 : 0).dmg }; });
   await tap(`.lnk[data-id="${lw.l}"]`); await tap(`.lnk[data-id="${lw.r}"]`); await p.waitForTimeout(950);
   const lLost = lw.h - await p.evaluate(() => __t.B.life);
   if (lLost !== lw.d) problems.push(`[${view.name}] a wrong link should cost ${lw.d} life, cost ${lLost}`);
