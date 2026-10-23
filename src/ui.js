@@ -1813,7 +1813,8 @@ const stageName = (i, st) => (GROW_NAME[i]==="robot" ? STAGE_NAMES.robot : ["tre
 let evolving = false;
 function maybeEvolve(){
   const st = heroStage(), from = S.seenStage || 1;
-  if(evolving || st <= from || !$("battle").hidden) return false;
+  // 测试版（build.py --test）里 __t.noEvolve 默认为真：自动走查时不弹，免得挡住后面的点击
+  if(evolving || st <= from || !$("battle").hidden || (window.__t && window.__t.noEvolve)) return false;
   evolving = true; S.seenStage = st; save();
   const h = hero(), hi = HEROES.indexOf(h), eq = S.equipped;
   const ov = document.createElement("div"); ov.className = "evo"; ov.id = "evo";
@@ -1830,6 +1831,7 @@ function maybeEvolve(){
   gaps.forEach((g, k) => { t += g; setTimeout(()=>{ flip = !flip; A.style.opacity = flip ? 0 : 1; Z.style.opacity = flip ? 1 : 0; tone([520+k*45], .05, "sine", .035); }, t); });
   setTimeout(()=>{ A.style.opacity = 0; Z.style.opacity = 1; ov.classList.add("evo-flash"); tone([660, 880, 1320], .12, "sine", .06); }, t + 80);
   setTimeout(()=>{
+    if(!ov.isConnected){ evolving = false; return; }
     ov.classList.remove("evo-glow"); ov.classList.add("evo-done");
     const nm = stageName(hi, st);
     ov.querySelector(".evorib").innerHTML = emo("🎉 "+h.n+"长大了！");
