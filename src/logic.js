@@ -2518,8 +2518,10 @@ function qCat(q){
   return "calc";
 }
 // 家长设置里能关掉的插入题（拼音题另有「关 / 偶尔 / 经常」）。小知识、科普、颜色题下一轮才有题，开关先留着。
-const Q_SWITCHES = [["word","插入应用题"],["shape","插入图形题"],["fact","插入小知识"],["pic4","插入看图说话"],["cmp","插入比大小"],["trap","插入易错题"],["spot","插入科普题"],["color","插入颜色题"]];
-const qOn = c => !S.qOn || S.qOn[c]!==false;
+const Q_SWITCHES = [["word","插入应用题"],["shape","插入图形题"],["fact","插入小知识"],["pic4","插入看图说话"],["cmp","插入比大小"],["trap","插入易错题"],["spot","插入科普题"],["color","插入颜色题"],["chainMid","连式填中间数（10 以上）"]];
+// 默认关的开关：连式（两步以上）逆向题 80 + ? − 10 = 90 对一年级太难，10 以上的连式默认只求最后得数（家长第五轮）
+const Q_DEFAULT_OFF = new Set(["chainMid"]);
+const qOn = c => S.qOn && c in S.qOn ? S.qOn[c]!==false : !Q_DEFAULT_OFF.has(c);
 // 擅长这类题时，现成题库里没有就直接出一道（按大关的数字范围）
 const GOOD_GEN = {
   calc: w => w<2 ? G.add(10) : G.carryAny(), cmp: () => G.cmp10(), pic4: () => G.pic4(10), trap: w => G.trap(w<2 ? 10 : 20),
@@ -2559,7 +2561,10 @@ function levelDef(w,l){
   const invQ = () => {
     if(useSmall()) return G.inv(it2==="d1n" ? "20n" : "20", pick(INV_FORMS));   // 糖果小镇前 9 关还是不进位不退位
     if(!chains.length || Math.random()>=.4) return G.inv(it2, pick(INV_FORMS));
-    const q = G.chain3((chains[0].args||[])[0] || iv.c, true);
+    const ct = (chains[0].args||[])[0] || iv.c;
+    // 10 以上的连式：家长没打开「连式填中间数」就只求最后得数（a + b − c = ?）
+    if((CHAIN_TIERS[ct] || CHAIN_TIERS["10"]).max>10 && !qOn("chainMid")) return G.chain3(ct);
+    const q = G.chain3(ct, true);
     return introDone ? q : chainIntro(q);
   };
   // 讲解题真的出给孩子（没被轮换换掉）以后才算讲过：只在最外层记
