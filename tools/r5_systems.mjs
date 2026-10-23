@@ -192,6 +192,8 @@ export async function r5Parent(p, { view, problems, shot, tap }) {
   // 答错一题 → 报告页签每条错题旁有「这题有问题」→ 记到「有问题」页签，能复制
   await p.evaluate(() => { __t.S.mistakes = []; __t.S.reports = []; __t.startLevel(1, 4); });
   for (let i = 0; i < 40; i++) { if (await p.evaluate(() => !!(__t.B.q && !__t.B.busy))) break; await p.waitForTimeout(100); }
+  // 颜色题答错不进错题本：第一题碰上颜色题就换成一道计算题
+  if (await p.evaluate(() => __t.B.q.kind === 'color')) { await p.evaluate(() => __t.nextQuestion(__t.G.add(10))); await p.waitForTimeout(250); }
   const wrong = await p.evaluate(() => { const B = __t.B; B.lucky = 0; B.shield = 0; const a = String(B.q.answer); return [...document.querySelectorAll('#answers .ans')].map(b => b.dataset.v).find(v => v !== a); });
   await tap(`#answers .ans[data-v="${wrong}"]`); await p.waitForTimeout(600);
   await p.evaluate(() => { __t.closeHint(); __t.toMap(); }); await tap('#parentBtn'); await p.waitForTimeout(200); await tap('.tab[data-t="rep"]'); await p.waitForTimeout(200);
