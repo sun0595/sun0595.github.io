@@ -124,6 +124,7 @@ async function shotCheck(p, view, dir, name) {
 }
 
 async function testAttackFx(p, shot, ready, hitOnce, view) {
+  const origW = await p.evaluate(() => __t.S.equipped?.weapon ? JSON.parse(JSON.stringify(__t.S.equipped.weapon)) : null);
   const FX_QUALITIES = ['white', 'blue', 'pink', 'purple', 'orange', 'red'];
   for (const q of FX_QUALITIES) {
     for (let st = 1; st <= 4; st++) {
@@ -136,6 +137,45 @@ async function testAttackFx(p, shot, ready, hitOnce, view) {
       if (!res.slash) problems.push(`[${view.name}] ${q}-s${st} missing .slash path`);
       const qCol = await p.evaluate(q => GEAR_QUALITY_MAP[q].col, q);
       if ((res.col || '').trim() !== qCol) problems.push(`[${view.name}] ${q}-s${st} color mismatch: ${res.col} vs ${qCol}`);
+
+      // 断言粉色花瓣/爱心、蓝色水滴 computed fill 与动画名（避免被 .slash path 规则覆盖）
+      if (q === 'pink') {
+        const pCheck = await p.evaluate(() => {
+          const petal = document.querySelector('.slash .fx-petal'), heart = document.querySelector('.slash .fx-heart');
+          if (!petal || !heart) return { ok: false, err: 'missing petal/heart' };
+          const ps = getComputedStyle(petal), hs = getComputedStyle(heart);
+          return {
+            ok: ps.fill !== 'none' && ps.animationName.includes('petalDrift') && hs.fill !== 'none' && hs.animationName.includes('heartFloat'),
+            pFill: ps.fill, pAnim: ps.animationName, hFill: hs.fill, hAnim: hs.animationName
+          };
+        });
+        if (!pCheck.ok) problems.push(`[${view.name}] pink petals/hearts style error: ${JSON.stringify(pCheck)}`);
+      }
+      if (q === 'blue') {
+        const bCheck = await p.evaluate(() => {
+          const drop = document.querySelector('.slash .fx-drop'), rip = document.querySelector('.slash .water-ripple');
+          if (!drop || !rip) return { ok: false, err: 'missing drop/ripple' };
+          const ds = getComputedStyle(drop), rs = getComputedStyle(rip);
+          return {
+            ok: ds.fill !== 'none' && ds.animationName.includes('dropSplash') && rs.animationName.includes('slashDraw'),
+            dFill: ds.fill, dAnim: ds.animationName, rAnim: rs.animationName
+          };
+        });
+        if (!bCheck.ok) problems.push(`[${view.name}] blue drop/ripple style error: ${JSON.stringify(bCheck)}`);
+      }
+      if (q === 'purple') {
+        const uCheck = await p.evaluate(() => {
+          const bolt = document.querySelector('.slash .fx-lightning'), arc = document.querySelector('.slash .fx-arc');
+          if (!bolt || !arc) return { ok: false, err: 'missing bolt/arc' };
+          const bs = getComputedStyle(bolt), as = getComputedStyle(arc);
+          return {
+            ok: bs.animationName.includes('lightningBolt') && as.animationName.includes('arcJump'),
+            bAnim: bs.animationName, aAnim: as.animationName
+          };
+        });
+        if (!uCheck.ok) problems.push(`[${view.name}] purple lightning/arc style error: ${JSON.stringify(uCheck)}`);
+      }
+
       await p.waitForTimeout(650);
       const leftovers = await p.evaluate(() => document.querySelectorAll('.slash, .punchfx, .atk-ghost, .ground-wave, .fire-ring, .light-pillar').length);
       if (leftovers > 0) problems.push(`[${view.name}] FX DOM leftovers after ${q}-s${st}: ${leftovers}`);
@@ -153,7 +193,24 @@ async function testAttackFx(p, shot, ready, hitOnce, view) {
     const leftovers = await p.evaluate(() => document.querySelectorAll('.slash, .punchfx, .atk-ghost, .ground-wave, .fire-ring, .light-pillar').length);
     if (leftovers > 0) problems.push(`[${view.name}] punch DOM leftovers after punch-s${st}: ${leftovers}`);
   }
-  await p.evaluate(() => { __t.stage = 1; });
+
+  // 恢复环境：移除全部 fx_test_* 装备，恢复原装备，防止污染后续断言
+  await p.evaluate(origW => {
+    __t.stage = 1;
+    if (__t.S.bag) __t.S.bag = __t.S.bag.filter(g => !String(g.id || '').startsWith('fx_test_'));
+    if (__t.S.equipped) {
+      if (String(__t.S.equipped.weapon?.id || '').startsWith('fx_test_')) {
+        __t.S.equipped.weapon = null;
+      }
+      if (origW) {
+        if (__t.S.bag) __t.S.bag = __t.S.bag.filter(g => g.id !== origW.id);
+        __t.S.equipped.weapon = origW;
+      }
+    }
+    if (__t.save) __t.save();
+    else if (typeof save === "function") save();
+    else localStorage.setItem('math-hero-v1', JSON.stringify(__t.S));
+  }, origW);
 }
 
 async function runAttackFxOnly(view) {
