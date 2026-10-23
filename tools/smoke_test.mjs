@@ -658,6 +658,8 @@ async function playAll(view) {
   if (!lvr.noGear) problems.push(`[${view.name}] level-up gear only once per level across heroes: ${JSON.stringify(lvr)}`);
   // 颜色题答错不扣血：这里关掉颜色题，免得第一题刚好是颜色题
   // 当天第 16 次通关前起进入「狂暴 ×2」：怪兽每次攻击 ×2（20 血）、每题 8 秒
+  // 每位勇士各自等级：前面测试可能换到了低等级的勇士，狂暴关前换回小勇士（原来的等级），免得血太少中途打输
+  await p.evaluate(() => { __t.switchHero(0); __t.save(); });
   await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.mapWorld = 0; s.equipped = { weapon: null, helmet: null, armor: null, shield: null }; s.qOn = Object.assign(s.qOn || {}, { color: false }); localStorage.setItem(k, JSON.stringify(s)); }, V1);
   await p.reload(); await p.waitForTimeout(500); await fixRoll();
   await p.evaluate(() => __t.setDaily(15)); await p.waitForTimeout(200); await shot('17-map-rage');
