@@ -2492,6 +2492,11 @@ const colorMiss = (q, v) => logColorMiss({name:cName(q.answer), hex:cHex(q.answe
 // 第 1 大关以认色和动物叫声为主：实物辨认少一半
 const K_RATE = 0.09, K_KINDS = [["fact", w=>G.fact(w)], ["spot", w=>G.spot(w)], ["color", w=>G.color(w)]];
 const kRate = (c, w) => c==="spot" && w===0 ? K_RATE/2 : K_RATE;
+const isK = q => !!q && (q.kind==="fact" || q.kind==="spot" || q.kind==="color");
+function noTwoK(gen){
+  let prev = false;
+  return () => { let q = gen(); for(let k=0; k<20 && prev && isK(q); k++) q = gen(); prev = isK(q); return q; };
+}
 function knowledgeMix(gen, w){
   let last = false;
   return () => {
@@ -2518,8 +2523,10 @@ function qCat(q){
   return "calc";
 }
 // 家长设置里能关掉的插入题（拼音题另有「关 / 偶尔 / 经常」）。小知识、科普、颜色题下一轮才有题，开关先留着。
-const Q_SWITCHES = [["word","插入应用题"],["shape","插入图形题"],["fact","插入小知识"],["pic4","插入看图说话"],["cmp","插入比大小"],["trap","插入易错题"],["spot","插入科普题"],["color","插入颜色题"]];
-const qOn = c => !S.qOn || S.qOn[c]!==false;
+const Q_SWITCHES = [["word","插入应用题"],["shape","插入图形题"],["fact","插入小知识"],["pic4","插入看图说话"],["cmp","插入比大小"],["trap","插入易错题"],["spot","插入科普题"],["color","插入颜色题"],["chainMid","连式填中间数（10 以上）"]];
+// 默认关的开关：连式（两步以上）逆向题 80 + ? − 10 = 90 对一年级太难，10 以上的连式默认只求最后得数（家长第五轮）
+const Q_DEFAULT_OFF = new Set(["chainMid"]);
+const qOn = c => S.qOn && c in S.qOn ? S.qOn[c]!==false : !Q_DEFAULT_OFF.has(c);
 // 擅长这类题时，现成题库里没有就直接出一道（按大关的数字范围）
 const GOOD_GEN = {
   calc: w => w<2 ? G.add(10) : G.carryAny(), cmp: () => G.cmp10(), pic4: () => G.pic4(10), trap: w => G.trap(w<2 ? 10 : 20),
@@ -2559,7 +2566,10 @@ function levelDef(w,l){
   const invQ = () => {
     if(useSmall()) return G.inv(it2==="d1n" ? "20n" : "20", pick(INV_FORMS));   // 糖果小镇前 9 关还是不进位不退位
     if(!chains.length || Math.random()>=.4) return G.inv(it2, pick(INV_FORMS));
-    const q = G.chain3((chains[0].args||[])[0] || iv.c, true);
+    const ct = (chains[0].args||[])[0] || iv.c;
+    // 10 以上的连式：家长没打开「连式填中间数」就不出连式逆向（80 + ? − 10 = 90），换成一步的逆向题（? + 30 = 90）
+    if((CHAIN_TIERS[ct] || CHAIN_TIERS["10"]).max>10 && !qOn("chainMid")) return G.inv(it2, pick(INV_FORMS));
+    const q = G.chain3(ct, true);
     return introDone ? q : chainIntro(q);
   };
   // 讲解题真的出给孩子（没被轮换换掉）以后才算讲过：只在最外层记
@@ -2578,6 +2588,8 @@ function levelDef(w,l){
   // 家长开关和勇士擅长（拼读关整关拼读，不动）
   if(mode==="battle") g = knowledgeMix(g, w);   // 小知识、实物辨认、颜色题穿插（第五轮）
   if(mode!=="blend") g = qFilter(g, w);
+  // 知识题不连着出：qFilter 换题时会多抽几道，knowledgeMix 自己记的「上一道」可能被扔掉的题打乱，所以在最外层再把一次关
+  if(mode==="battle") g = noTwoK(g);
   return {w, l, m:lv.emoji, n:lv.name, boss:!!lv.boss, mode, g, math:qFilter(math, w), easy, hp:10 + Math.floor(i/10) + (lv.boss?5:0)};
 }
 /* 算术消除用的出题器：只要"算式 = ?"这种直接算的题（不要填空题），而且至少 6 个得数各有 2 道不同算式，
