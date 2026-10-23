@@ -30,20 +30,20 @@ export async function r5Systems(p, { view, problems, shot, tap }) {
 // ---- 2 成长看得见 + 大关宝箱 ----
 export async function r5Growth(p, { view, problems, shot, tap }) {
   const bad = m => problems.push(`[${view.name}] r5: ${m}`);
-  // 战斗里勇士名牌旁：攻击和心上限
+  // 战斗里勇士名牌旁：攻击和血量上限
   await p.evaluate(() => { __t.S.openAll = true; __t.toMap(); __t.startLevel(1, 5); });
   await p.waitForTimeout(1600); await shot('81-growth-battle');
-  const bs = await p.evaluate(() => { const e = document.getElementById('bStat'); return e ? { txt: e.textContent, maxH: __t.B.maxH, atk: __t.heroPower().atk } : null; });
-  if (!bs || !bs.txt.includes(String(bs.atk)) || !bs.txt.includes(String(bs.maxH))) bad('战斗界面应显示攻击和心上限: ' + JSON.stringify(bs));
+  const bs = await p.evaluate(() => { const e = document.getElementById('bStat'); return e ? { txt: e.textContent, maxLife: __t.B.maxLife, atk: __t.heroPower().atk } : null; });
+  if (!bs || !bs.txt.includes(String(bs.atk)) || !bs.txt.includes(String(bs.maxLife))) bad('战斗界面应显示攻击和血量上限: ' + JSON.stringify(bs));
   // 背包里穿上一件攻击 +6 的装备：弹出「攻击 a → b」，装备卡写「每题多打 2 下」
   await p.evaluate(() => { __t.toMap(); for (const k of ['weapon', 'helmet', 'armor', 'shield']) __t.S.equipped[k] = null;
     addGear({ id: 'r5_w', slot: 'weapon', quality: 'orange', name: '烈焰·长剑', e: '🗡️', lv: 1, exp: 0, affixes: [{ id: 'atk', val: 6 }, { id: 'shield', val: 1 }] }); __t.openBag('weapon'); });
   await p.waitForTimeout(400);
   const kid = await p.evaluate(() => (document.querySelector('.gcard .gkid') || {}).textContent || '');
-  if (!/每题多打 2 下/.test(kid) || !/每关挡住 1 次攻击/.test(kid)) bad('装备卡应写孩子听得懂的效果: ' + kid);
+  if (!/每题多打 2 下/.test(kid) || !/每关挡住 1 次攻击的一半伤害/.test(kid)) bad('装备卡应写孩子听得懂的效果: ' + kid);
   await tap('#gOn'); await p.waitForTimeout(300); await shot('81-equip-pop');
   const pop = await p.evaluate(() => { const e = document.getElementById('statPop'); return e ? { on: e.classList.contains('on'), txt: e.textContent } : null; });
-  if (!pop || !pop.on || !/攻击 1 → 3/.test(pop.txt.replace(/\s+/g, ' ')) || !/每关挡住 0 → 1/.test(pop.txt.replace(/\s+/g, ' '))) bad('穿上装备应弹出前后对比: ' + JSON.stringify(pop));
+  if (!pop || !pop.on || !/攻击 1 → 3/.test(pop.txt.replace(/\s+/g, ' ')) || !/护盾挡一半 0 → 1/.test(pop.txt.replace(/\s+/g, ' '))) bad('穿上装备应弹出前后对比: ' + JSON.stringify(pop));
   await p.waitForTimeout(2500); await tap('#pgBack');
   // 结算页：经验涨了多少、离下一级还差多少
   await p.evaluate(() => { __t.S.heroLv = 2; __t.S.exp = 10; __t.startLevel(1, 5); });
