@@ -179,14 +179,59 @@ const decoHTML = (id, scale) => SCENES[id].deco.map(([e,x,y,s])=>'<span class="d
 const restart = (el, cls) => { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); };
 // 震屏：轻震 quakeS 和重震 quake 是两个类，先都拿掉再加，不然留着的 quakeS 会把之后的 quake 盖住
 const shake = cls => { const bt = $("battle"); bt.classList.remove("quake","quakeS"); void bt.offsetWidth; bt.classList.add(cls||"quake"); };
-const play = (el, cls) => { el.className = "sprite"; void el.offsetWidth; el.classList.add(cls); };
+const play = (el, ...cls) => {
+  el.className = "sprite";
+  void el.offsetWidth;
+  cls.flatMap(c => String(c).split(/\s+/)).filter(Boolean).forEach(c => el.classList.add(c));
+};
 const chev = r => '<span class="chev'+(r?" r":"")+'"></span>';
 // 返回：原画箭头（icon_back），没有就用画出来的箭头
 const backIcon = () => art("icon_back") ? artTag(art("icon_back"), "ei art icon", chev()) : chev();
 const starImg = (on, tier) => '<span class="'+(on?"":"off")+'"'+(on && tier && TIERS[tier].f ? ' style="filter:'+TIERS[tier].f+'"' : '')+'>'+img("⭐")+'</span>';
-// 打击感（家长 10-22：要柔和，回到 PR #32 之前的音色）：正弦 / 三角波、低频、小音量，不用方波和锯齿波；连击档位越来越高
-sfx.slash = ()=>{ noise(.1,.16,1600); tone([520,690],.045,"triangle",.045); };
-sfx.punch = ()=>{ noise(.08,.2,650); tone([190,130],.055,"sine",.08); };
+// 打击感（家长 10-22/10-23：不同品质不同音色，要柔和）：正弦 / 三角波、低频、小音量，不用方波和锯齿波
+sfx.slash = qKey => {
+  if(!qKey && typeof S !== "undefined" && S.equipped && S.equipped.weapon) qKey = S.equipped.weapon.quality;
+  switch(qKey){
+    case "blue":
+      // 蓝·水/冰：水流破冰，晶莹清脆（正弦波 + 柔和高音）
+      noise(.08,.12,1800); tone([523,659,880],.04,"sine",.04); tone([1046],.05,"sine",.03,.03);
+      break;
+    case "pink":
+      // 粉·花/心：甜甜的"叮"（三角波 + 正弦柔和双音）
+      tone([784,1046],.06,"triangle",.045); tone([1318],.08,"sine",.035,.03);
+      break;
+    case "purple":
+      // 紫·雷电：柔和电弧低鸣，低沉不刺耳
+      slide(380,180,.07,"triangle",.045); tone([260,390],.04,"sine",.04); noise(.05,.09,900);
+      break;
+    case "orange":
+      // 橙·火焰：温暖烈焰呼啸
+      slide(180,340,.08,"sine",.05); noise(.12,.14,800); tone([330,440],.045,"triangle",.04);
+      break;
+    case "red":
+      // 红·传说/流星：低沉宏大冲击
+      slide(280,110,.12,"sine",.06); tone([130,195,390],.08,"sine",.05); noise(.14,.18,500);
+      break;
+    case "white":
+    default:
+      // 白·朴素：轻"咻"
+      noise(.08,.12,1400); tone([480,620],.04,"triangle",.04);
+      break;
+  }
+};
+sfx.punch = st => {
+  if(st == null && typeof heroStage === "function") st = heroStage();
+  if(st === 1){
+    // 儿童：小拳头轻柔可爱
+    noise(.05,.1,600); tone([220,160],.04,"sine",.05);
+  } else if(st === 4){
+    // 壮年：冲拳 + 冲击波（低沉有力正弦共鸣）
+    slide(220,80,.1,"sine",.08); tone([110,75],.08,"sine",.08); noise(.12,.2,500);
+  } else {
+    // 少年 / 青少年：原有干净拳击
+    noise(.08,.18,650); tone([190,130],.055,"sine",.07);
+  }
+};
 sfx.thud = heavy=>{ noise(heavy?.24:.15, heavy?.32:.22, heavy?520:800); tone(heavy?[110,72]:[150,100],.07,"sine",.09); };
 sfx.combo = t=>{ const base = [0,523,587,659][t]||523; tone([base,base*1.25,base*1.5].concat(t>=2?[base*2]:[]),.07,"sine",.07); };
 
@@ -1379,27 +1424,216 @@ function tint(col){ const t = $("tint"); t.style.setProperty("--tc", col); resta
 /* 打击感：命中瞬间定格（hit-stop）—— 竞技场里的动作（勇士冲刺、怪兽受击、刀光）停住 ms 毫秒再继续。
    FX_HOLD 只给测试用（__t.fxHold）：把定格拉长，截图才拍得到。 */
 let FX_HOLD = 0;
+const FX_SET = new Set();
+function addFxEl(el, dur){
+  $("arena").appendChild(el);
+  FX_SET.add(el);
+  el._tm = setTimeout(() => { el.remove(); FX_SET.delete(el); }, dur + FX_HOLD);
+  return el;
+}
+function setFxHold(ms){
+  FX_HOLD = ms;
+  if(ms === 0){
+    FX_SET.forEach(el => {
+      clearTimeout(el._tm);
+      setTimeout(() => { el.remove(); FX_SET.delete(el); }, 50);
+    });
+  }
+}
 function hitStop(ms){
   const a = $("arena"), t = ms + FX_HOLD;
   a.classList.add("hitstop"); clearTimeout(hitStop.tm);
   hitStop.tm = setTimeout(()=>a.classList.remove("hitstop"), t);
   return t;
 }
-// 拿剑：冲上去挥砍，弧形刀光（颜色 = 武器品质色，暴击再加一道交叉的）。刀光在命中前一点点开始画，定格时正好画满
-function slashFx(col, crit){
-  const [cx,cy] = monCenter(), sz = crit ? 150 : 115, arc = (d, c) => '<path class="sg" d="'+d+'"/><path class="sc" d="'+d+'"/>';
-  const el = document.createElement("div"); el.className = "slash"+(crit?" crit":"");
-  el.style.cssText = "left:"+cx+"px;top:"+cy+"px;width:"+sz+"px;height:"+sz+"px;--qc:"+col;
-  el.innerHTML = '<svg viewBox="0 0 100 100">'+arc("M10 86 Q24 20 92 12")+(crit?arc("M8 24 Q62 26 90 92"):'')+'</svg>';
-  $("arena").appendChild(el); setTimeout(()=>el.remove(), 650 + FX_HOLD);
+// 刀光按武器品质（白蓝粉紫橙红）+ 成长阶段（1~4）区分
+function slashFx(col, crit, qKey, st){
+  if(!qKey && typeof S !== "undefined" && S.equipped && S.equipped.weapon) qKey = S.equipped.weapon.quality;
+  qKey = qKey || "white";
+  if(st == null && typeof heroStage === "function") st = heroStage();
+  st = st || 1;
+  col = col || (GEAR_QUALITY_MAP[qKey] || GEAR_QUALITIES[0]).col;
+
+  const [cx,cy] = monCenter();
+  const baseSz = { white: 110, blue: 120, pink: 125, purple: 135, orange: 145, red: 160 }[qKey] || 110;
+  const stScale = st === 1 ? 0.88 : st === 2 ? 1.0 : st === 3 ? 1.12 : 1.25;
+  const sz = Math.round(baseSz * stScale * (crit ? 1.3 : 1));
+
+  const el = document.createElement("div");
+  el.className = "slash q-" + qKey + " s" + st + (crit ? " crit" : "");
+  el.style.cssText = "left:" + cx + "px;top:" + cy + "px;width:" + sz + "px;height:" + sz + "px;--qc:" + col;
+
+  const arc = (d, cls) => '<path class="sg' + (cls ? ' ' + cls : '') + '" d="' + d + '"/><path class="sc' + (cls ? ' ' + cls : '') + '" d="' + d + '"/>';
+  const mainArc = "M10 86 Q24 20 92 12";
+  const crossArc = "M8 24 Q62 26 90 92";
+  const isX = st === 3 || crit;
+
+  let svgContent = arc(mainArc);
+  if(isX) svgContent += arc(crossArc, "cross");
+
+  // A. 按品质区分元素层次
+  if(qKey === "white"){
+    // 白·朴素：一道干净白色刀光、几颗小火花
+    svgContent += '<g class="fx-sparks">'
+      + '<circle class="fx-spark" cx="55" cy="45" r="2.5" style="--tx:22px;--ty:-18px"/>'
+      + '<circle class="fx-spark" cx="50" cy="55" r="2" style="--tx:18px;--ty:20px"/>'
+      + '<circle class="fx-spark" cx="42" cy="42" r="2.5" style="--tx:-20px;--ty:-14px"/>'
+      + '<circle class="fx-spark" cx="62" cy="52" r="2" style="--tx:24px;--ty:4px"/>'
+      + '</g>';
+    if(st === 1){
+      // 阶段 1 可爱：带小星星、小泡泡
+      svgContent += '<g class="fx-cute">'
+        + '<polygon class="fx-star cute" points="50,30 52,36 58,36 53,40 55,46 50,42 45,46 47,40 42,36 48,36"/>'
+        + '<circle class="fx-bubble" cx="38" cy="60" r="5"/>'
+        + '<circle class="fx-bubble" cx="66" cy="38" r="3.5"/>'
+        + '</g>';
+    }
+  } else if(qKey === "blue"){
+    // 蓝·水/冰：蓝色水波刀光、水花飞溅粒子、冰晶碎片
+    svgContent += '<path class="water-ripple" d="M14 90 Q28 26 94 18"/>'
+      + '<path class="water-ripple r2" d="M6 82 Q20 16 88 8"/>'
+      + '<g class="fx-drops">'
+      + '<path class="fx-drop" d="M55 45 C53 48 53 52 55 54 C57 52 57 48 55 45Z" style="--tx:26px;--ty:-22px;--r:45deg"/>'
+      + '<path class="fx-drop" d="M45 55 C43 58 43 62 45 64 C47 62 47 58 45 55Z" style="--tx:-24px;--ty:20px;--r:210deg"/>'
+      + '<path class="fx-drop" d="M52 58 C50 61 50 65 52 67 C54 65 54 61 52 58Z" style="--tx:22px;--ty:24px;--r:135deg"/>'
+      + '</g>'
+      + '<g class="fx-ices">'
+      + '<polygon class="fx-ice" points="68,40 73,45 68,50 63,45" style="--tx:28px;--ty:-14px;--rot:120deg"/>'
+      + '<polygon class="fx-ice" points="36,48 40,52 36,56 32,52" style="--tx:-26px;--ty:-18px;--rot:-80deg"/>'
+      + '<polygon class="fx-ice" points="52,65 57,71 52,77 47,71" style="--tx:16px;--ty:28px;--rot:190deg"/>'
+      + '</g>';
+  } else if(qKey === "pink"){
+    // 粉·花/心：粉色樱花花瓣和小爱心飞散、星星闪烁
+    svgContent += '<g class="fx-petals">'
+      + '<path class="fx-petal" d="M65 35 C68 37 69 41 65 46 C61 41 62 37 65 35Z" style="--tx:24px;--ty:-22px;--rot:35deg"/>'
+      + '<path class="fx-petal" d="M38 42 C41 44 42 48 38 53 C34 48 35 44 38 42Z" style="--tx:-22px;--ty:-16px;--rot:-55deg"/>'
+      + '<path class="fx-petal" d="M58 64 C61 66 62 70 58 75 C54 70 55 66 58 64Z" style="--tx:20px;--ty:26px;--rot:115deg"/>'
+      + '<path class="fx-petal" d="M42 60 C45 62 46 66 42 71 C38 66 39 62 42 60Z" style="--tx:-18px;--ty:22px;--rot:180deg"/>'
+      + '</g>'
+      + '<g class="fx-hearts">'
+      + '<path class="fx-heart" d="M54 44 C51 40 51 37 54 39 C57 37 57 40 54 44Z" style="--tx:15px;--ty:-30px"/>'
+      + '<path class="fx-heart" d="M44 48 C41 44 41 41 44 43 C47 41 47 44 44 48Z" style="--tx:-16px;--ty:-26px"/>'
+      + '</g>'
+      + '<g class="fx-stars">'
+      + '<polygon class="fx-star pink" points="68,52 69.5,55 73,55 70,57 71.5,60 68,58 64.5,60 66,57 63,55 66.5,55" style="--tx:26px;--ty:8px"/>'
+      + '</g>';
+  } else if(qKey === "purple"){
+    // 紫·雷电：紫色闪电劈下、电弧跳动（画面微闪紫光统一在 heroAttack 命中瞬间触发一次）
+    svgContent += '<path class="fx-lightning" d="M52 -35 L44 10 L60 12 L36 54 L50 52 L26 96"/>'
+      + '<path class="fx-lightning core" d="M52 -35 L44 10 L60 12 L36 54 L50 52 L26 96"/>'
+      + '<g class="fx-arcs">'
+      + '<path class="fx-arc a1" d="M30 42 Q45 28 65 40"/>'
+      + '<path class="fx-arc a2" d="M26 62 Q46 76 60 56"/>'
+      + '<path class="fx-arc a3" d="M40 32 Q62 46 46 66"/>'
+      + '</g>';
+  } else if(qKey === "orange"){
+    // 橙·火焰：火焰斩、火星上飘、烈焰拖尾、怪兽脚下一圈火环
+    svgContent += '<path class="flame-trail" d="M12 92 Q28 24 96 16"/>'
+      + '<path class="flame-trail t2" d="M18 84 Q32 30 90 22"/>'
+      + '<g class="fx-embers">'
+      + '<circle class="fx-ember" cx="50" cy="52" r="3" style="--tx:-18px;--ty:-36px;--d:0ms"/>'
+      + '<circle class="fx-ember" cx="56" cy="48" r="2.5" style="--tx:20px;--ty:-40px;--d:35ms"/>'
+      + '<circle class="fx-ember" cx="44" cy="56" r="3.2" style="--tx:4px;--ty:-46px;--d:70ms"/>'
+      + '<circle class="fx-ember" cx="62" cy="44" r="2" style="--tx:-12px;--ty:-38px;--d:100ms"/>'
+      + '<circle class="fx-ember" cx="38" cy="50" r="2.8" style="--tx:14px;--ty:-32px;--d:45ms"/>'
+      + '</g>';
+    spawnFireRing(cx, cy + 42);
+  } else if(qKey === "red"){
+    // 红·传说/流星：金红流星冲击、大号冲击波环、光柱
+    svgContent += '<line class="fx-meteor" x1="-30" y1="-30" x2="70" y2="70"/>'
+      + '<line class="fx-meteor core" x1="-30" y1="-30" x2="70" y2="70"/>'
+      + '<circle class="fx-red-ring" cx="50" cy="50" r="28"/>'
+      + '<circle class="fx-red-ring r2" cx="50" cy="50" r="16"/>'
+      + '<g class="fx-stars gold">'
+      + '<polygon class="fx-star gold" points="50,22 52.5,29 60,29 54,34 56.5,41 50,36 43.5,41 46,34 40,29 47.5,29" style="--tx:22px;--ty:-20px"/>'
+      + '<polygon class="fx-star gold" points="66,50 68,56 74,56 69,60 71,66 66,62 61,66 63,60 58,56 64,56" style="--tx:24px;--ty:16px"/>'
+      + '</g>';
+    const beam = document.createElement("div");
+    beam.className = "light-pillar";
+    beam.style.left = cx + "px"; beam.style.top = cy + "px";
+    addFxEl(beam, 500);
+  }
+
+  el.innerHTML = '<svg viewBox="0 0 100 100">' + svgContent + '</svg>';
+  addFxEl(el, 550);
 }
-// 没武器：拳击，拳头 + 冲击波圈
-function punchFx(crit){
+
+// 橙色火环：怪兽脚下一圈火环
+function spawnFireRing(cx, cy){
+  const el = document.createElement("div");
+  el.className = "fire-ring";
+  el.style.left = cx + "px"; el.style.top = cy + "px";
+  el.innerHTML = '<svg viewBox="0 0 100 36"><ellipse class="fr-glow" cx="50" cy="18" rx="44" ry="12"/><ellipse class="fr-core" cx="50" cy="18" rx="34" ry="8"/></svg>';
+  addFxEl(el, 500);
+}
+
+// 没武器：拳击按阶段区分（1 级小拳头、4 级冲拳+冲击波）
+function punchFx(crit, st){
+  if(st == null && typeof heroStage === "function") st = heroStage();
+  st = st || 1;
   const [cx,cy] = monCenter(-16, 0);
-  const el = document.createElement("div"); el.className = "punchfx"+(crit?" crit":"");
-  el.style.left = cx+"px"; el.style.top = cy+"px"; el.innerHTML = '<i class="ring"></i><i class="ring r2"></i>';
-  $("arena").appendChild(el); setTimeout(()=>el.remove(), 500 + FX_HOLD);
+  const el = document.createElement("div");
+  el.className = "punchfx s" + st + (crit ? " crit" : "");
+  el.style.left = cx + "px"; el.style.top = cy + "px";
+
+  let inner = '<i class="ring"></i><i class="ring r2"></i>';
+  if(st === 1){
+    inner = '<i class="ring sm"></i><i class="ring sm r2"></i>'
+      + '<svg class="fx-cute-punch" viewBox="0 0 60 60">'
+      + '<polygon class="fx-star cute" points="30,12 32,17 37,17 33,20 35,25 30,22 25,25 27,20 23,17 28,17"/>'
+      + '<circle class="fx-bubble" cx="20" cy="38" r="4"/>'
+      + '<circle class="fx-bubble" cx="44" cy="24" r="3"/>'
+      + '</svg>';
+  } else if(st === 3){
+    inner += '<i class="ring dbl"></i><i class="ring dbl r2"></i>';
+  } else if(st === 4){
+    inner += '<i class="ring r-large"></i><i class="ring r-large r2"></i>';
+  }
+  el.innerHTML = inner;
+  addFxEl(el, 480);
 }
+
+// 少年残影拖尾：冲刺时身后留 2–3 个残影（继承 sprite 类与尺寸）
+function spawnGhostTrails(hs, mr){
+  const cur = B, a = $("arena"), hr0 = hs.getBoundingClientRect(), ar0 = a.getBoundingClientRect();
+  const startX = hr0.left - ar0.left, startY = hr0.top - ar0.top;
+  const dashDist = Math.max(20, mr.left - hr0.right + hr0.width * 0.4);
+  const hsFont = getComputedStyle(hs).fontSize;
+  [0.3, 0.65].forEach((pct, i) => {
+    setTimeout(() => {
+      if(B !== cur || B.over) return;
+      const g = document.createElement("div");
+      g.className = "sprite atk-ghost g" + (i + 1);
+      g.style.left = (startX + dashDist * pct) + "px";
+      g.style.top = startY + "px";
+      g.style.width = hr0.width + "px";
+      g.style.height = hr0.height + "px";
+      g.style.fontSize = hsFont;
+      g.innerHTML = hs.innerHTML;
+      g.querySelectorAll("[id]").forEach(x => x.removeAttribute("id"));
+      addFxEl(g, 360);
+    }, 35 + i * 40);
+  });
+}
+
+// 壮年镜头轻推（战斗区放大 1.05 倍再回来）
+function arenaCamPunch(){
+  const ar = $("arena");
+  ar.classList.remove("cam-punch");
+  void ar.offsetWidth;
+  ar.classList.add("cam-punch");
+  setTimeout(() => ar.classList.remove("cam-punch"), 500 + FX_HOLD);
+}
+
+// 落地冲击波
+function groundWaveFx(col){
+  const [cx, cy] = monCenter();
+  const gw = document.createElement("div");
+  gw.className = "ground-wave";
+  gw.style.cssText = "left:" + cx + "px;top:" + (cy + 42) + "px;--qc:" + (col || "#fff");
+  addFxEl(gw, 400);
+}
+
 /* 怪物闪避（第五轮）：答对后有 DODGE_RATE 的机会怪物闪开（显示「闪避！」+ 闪避动作，不掉血，自动换下一题，连击不断）。
    不会连续两次闪避；第 1 大关前 3 关不闪避；Boss 这一下可能打倒它（血量 ≤ 单次伤害上限）时不闪避。 */
 const DODGE_RATE = 0.04;
@@ -1413,8 +1647,10 @@ function dodgeCheck(b, r){
 function monsterDodge(){
   const cur = B; B.lastDodge = true; B.dodges = (B.dodges||0)+1;
   const hs = $("heroSprite"), hr = hs.getBoundingClientRect(), mr = $("monSprite").getBoundingClientRect();
+  const wpn = S.equipped && S.equipped.weapon, st = heroStage();
   hs.style.setProperty("--dash", Math.max(20, mr.left - hr.right + hr.width*.4)+"px");
-  play(hs, S.equipped && S.equipped.weapon ? "atk-slash" : "atk-punch"); sfx.slash();
+  play(hs, wpn ? "atk-slash" : "atk-punch", wpn ? "atk-s"+st : "atk-p"+st);
+  (wpn ? () => sfx.slash(wpn.quality) : () => sfx.punch(st))();
   setTimeout(()=>{
     if(B!==cur || B.over) return;
     play($("monSprite"), "dodge"); sfx.pop();
@@ -1438,28 +1674,39 @@ function heroAttack(board){   // board = {dmg, crit} for 消除 / 连连看
   if(!board) B.lastDodge = false;
   const crit = board ? !!board.crit : (B.combo >= 3 || Math.random()*100 < Math.min(CRIT_CAP, gs.critRate));
   const dmg = board ? board.dmg : Math.min(B.hp, hitCap(), (crit ? 2+(goldAura()?1:0)+gs.critDmg+atkBonus() : 1+atkBonus()) + B.lvAtk);
-  const wpn = S.equipped && S.equipped.weapon, hs = $("heroSprite");
+  const wpn = S.equipped && S.equipped.weapon, hs = $("heroSprite"), st = heroStage();
   // 冲到怪兽面前：距离 = 勇士右边到怪兽左边（留一点重叠，像真的打到）
   const hr = hs.getBoundingClientRect(), mr = $("monSprite").getBoundingClientRect();
   hs.style.setProperty("--dash", Math.max(20, mr.left - hr.right + hr.width*.4)+"px");
-  play(hs, wpn ? "atk-slash" : "atk-punch");
-  (wpn ? sfx.slash : sfx.punch)();
+  play(hs, wpn ? "atk-slash" : "atk-punch", wpn ? "atk-s"+st : "atk-p"+st);
+  (wpn ? () => sfx.slash(wpn.quality) : () => sfx.punch(st))();
   const tier = comboTier(B.combo);
   if(!board && B.combo>=2) setCombo(crit ? "连击 ×"+B.combo+" 暴击！" : "连击 ×"+B.combo, tier);
-  if(wpn) setTimeout(()=>{ if(B===cur && !B.over) slashFx(qCol(wpn), crit); }, DASH_HIT-80);
+  // 阶段 2（少年）：冲刺身后的 2–3 个残影拖尾
+  if(st === 2) spawnGhostTrails(hs, mr);
+  if(wpn) setTimeout(()=>{ if(B===cur && !B.over) slashFx(qCol(wpn), crit, wpn.quality, st); }, DASH_HIT-80);
   setTimeout(()=>{
     if(B!==cur || B.over) return;   // level already won (e.g. last pairs tapped fast): don't hit or win() again
+    const isRed = wpn && wpn.quality === "red";
     const heavy = !!B.L.boss, ms = $("monSprite");
-    if(!wpn) punchFx(crit);
-    ms.className = "sprite"; void ms.offsetWidth; ms.className = "sprite hit"+(heavy?" heavy":"")+(crit?" crit":"");
-    sfx.thud(heavy||crit); crit ? sfx.crit() : sfx.right();
-    fxAt(h.fx, crit); tint(crit ? "#ffe14d" : h.col);   // 勇士技能的特色特效照样有
+    if(!wpn) punchFx(crit, st);
+    // 阶段 4（壮年）：落地冲击波 + 镜头轻轻推近
+    if(st === 4){
+      arenaCamPunch();
+      groundWaveFx(wpn ? qCol(wpn) : "#ffe14d");
+    }
+    const isPurple = wpn && wpn.quality === "purple";
+    ms.className = "sprite"; void ms.offsetWidth; ms.className = "sprite hit"+(heavy||isRed?" heavy":"")+(crit?" crit":"");
+    sfx.thud(heavy||crit||isRed); crit ? sfx.crit() : sfx.right();
+    fxAt(h.fx, crit); tint(isPurple ? "#a855f7" : crit ? "#ffe14d" : h.col);   // 紫装命中瞬间微闪紫光，其余保留暴击金光/勇士原色
     dmgPop(dmg, crit);
-    shake(crit||heavy||tier>=2 ? "quake" : "quakeS");
+    shake(crit||heavy||tier>=2||isRed ? "quake" : "quakeS");
     $("arena").dataset.combo = String(tier);
     if(COMBO_TIERS.includes(B.combo)){ sfx.combo(tier); burst(6+tier*4, tier>=3 ? ["🌈","✨","⭐"] : tier>=2 ? ["🔥","✨"] : ["✨","⭐"]); }
     else if(crit) burst(8,[h.fx,"✨"]);
-    const stop = hitStop((crit ? HITSTOP_CRIT : HITSTOP_MS) + (heavy ? HITSTOP_BOSS : 0));
+    // 红装（传说/流星）：命中瞬间多定格 0.1 秒（100ms）
+    const extraStop = isRed ? 100 : 0;
+    const stop = hitStop((crit ? HITSTOP_CRIT : HITSTOP_MS) + (heavy ? HITSTOP_BOSS : 0) + extraStop);
     B.hp = Math.max(0, B.hp - dmg); drawHP();
     // gear 💖 heals gs.comboHeal × 10% of the max life every 5 combo
     const heal = gs.comboHeal && B.combo>0 && B.combo%5===0 ? Math.min(B.maxLife-B.life, healAmt(B.maxLife, COMBO_HEAL_PCT*gs.comboHeal)) : 0;
