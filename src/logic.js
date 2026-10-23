@@ -2690,7 +2690,7 @@ function boardDropPair(board){
   return keep;
 }
 const stickerCount = () => Object.keys(S.stickers).length;
-function hero(){ if(!heroUnlocked(S.hero)) switchHero(0); return HEROES[S.hero]; }
+function hero(){ if(!heroUnlocked(S.hero)){ switchHero(0); save(); } return HEROES[S.hero]; }
 /* 每位勇士各自的等级（家长 10-23 选定）：当前勇士的等级、经验、看过的成长阶段照旧放在 S.heroLv / S.exp / S.seenStage
    （攻击、血量加成、升级、长大演出都照原来的写法按这几个字段算）；别的勇士的存在 S.heroLvs[下标] = {lv, exp, seen}，
    换勇士时互换。没上过场的勇士从 1 级开始。 */
@@ -3159,6 +3159,8 @@ function ensureR5(st){
   // 已经看过的成长阶段（看「长大了」演出用）：旧存档从 1 开始，等级已经高的孩子第一次回到地图时会看到一次长大
   if(typeof st.seenStage!=="number"){ st.seenStage = 1; changed = true; }
   // 每位勇士各自的等级：第一次升级到这个版本时，原来的等级留给当前勇士，小勇士（默认勇士、孩子最常用）也保留同样的等级；别的勇士从 1 级开始
+  // 所有勇士里到过的最高等级（升级送装备只给一次）
+  if(typeof st.topLv!=="number"){ st.topLv = Math.max(st.heroLv||1, ...Object.values(st.heroLvs||{}).map(r=>(r&&r.lv)||1)); changed = true; }
   if(!st.heroLvs || typeof st.heroLvs!=="object" || Array.isArray(st.heroLvs)){
     st.heroLvs = {};
     if((st.hero||0)!==0 && (st.heroLv||1)>1) st.heroLvs[0] = {lv:st.heroLv, exp:st.exp||0, seen:st.seenStage||1};
@@ -3301,7 +3303,8 @@ function addExp(n){
     S.exp -= need;
     S.heroLv = (S.heroLv || 1) + 1;
     levels.push(S.heroLv);
-    rewards.push({lv: S.heroLv, items: levelReward(S.heroLv)});
+    // 升级送装备只在「所有勇士里第一次到这个等级」时给（每位勇士各自等级后，防止换新勇士反复刷升级装备；Fable 审查）
+    if(S.heroLv > (S.topLv || 0)){ S.topLv = S.heroLv; rewards.push({lv: S.heroLv, items: levelReward(S.heroLv)}); }
   }
   save();
   return {levels, rewards};
