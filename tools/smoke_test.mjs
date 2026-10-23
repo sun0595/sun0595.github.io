@@ -650,6 +650,12 @@ async function playAll(view) {
     T.stage = 0; const grown = /grow_/.test(T.growArt(other, null, T.heroStage(T.heroLvOf(other))) || '') ; T.stage = 1;
     T.switchHero(other); S.heroLv = lvO; T.switchHero(h0); return { fresh, back, grown, h: S.hero === h0 }; });
   if (!own.fresh || !own.back || !own.h) problems.push(`[${view.name}] each hero keeps its own level: ${JSON.stringify(own)}`);
+  // 升级送装备只在所有勇士里第一次到这个等级时给
+  const lvr = await p.evaluate(() => { const T = __t, S = T.S, h0 = S.hero, keep = { top: S.topLv, bag: S.bag.length }; const other = h0 === 4 ? 5 : 4; T.switchHero(other);
+    const lv1 = S.heroLv, ex1 = S.exp; S.topLv = Math.max(S.topLv || 0, 10); S.heroLv = 2; S.exp = 0; const r = window.gainExp(window.expNeed(2));
+    const noGear = r.levels.length === 1 && r.rewards.length === 0 && S.bag.length === keep.bag;
+    S.heroLv = lv1; S.exp = ex1; S.topLv = keep.top; T.switchHero(h0); return { noGear, levels: r.levels }; });
+  if (!lvr.noGear) problems.push(`[${view.name}] level-up gear only once per level across heroes: ${JSON.stringify(lvr)}`);
   // 颜色题答错不扣血：这里关掉颜色题，免得第一题刚好是颜色题
   // 当天第 16 次通关前起进入「狂暴 ×2」：怪兽每次攻击 ×2（20 血）、每题 8 秒
   await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.mapWorld = 0; s.equipped = { weapon: null, helmet: null, armor: null, shield: null }; s.qOn = Object.assign(s.qOn || {}, { color: false }); localStorage.setItem(k, JSON.stringify(s)); }, V1);
