@@ -877,7 +877,7 @@ function openParent(tab){
       // 插入题开关：拼音题照旧「关 / 偶尔 / 经常」，其余每类一个开关（默认全开）；关掉后这类题不再混进关卡（关卡专用玩法不受影响）
       body += '<div class="tgls"><div class="toggle"><span class="tl">插入拼音题</span><span class="seg3">'+[[0,"关"],[0.25,"偶尔"],[0.5,"经常"]].map(([v,t])=>'<button data-py="'+v+'" class="'+(S.py===v?"on":"")+'">'+t+'</button>').join("")+'</span></div></div>'
         + '<div class="tgls two">'+Q_SWITCHES.map(([k,label])=>tg("q_"+k, label, qOn(k))).join("")+'</div>'
-        + '<p class="muted"><small>关掉的题型不再混进关卡；算术消除、连连看、拼读这些关卡玩法不受影响。科普题 = 实物辨认（哪一个是鸭蛋？）。</small></p>';
+        + '<p class="muted"><small>关掉的题型不再混进关卡；算术消除、连连看、拼读这些关卡玩法不受影响。科普题 = 实物辨认（哪一个是鸭蛋？）。「连式填中间数」默认关：10 以上的连加连减只求最后得数；10 以内的照常有填中间的。</small></p>';
     } else if(tab==="bug") body += reportsHTML(bugPg);
     else if(tab==="color") body += colorLogHTML(colPg);
     else if(tab==="set"){
