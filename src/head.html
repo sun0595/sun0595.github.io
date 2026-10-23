@@ -684,6 +684,22 @@ svg.ei.cs{overflow:visible}
 /* 穿了盔甲：脚下一圈盔甲品质颜色的光环（在勇士原画后面） */
 .av.lay>.ei.art{position:relative}
 .av.lay .helm{position:absolute;z-index:2;width:calc(var(--hw)*100%);left:calc(var(--hx)*100%);top:calc(var(--hy)*100%);transform:translate(-50%,-70%) rotate(-6deg);pointer-events:none;line-height:0;filter:drop-shadow(0 0 2px var(--qc)) drop-shadow(0 0 4px var(--qc))}
+/* 「长大了」演出 */
+.evo{position:fixed;inset:0;z-index:60;background:radial-gradient(circle at 50% 45%,rgba(90,60,170,.92),rgba(16,12,40,.96) 70%);display:flex;align-items:center;justify-content:center;padding:calc(20px + var(--sat)) calc(12px + var(--sar)) calc(20px + var(--sab)) calc(12px + var(--sal))}
+.evobox{display:flex;flex-direction:column;align-items:center;gap:14px;width:100%;max-width:360px}
+.evostage{position:relative;width:100%;height:min(62vh,400px);font-size:min(30vh,190px)}
+.evostage>.evoa,.evostage>.evob{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+.evo.evo-glow .evostage .av{filter:brightness(0) invert(1) drop-shadow(0 0 10px #fff) drop-shadow(0 0 24px #c4b5fd)}
+.evo.evo-glow .evostage{animation:evoPulse .6s ease-in-out infinite alternate}
+@keyframes evoPulse{from{transform:scale(1)}to{transform:scale(1.04)}}
+.evoflash{position:absolute;left:-30%;right:-30%;top:-10%;bottom:-10%;background:radial-gradient(circle,#fff 0,rgba(255,255,255,.85) 30%,rgba(255,255,255,0) 70%);opacity:0;pointer-events:none}
+.evo.evo-flash .evoflash{animation:evoFlash .7s ease-out}
+@keyframes evoFlash{0%{opacity:0;transform:scale(.3)}30%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1.5)}}
+.evo.evo-done .evob{animation:evoPop .5s cubic-bezier(.3,1.6,.5,1)}
+@keyframes evoPop{from{transform:scale(.85)}to{transform:scale(1)}}
+.evotxt{font:800 22px var(--f-ui);color:#fff;text-align:center;min-height:1.4em}
+.evotxt .num{font-family:var(--f-num);color:#ffd23f}
+.evobox .btn{min-width:180px}
 .av.lay .helm .ei{width:100%;height:auto;font-size:inherit;filter:none}   /* 不吃勇士图的投影，不然阴影落在脸上 */
 .av.lay .aura{position:absolute;left:4%;right:4%;bottom:-5%;height:16%;border-radius:50%;border:var(--c-lw) solid var(--c-line);background:var(--qc);opacity:.9;box-shadow:0 0 0 3px var(--qc),0 0 12px 2px var(--qc)}
 /* rewards (家长 10-21): experience bar, gear experience, drops — no chest step */
