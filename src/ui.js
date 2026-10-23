@@ -563,7 +563,7 @@ const GROW_POSE = {
   robot_2:{fr:.15, fl:.85, fy:.56, hx:.5, hy:.12, hw:.50}, robot_3:{fr:.13, fl:.87, fy:.55, hx:.5, hy:.1, hw:.36}, robot_4:{fr:.11, fl:.89, fy:.55, hx:.5, hy:.1, hw:.36},
   astronaut_2:{fr:.12, fl:.88, fy:.55, hx:.5, hy:.08, hw:.48}, astronaut_3:{fr:.12, fl:.88, fy:.55, hx:.5, hy:.08, hw:.46}, astronaut_4:{fr:.12, fl:.88, fy:.53, hx:.5, hy:.08, hw:.43},
   ninja_2:{fr:.15, fl:.85, fy:.7, hx:.5, hy:.13, hw:.55}, ninja_3:{fr:.15, fl:.87, fy:.62, hx:.52, hy:.1, hw:.45}, base_2:{fr:.15, fl:.85, fy:.55, hx:.5, hy:.09, hw:.48},
-  ninja_4:{fr:.2, fl:.8, fy:.5, hx:.5, hy:.09, hw:.38}, base_3:{fr:.16, fl:.84, fy:.54, hx:.5, hy:.09, hw:.46},
+  ninja_4:{fr:.2, fl:.8, fy:.5, hx:.5, hy:.09, hw:.38}, base_3:{fr:.16, fl:.84, fy:.54, hx:.5, hy:.09, hw:.46}, base_4:{fr:.2, fl:.8, fy:.55, hx:.5, hy:.09, hw:.46},
   king_2:{fr:.2, fl:.8, fy:.6, hx:.5, hy:.11, hw:.48}, king_3:{fr:.25, fl:.75, fy:.55, hx:.5, hy:.1, hw:.36}, king_4:{fr:.25, fl:.75, fy:.53, hx:.5, hy:.1, hw:.34}
 };
 const growKey = (i, st) => st>=2 ? (HEROES[i] && HEROES[i].mystic ? "base" : GROW_NAME[i]||"base")+"_"+st : "";
