@@ -181,7 +181,13 @@ export async function r5Parent(p, { view, problems, shot, tap }) {
   await tap('.tab[data-t="qs"]'); await p.waitForTimeout(200);
   await tap('#q_word'); await p.waitForTimeout(200); await shot('84-settings-qtypes');
   const ui = await p.evaluate(() => ({ n: document.querySelectorAll('.tgls.two .toggle').length, word: __t.S.qOn.word, py: !!document.querySelector('[data-py]') }));
-  if (ui.n !== 8 || ui.word !== false || !ui.py) bad('题型页签应有拼音题 + 8 个开关，点了能关: ' + JSON.stringify(ui));
+  if (ui.n !== 9 || ui.word !== false || !ui.py) bad('题型页签应有拼音题 + 9 个开关，点了能关: ' + JSON.stringify(ui));
+  // 「连式填中间数（10 以上）」默认关：10 以上的连式逆向（80 + ? − 10 = 90）不出，10 以内照常；打开后会出
+  const cm = await p.evaluate(() => { const T = __t, CT = { '5': 5, '10': 10 }; const run = qOn => { T.S.qOn = qOn; let big = 0, small = 0;
+    for (let w = 0; w < 8; w++) for (let l = 0; l < 15; l++) { const d = T.levelDef(w, l); for (let i = 0; i < 300; i++) { const q = d.g(); if (q && /^c\d/.test(String(q.inv || ''))) { if (CT[q.tier]) small++; else big++; } } }
+    return { big, small }; }; const off = run({}), on = run({ chainMid: true }); T.S.qOn = {}; return { off, on }; });
+  if (cm.off.big !== 0 || cm.off.small === 0 || cm.on.big === 0) bad('连式填中间数开关: 默认关时 10 以上不出、10 以内照出，打开后 10 以上会出: ' + JSON.stringify(cm));
+  console.log('   chainMid ' + JSON.stringify(cm));
   await tap('#q_word'); await tap('#pgBack');
   // 答错一题 → 报告页签每条错题旁有「这题有问题」→ 记到「有问题」页签，能复制
   await p.evaluate(() => { __t.S.mistakes = []; __t.S.reports = []; __t.startLevel(1, 4); });
