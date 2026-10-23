@@ -2129,9 +2129,13 @@ const HEAL_PCT = 0.3, COMBO_HEAL_PCT = 0.1;
    Boss 还是半血暴怒，更强：攻击 ×1.8，蓄力快 25%。 */
 const FURY = {at:0.4, atk:1.5, t:0.8}, BOSS_FURY = {at:0.5, atk:1.8, t:0.75};
 // 怪兽打一下扣多少血：rageDmg = RAGE.dmg，fury = 怪兽狂暴倍数，r1 / r2 = 随机数（浮动 / 暴击），guard = 这一下有护盾或幸运（减半）
-function monsterHit(rageDmg, fury, r1, r2, guard){
+// 一下最多打掉最大血量的 HIT_CAP（不会满血被一击打倒；Fable 审查：每天后面的关卡暴击可能 ≥ 30）。cap 不传就用当前战斗的最大血量
+const HIT_CAP = 0.5;
+function monsterHit(rageDmg, fury, r1, r2, guard, cap){
   const crit = r2 < MON_CRIT;
-  const full = Math.max(1, Math.round(MON_HIT * rageDmg * (fury||1) * (MON_HIT_LO + (MON_HIT_HI-MON_HIT_LO)*r1) * (crit ? MON_CRIT_X : 1)));
+  if(cap==null) cap = typeof B!=="undefined" && B ? B.maxLife : 0;
+  let full = Math.max(1, Math.round(MON_HIT * rageDmg * (fury||1) * (MON_HIT_LO + (MON_HIT_HI-MON_HIT_LO)*r1) * (crit ? MON_CRIT_X : 1)));
+  if(cap > 0) full = Math.min(full, Math.max(1, Math.round(cap*HIT_CAP)));
   return {full, crit, dmg: guard ? Math.max(1, Math.round(full*GUARD_CUT)) : full};
 }
 // 回血：最大血量的 pct（至少 1 点）

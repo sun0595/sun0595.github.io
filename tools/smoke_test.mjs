@@ -525,6 +525,9 @@ async function playAll(view) {
   const rage = await p.evaluate(() => ({ rage: __t.B.rage, t: __t.qTime(), tag: document.getElementById('rageTag').textContent.trim(), tagShown: !document.getElementById('rageTag').hidden, life: __t.B.life }));
   if (rage.rage !== 1 || !rage.tagShown || rage.tag.replace(/\s+/g, '') !== '狂暴×2') problems.push(`[${view.name}] rage x2 not shown: ${JSON.stringify(rage)}`);
   if (Math.abs(rage.t - 8) > 1e-9) problems.push(`[${view.name}] rage x2 time limit should be 8 s, got ${rage.t}`);
+  // 一下最多打掉一半最大血量（狂暴 ×3 的 Boss 暴击也不能一击打倒满血的勇士）
+  const capHit = await p.evaluate(() => [__t.monsterHit(3, 1.8, 1, 0, false, 30).dmg, __t.monsterHit(3, 1.8, 1, 0, false, 50).dmg, __t.monsterHit(1, 1, 0.5, 0.99, false, 30).dmg]);
+  if (capHit.join() !== '15,25,10') problems.push(`[${view.name}] monster hit cap (half of max life): ${capHit}`);
   const rc = await p.evaluate(() => __t.chargeTime());
   if (Math.abs(rc - rage.t) > 1e-9) problems.push(`[${view.name}] rage x2: the one timer bar = the time limit (${rage.t} s), got ${rc}`);
   await p.evaluate(() => { __t.B.lucky = 0; __t.B.shield = 0; });
