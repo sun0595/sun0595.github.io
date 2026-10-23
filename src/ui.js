@@ -555,11 +555,12 @@ const HERO_HEAD = [{hx:.49, hy:.13, hw:.51}, {hx:.5, hy:.13, hw:.51}, {hx:.5, hy
    小勇士按盔甲品质 grow_<品质>_<阶段>（没穿或没有这张就 grow_base_<阶段>）；神秘勇士是小勇士的剪影，跟着小勇士长大。
    没有这张原画就退回第 1 阶段的原画。GROW_POSE 是长大后手和头的位置（同 HERO_HANDS / HERO_HEAD 的写法）。 */
 const GROW_NAME = ["base","ninja","robot","astronaut","trex","dragon","unicorn","king"];
+// 原画要面朝右（怪兽在右边）：霸王龙 3、4 原画朝左，已水平翻转（原图也一起翻了）
 const GROW_POSE = {
   dragon_2:{fr:.2, fl:.8, fy:.6, hx:.5, hy:.17, hw:.41}, dragon_3:{fr:.3, fl:.72, fy:.54, hx:.5, hy:.15, hw:.36}, dragon_4:{fr:.3, fl:.72, fy:.52, hx:.5, hy:.13, hw:.32},
-  trex_2:{fr:.36, fl:.76, fy:.58, hx:.55, hy:.13, hw:.48}, trex_3:{fr:.3, fl:.7, fy:.5, hx:.42, hy:.1, hw:.38},
+  trex_2:{fr:.36, fl:.76, fy:.58, hx:.55, hy:.13, hw:.48}, trex_3:{fr:.42, fl:.76, fy:.5, hx:.58, hy:.1, hw:.38},
   unicorn_2:{fy:.56, hx:.45, hy:.18, hw:.46}, unicorn_3:{fy:.5, hx:.68, hy:.13, hw:.34},
-  trex_4:{fr:.22, fl:.74, fy:.48, hx:.45, hy:.1, hw:.38}, unicorn_4:{fy:.5, hx:.7, hy:.13, hw:.31},
+  trex_4:{fr:.38, fl:.8, fy:.48, hx:.55, hy:.1, hw:.38}, unicorn_4:{fy:.5, hx:.7, hy:.13, hw:.31},
   robot_2:{fr:.15, fl:.85, fy:.56, hx:.5, hy:.12, hw:.50}, robot_3:{fr:.13, fl:.87, fy:.55, hx:.5, hy:.1, hw:.36}, robot_4:{fr:.11, fl:.89, fy:.55, hx:.5, hy:.1, hw:.36},
   astronaut_2:{fr:.12, fl:.88, fy:.55, hx:.5, hy:.08, hw:.48}, astronaut_3:{fr:.12, fl:.88, fy:.55, hx:.5, hy:.08, hw:.46}, astronaut_4:{fr:.12, fl:.88, fy:.53, hx:.5, hy:.08, hw:.43},
   ninja_2:{fr:.15, fl:.85, fy:.7, hx:.5, hy:.13, hw:.55}, ninja_3:{fr:.15, fl:.87, fy:.62, hx:.52, hy:.1, hw:.45}, base_2:{fr:.15, fl:.85, fy:.55, hx:.5, hy:.09, hw:.48},
