@@ -300,11 +300,23 @@ svg.ei.cs{overflow:visible}
 .dmg.hitn.dodgetxt{white-space:nowrap}
 .dmg.hitn.dodgetxt b{font:400 40px/1 var(--f-ui);color:#7dd3fc;-webkit-text-stroke:7px var(--ink);text-shadow:0 4px 0 var(--ink)}
 @keyframes lunge{0%{transform:translateX(0)}10%{transform:translateX(10%) scale(.92)}30%{transform:translateX(-115%) scale(1.35)}100%{transform:translateX(0)}}
-/* 勇士出手：冲到怪兽面前（--dash 由 JS 量出来），35% 处命中；拿剑挥砍带转身，空手是直拳 */
+/* 勇士出手：冲到怪兽面前（--dash 由 JS 量出来），35% 处命中；按成长阶段决定动作 */
 .atk-slash{animation:heroSlash .48s cubic-bezier(.3,0,.4,1)}
+.atk-slash.atk-s1{animation:heroSlash1 .48s cubic-bezier(.3,0,.4,1)}
+.atk-slash.atk-s2{animation:heroSlash2 .48s cubic-bezier(.3,0,.4,1)}
+.atk-slash.atk-s3{animation:heroSlash3 .48s cubic-bezier(.3,0,.4,1)}
+.atk-slash.atk-s4{animation:heroSlash4 .48s cubic-bezier(.25,0,.3,1)}
 .atk-punch{animation:heroPunch .48s cubic-bezier(.3,0,.4,1)}
+.atk-punch.atk-p1{animation:heroPunch1 .48s cubic-bezier(.3,0,.4,1)}
+.atk-punch.atk-p4{animation:heroPunch4 .48s cubic-bezier(.25,0,.3,1)}
 @keyframes heroSlash{0%{transform:none}12%{transform:translateX(-10px) rotate(-10deg) scale(.95)}35%{transform:translateX(var(--dash,80px)) rotate(14deg) scale(1.08)}55%{transform:translateX(calc(var(--dash,80px)*.9)) rotate(6deg)}100%{transform:none}}
+@keyframes heroSlash1{0%{transform:none}14%{transform:translate(-6px,-18px) rotate(-8deg) scale(.95)}35%{transform:translate(var(--dash,80px),0) rotate(10deg) scale(1.05)}55%{transform:translate(calc(var(--dash,80px)*.88),-4px) rotate(4deg)}100%{transform:none}}
+@keyframes heroSlash2{0%{transform:none}12%{transform:translateX(-14px) rotate(-12deg) skewX(-6deg) scale(.95)}35%{transform:translateX(var(--dash,80px)) rotate(15deg) skewX(4deg) scale(1.1)}55%{transform:translateX(calc(var(--dash,80px)*.9)) rotate(6deg)}100%{transform:none}}
+@keyframes heroSlash3{0%{transform:none}10%{transform:translateX(-10px) rotate(-10deg)}28%{transform:translateX(calc(var(--dash,80px)*.92)) rotate(18deg) scale(1.08)}42%{transform:translateX(calc(var(--dash,80px)*.84)) rotate(-8deg) scale(1.04)}55%{transform:translateX(var(--dash,80px)) rotate(20deg) scale(1.12)}70%{transform:translateX(calc(var(--dash,80px)*.9)) rotate(8deg)}100%{transform:none}}
+@keyframes heroSlash4{0%{transform:none}16%{transform:translate(-10px,-42px) rotate(-18deg) scale(1.06)}35%{transform:translate(var(--dash,80px),0) rotate(22deg) scale(1.18)}55%{transform:translate(calc(var(--dash,80px)*.92),4px) rotate(8deg) scale(1.06)}100%{transform:none}}
 @keyframes heroPunch{0%{transform:none}12%{transform:translateX(-8px) scale(.94,1.04)}35%{transform:translateX(var(--dash,80px)) scale(1.12,.94)}55%{transform:translateX(calc(var(--dash,80px)*.9))}100%{transform:none}}
+@keyframes heroPunch1{0%{transform:none}14%{transform:translate(-5px,-14px) scale(.93,1.04)}35%{transform:translate(var(--dash,80px),0) scale(1.08,.95)}55%{transform:translate(calc(var(--dash,80px)*.88),-3px)}100%{transform:none}}
+@keyframes heroPunch4{0%{transform:none}14%{transform:translateX(-16px) scale(.9,1.1)}35%{transform:translateX(var(--dash,80px)) scale(1.22,.9)}55%{transform:translateX(calc(var(--dash,80px)*.92))}100%{transform:none}}
 .attack{animation:attack .35s}
 @keyframes attack{0%,100%{transform:translateX(0)}50%{transform:translateX(30%) rotate(-8deg)}}
 .hurt{animation:hurt .6s!important}
@@ -367,21 +379,101 @@ svg.ei.cs{overflow:visible}
 .dmg.hitn i{font:400 22px/1 var(--f-ui);font-style:normal;color:#fff;-webkit-text-stroke:5px #b4001e;paint-order:stroke fill;margin-bottom:-2px}
 .dmg.hitn.crit b{font-size:74px;color:#ffe14d;-webkit-text-stroke:8px #b4001e;text-shadow:0 5px 0 #5a0010,0 0 18px #ffb300}
 @keyframes hitn{0%{transform:translate(-50%,-50%) scale(1.9);opacity:1}18%{transform:translate(-50%,-50%) scale(.92)}28%{transform:translate(-50%,-50%) scale(1.05)}70%{opacity:1;transform:translate(-50%,-70%) scale(1)}100%{opacity:0;transform:translate(-50%,-110%) scale(.9)}}
-/* 刀光（颜色 = 武器品质）和拳击冲击波 */
+/* 刀光（按品质 white/blue/pink/purple/orange/red + 成长阶段 s1~s4 区分）与拳击冲击波 */
 .slash{position:absolute;z-index:6;pointer-events:none;transform:translate(-50%,-50%)}
 .slash svg{display:block;width:100%;height:100%;overflow:visible}
-.slash path{fill:none;stroke-linecap:round;stroke-dasharray:130;stroke-dashoffset:130;animation:slashDraw .45s ease-out forwards}
+.slash path.sg,.slash path.sc{fill:none;stroke-linecap:round;stroke-dasharray:130;stroke-dashoffset:130;animation:slashDraw .45s ease-out forwards}
 .slash .sg{stroke:var(--qc,#fff);stroke-width:10;filter:drop-shadow(0 0 5px var(--qc,#fff)) drop-shadow(0 0 12px var(--qc,#fff))}
 .slash .sc{stroke:#fff;stroke-width:3}
-.slash.crit .sg{stroke-width:12}
+.slash.crit .sg{stroke-width:13}
+.slash path.cross{animation-delay:.03s}
 .slash.crit path:nth-child(n+3){animation-delay:.04s}
 @keyframes slashDraw{0%{stroke-dashoffset:130;opacity:1}20%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}
+
+/* 白·朴素：火花与儿童小星星小泡泡 */
+.slash .fx-sparks .fx-spark{fill:#fff;animation:sparkFly .4s ease-out forwards;transform-origin:center}
+@keyframes sparkFly{0%{transform:scale(0) translate(0,0);opacity:1}100%{transform:scale(1.2) translate(var(--tx,18px),var(--ty,-18px));opacity:0}}
+.slash .fx-cute .fx-star,.fx-cute-punch .fx-star{fill:#ffe14d;animation:starTwinkle .45s ease-out forwards;transform-origin:center}
+@keyframes starTwinkle{0%{transform:scale(0) rotate(0);opacity:1}50%{transform:scale(1.2) rotate(90deg);opacity:1}100%{transform:scale(1) translate(var(--tx,0),var(--ty,0)) rotate(180deg);opacity:0}}
+.slash .fx-cute .fx-bubble,.fx-cute-punch .fx-bubble{fill:none;stroke:rgba(255,255,255,.8);stroke-width:1.5;animation:bubbleFloat .45s ease-out forwards}
+@keyframes bubbleFloat{0%{transform:scale(.5);opacity:1}100%{transform:scale(1.3) translateY(-14px);opacity:0}}
+
+/* 蓝·水/冰：水波、水花飞溅、冰晶碎片 */
+.slash .water-ripple{stroke:#38bdf8;stroke-width:4;fill:none;stroke-dasharray:8,6;animation:slashDraw .45s ease-out forwards;filter:drop-shadow(0 0 6px #0284c7)}
+.slash .water-ripple.r2{stroke:#bae6fd;stroke-width:2;stroke-dasharray:4,4;animation-delay:.03s}
+.slash .fx-drop{fill:#38bdf8;filter:drop-shadow(0 0 3px #bae6fd);animation:dropSplash .46s ease-out forwards;transform-origin:center}
+@keyframes dropSplash{0%{transform:scale(0) translate(0,0) rotate(var(--r,0));opacity:1}100%{transform:scale(1.2) translate(var(--tx),var(--ty)) rotate(var(--r,0));opacity:0}}
+.slash .fx-ice{fill:#e0f2fe;stroke:#38bdf8;stroke-width:1.2;filter:drop-shadow(0 0 4px #0284c7);animation:iceFly .48s ease-out forwards;transform-origin:center}
+@keyframes iceFly{0%{transform:scale(0) translate(0,0) rotate(0);opacity:1}100%{transform:scale(1.1) translate(var(--tx),var(--ty)) rotate(var(--rot,90deg));opacity:0}}
+
+/* 粉·花/心：樱花花瓣、爱心、粉星星 */
+.slash .fx-petal{fill:#f472b6;filter:drop-shadow(0 0 3px #fb7185);animation:petalDrift .5s ease-out forwards;transform-origin:center}
+@keyframes petalDrift{0%{transform:scale(0) translate(0,0) rotate(0);opacity:1}100%{transform:scale(1.1) translate(var(--tx),var(--ty)) rotate(var(--rot,45deg));opacity:0}}
+.slash .fx-heart{fill:#fb7185;filter:drop-shadow(0 0 4px #ec4899);animation:heartFloat .48s ease-out forwards;transform-origin:center}
+@keyframes heartFloat{0%{transform:scale(0) translate(0,0);opacity:1}40%{transform:scale(1.2) translate(calc(var(--tx)*.5),calc(var(--ty)*.5));opacity:1}100%{transform:scale(1) translate(var(--tx),var(--ty));opacity:0}}
+.slash .fx-star.pink{fill:#fce7f3;stroke:#ec4899;stroke-width:1}
+.slash .fx-star.gold{fill:#fde047;filter:drop-shadow(0 0 4px #f59e0b)}
+
+/* 紫·雷电：闪电、电弧 */
+.slash .fx-lightning{fill:none;stroke:#c084fc;stroke-width:5;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 8px #a855f7);animation:lightningBolt .42s ease-out forwards}
+.slash .fx-lightning.core{stroke:#fff;stroke-width:1.8}
+@keyframes lightningBolt{0%{stroke-dasharray:160;stroke-dashoffset:160;opacity:1}25%{stroke-dashoffset:0;opacity:1}60%{opacity:1}100%{opacity:0}}
+.slash .fx-arc{fill:none;stroke-linecap:round;animation:arcJump .4s ease-out forwards}
+.slash .fx-arc.a1{stroke:#e9d5ff;stroke-width:2.5;filter:drop-shadow(0 0 4px #a855f7);animation-delay:.04s}
+.slash .fx-arc.a2{stroke:#c084fc;stroke-width:2;animation-delay:.09s}
+.slash .fx-arc.a3{stroke:#f3e8ff;stroke-width:2;animation-delay:.14s}
+@keyframes arcJump{0%{opacity:0;stroke-dasharray:60;stroke-dashoffset:60}30%{opacity:1;stroke-dashoffset:0}80%{opacity:1}100%{opacity:0}}
+
+/* 橙·火焰：火尾、火星、火环 */
+.slash .flame-trail{stroke:#f97316;stroke-width:6;fill:none;filter:drop-shadow(0 0 8px #ea580c);animation:slashDraw .45s ease-out forwards}
+.slash .flame-trail.t2{stroke:#fde047;stroke-width:2.5;animation-delay:.02s}
+.slash .fx-ember{fill:#fbbf24;filter:drop-shadow(0 0 4px #ea580c);animation:emberRise .48s ease-out forwards}
+@keyframes emberRise{0%{transform:scale(.3) translate(0,0);opacity:1}100%{transform:scale(1.2) translate(var(--tx),var(--ty));opacity:0}}
+.fire-ring{position:absolute;z-index:5;pointer-events:none;transform:translate(-50%,-50%);width:110px;height:40px}
+.fire-ring svg{width:100%;height:100%;overflow:visible}
+.fire-ring .fr-glow{stroke:#f97316;stroke-width:5;fill:none;filter:drop-shadow(0 0 8px #ea580c);animation:ringBurn .48s ease-out forwards}
+.fire-ring .fr-core{stroke:#fde047;stroke-width:2;fill:none;animation:ringBurn .48s ease-out forwards}
+@keyframes ringBurn{0%{transform:scale(.4);transform-origin:center;opacity:1}50%{transform:scale(1.1);transform-origin:center;opacity:1}100%{transform:scale(1.3);transform-origin:center;opacity:0}}
+
+/* 红·传说/流星：流星、大号冲击波环、光柱 */
+.slash .fx-meteor{stroke:#ef4444;stroke-width:18;stroke-linecap:round;fill:none;filter:drop-shadow(0 0 10px #f59e0b);animation:meteorSlam .45s ease-out forwards}
+.slash .fx-meteor.core{stroke:#fff;stroke-width:6}
+@keyframes meteorSlam{0%{stroke-dasharray:140;stroke-dashoffset:140;opacity:1}20%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}
+.fx-red-ring{stroke:#ef4444;stroke-width:5;fill:none;filter:drop-shadow(0 0 8px #f59e0b);animation:redRingExpand .5s ease-out forwards;transform-origin:center}
+.fx-red-ring.r2{stroke:#fde047;stroke-width:3;animation-delay:.04s}
+@keyframes redRingExpand{0%{transform:scale(.2);opacity:1}100%{transform:scale(2.4);opacity:0}}
+.light-pillar{position:absolute;z-index:4;pointer-events:none;transform:translate(-50%,-50%);width:28px;height:240px;background:linear-gradient(to bottom,rgba(255,255,255,0),rgba(254,226,226,.9) 20%,rgba(239,68,68,.9) 50%,rgba(254,226,226,.9) 80%,rgba(255,255,255,0));filter:drop-shadow(0 0 12px #f59e0b);animation:pillarFlash .48s ease-out forwards}
+@keyframes pillarFlash{0%{transform:translate(-50%,-50%) scaleX(0);opacity:1}25%{transform:translate(-50%,-50%) scaleX(1.4);opacity:1}100%{transform:translate(-50%,-50%) scaleX(.2);opacity:0}}
+
+/* 拳击冲击波（按阶段区分） */
 .punchfx{position:absolute;z-index:6;width:0;height:0;pointer-events:none}
 .punchfx .ring{position:absolute;left:-44px;top:-44px;width:88px;height:88px;border-radius:50%;border:7px solid #fff;box-shadow:0 0 14px #ffe14d;animation:ring .42s ease-out forwards}
 .punchfx .ring.r2{left:-28px;top:-28px;width:56px;height:56px;border-color:#ffe14d;animation-delay:.05s}
+.punchfx .ring.sm{left:-28px;top:-28px;width:56px;height:56px;border-width:5px}
+.punchfx .ring.sm.r2{left:-18px;top:-18px;width:36px;height:36px;border-width:3px}
+.punchfx .ring.dbl{animation-delay:.08s;border-color:#38bdf8}
+.punchfx .ring.r-large{left:-65px;top:-65px;width:130px;height:130px;border-width:8px;border-color:#f97316;box-shadow:0 0 20px #ef4444;animation:ringLarge .45s ease-out forwards}
+.punchfx .ring.r-large.r2{left:-45px;top:-45px;width:90px;height:90px;border-color:#fde047;animation-delay:.05s}
 @keyframes ring{0%{transform:scale(.35);opacity:1}100%{transform:scale(1.8);opacity:0}}
+@keyframes ringLarge{0%{transform:scale(.3);opacity:1}100%{transform:scale(1.8);opacity:0}}
+.fx-cute-punch{position:absolute;left:-30px;top:-30px;width:60px;height:60px;overflow:visible;pointer-events:none}
+
+/* 少年残影拖尾 */
+.atk-ghost{position:absolute;pointer-events:none;z-index:2;line-height:0;animation:ghostFade .36s ease-out forwards}
+.atk-ghost.g1{opacity:.45}
+.atk-ghost.g2{opacity:.25;animation-delay:.04s}
+@keyframes ghostFade{0%{opacity:.45;transform:scale(1)}100%{opacity:0;transform:scale(.95)}}
+.atk-ghost.sprite{animation:ghostFade .36s ease-out forwards}
+.atk-ghost.sprite .ei{vertical-align:0}
+
+/* 壮年镜头轻推与落地冲击波 */
+.arena.cam-punch{animation:camPunch .45s cubic-bezier(.25,1,.5,1);transform-origin:65% 60%}
+@keyframes camPunch{0%{transform:scale(1)}32%{transform:scale(1.05)}100%{transform:scale(1)}}
+.ground-wave{position:absolute;transform:translate(-50%,-50%);width:110px;height:22px;border-radius:50%;border:4px solid var(--qc,#fff);box-shadow:0 0 10px var(--qc,#fff);opacity:.9;pointer-events:none;z-index:3;animation:groundWave .42s ease-out forwards}
+@keyframes groundWave{0%{transform:translate(-50%,-50%) scale(.3);opacity:1}100%{transform:translate(-50%,-50%) scale(1.6);opacity:0}}
+
 /* 命中定格：竞技场里的动作停住一下（伤害数字照常弹出） */
-.arena.hitstop .sprite,.arena.hitstop .slash path,.arena.hitstop .punchfx .ring,.arena.hitstop .fx .ei{animation-play-state:paused!important}
+.arena.hitstop .sprite,.arena.hitstop .slash *,.arena.hitstop .punchfx *,.arena.hitstop .fx *,.arena.hitstop .atk-ghost,.arena.hitstop .ground-wave,.arena.hitstop .fire-ring *,.arena.hitstop .light-pillar{animation-play-state:paused!important}
 .toast{position:absolute;left:0;right:0;top:42%;z-index:8;display:flex;justify-content:center;pointer-events:none}
 .toast>div{display:flex;align-items:center;gap:8px;padding:8px 18px;border-radius:18px;border:var(--c-lw) solid var(--c-line);background:var(--cw1);color:var(--ink);font:400 24px var(--f-ui);box-shadow:var(--c-sh);animation:toast 1.3s forwards}
 .toast .ei{font-size:40px}
@@ -717,6 +809,8 @@ svg.ei.cs{overflow:visible}
 @keyframes hFloatL{0%,100%{transform:translateY(0) rotate(6deg)}50%{transform:translateY(-9%) rotate(0deg)}}
 /* 穿了盔甲：脚下一圈盔甲品质颜色的光环（在勇士原画后面） */
 .av.lay>.ei.art{position:relative}
+.hcard .hlv{position:absolute;right:4px;bottom:3px;font:800 11px/1 var(--f-num);color:#fff;background:var(--c-line);border-radius:8px;padding:2px 5px}
+.hlvt{font:800 .7em var(--f-num);color:var(--purple,#7c3aed);margin-left:4px}
 .av.lay .helm{position:absolute;z-index:2;width:calc(var(--hw)*100%);left:calc(var(--hx)*100%);top:calc(var(--hy)*100%);transform:translate(-50%,-70%) rotate(-6deg);pointer-events:none;line-height:0;filter:drop-shadow(0 0 2px var(--qc)) drop-shadow(0 0 4px var(--qc))}
 /* 「长大了」演出 */
 .evo{position:fixed;inset:0;z-index:60;background:radial-gradient(circle at 50% 45%,rgba(90,60,170,.92),rgba(16,12,40,.96) 70%);display:flex;align-items:center;justify-content:center;padding:calc(20px + var(--sat)) calc(12px + var(--sar)) calc(20px + var(--sab)) calc(12px + var(--sal))}
