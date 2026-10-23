@@ -287,7 +287,8 @@ async function playAll(view) {
   const afterAll = await p.evaluate(() => ({ c: __t.S.chests, n: __t.S.bag.length }));
   if (afterAll.c !== 0 || afterAll.n !== bagA + chests) problems.push(`[${view.name}] 一键全开 should open every chest into the bag: ${JSON.stringify({ chests, bagA, afterAll })}`);
   await tap('#hBack'); await p.waitForTimeout(300);
-  await p.evaluate(() => { addGear({ id: 'asc1', slot: 'weapon', quality: 'blue', name: '测试·长剑', e: '🗡️', lv: 5, exp: 0, affixes: [{ id: 'atk', val: 2 }] }); __t.S.stones = Math.max(1, __t.S.stones || 0); });
+  // 放到背包最前面：一键全开后武器可能超过一页（每页 8 个）
+  await p.evaluate(() => { addGear({ id: 'asc1', slot: 'weapon', quality: 'blue', name: '测试·长剑', e: '🗡️', lv: 5, exp: 0, affixes: [{ id: 'atk', val: 2 }] }); __t.S.bag.unshift(__t.S.bag.pop()); __t.S.stones = Math.max(1, __t.S.stones || 0); });
   await tap('.tab[data-s="helmet"]'); await tap('.tab[data-s="weapon"]'); await p.waitForTimeout(200);
   await tap('.gt[data-id="asc1"]'); await p.waitForTimeout(300); await shot('09b-bag-ascend');
   const st0 = await p.evaluate(() => __t.S.stones);
