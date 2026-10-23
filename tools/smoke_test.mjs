@@ -123,6 +123,62 @@ async function shotCheck(p, view, dir, name) {
   console.log(bad.length ? 'BAD' : 'ok ', view.name, name, spare === undefined ? '' : `(page spare ${spare}px)`);
 }
 
+async function testAttackFx(p, shot, ready, hitOnce, view) {
+  const FX_QUALITIES = ['white', 'blue', 'pink', 'purple', 'orange', 'red'];
+  for (const q of FX_QUALITIES) {
+    for (let st = 1; st <= 4; st++) {
+      await ready();
+      await p.evaluate(([q, st]) => {
+        __t.stage = st;
+        equipGear({ id: 'fx_test_' + q, slot: 'weapon', quality: q, name: '测试·' + q, e: '🗡️' });
+      }, [q, st]);
+      const res = await hitOnce(0, `90-fx-${q}-s${st}`);
+      if (!res.slash) problems.push(`[${view.name}] ${q}-s${st} missing .slash path`);
+      const qCol = await p.evaluate(q => GEAR_QUALITY_MAP[q].col, q);
+      if ((res.col || '').trim() !== qCol) problems.push(`[${view.name}] ${q}-s${st} color mismatch: ${res.col} vs ${qCol}`);
+      await p.waitForTimeout(650);
+      const leftovers = await p.evaluate(() => document.querySelectorAll('.slash, .punchfx, .atk-ghost, .ground-wave, .fire-ring, .light-pillar').length);
+      if (leftovers > 0) problems.push(`[${view.name}] FX DOM leftovers after ${q}-s${st}: ${leftovers}`);
+    }
+  }
+  for (const st of [1, 4]) {
+    await ready();
+    await p.evaluate(st => {
+      __t.stage = st;
+      __t.S.equipped.weapon = null;
+    }, st);
+    const res = await hitOnce(0, `90-fx-punch-s${st}`);
+    if (!res.punch || res.slash || res.fist) problems.push(`[${view.name}] punch-s${st} effect invalid: ${JSON.stringify(res)}`);
+    await p.waitForTimeout(650);
+    const leftovers = await p.evaluate(() => document.querySelectorAll('.slash, .punchfx, .atk-ghost, .ground-wave, .fire-ring, .light-pillar').length);
+    if (leftovers > 0) problems.push(`[${view.name}] punch DOM leftovers after punch-s${st}: ${leftovers}`);
+  }
+  await p.evaluate(() => { __t.stage = 1; });
+}
+
+async function runAttackFxOnly(view) {
+  const SHOTS = path.join(ROOT, 'build', 'shots', view.name); mkdirSync(SHOTS, { recursive: true });
+  const { ctx, p } = await newPage(view);
+  await p.goto('file://' + path.join(ROOT, 'build', 'test.html'));
+  await p.evaluate(([k, s]) => localStorage.setItem(k, JSON.stringify(s)), [V1, SAVE]);
+  await p.reload(); await p.waitForTimeout(600);
+  const shot = name => shotCheck(p, view, SHOTS, name);
+  const tap = tapper(p);
+  await p.evaluate(() => { __t.setDaily(0); __t.toMap(); __t.startLevel(0, 1); });
+  await p.waitForTimeout(1900);
+  const ready = () => p.waitForFunction(() => __t.B && __t.B.q && !__t.B.busy && !__t.B.over && !__t.B.hintOpen, null, { timeout: 6000 });
+  const hitOnce = async (combo, name) => {
+    await ready();
+    const a = await p.evaluate(c => { const B = __t.B; B.hp = B.maxHp = 99; B.combo = c; B.charge = 0; B.qt = 0; __t.fxHold(1500); return String(B.q.answer); }, combo);
+    await tap(`.ans[data-v="${a}"]`); await p.waitForTimeout(240); await shot(name);
+    const r = await p.evaluate(() => ({ slash: !!document.querySelector('.slash path'), crit2: !!document.querySelector('.slash.crit'), col: document.querySelector('.slash')?.style.getPropertyValue('--qc'), hero: document.getElementById('heroSprite').className, stop: document.getElementById('arena').classList.contains('hitstop'), paused: getComputedStyle(document.getElementById('heroSprite')).animationPlayState, num: document.querySelector('.dmg.hitn')?.textContent || '', crit: !!document.querySelector('.dmg.hitn.crit'), punch: !!document.querySelector('.punchfx'), fist: !!document.querySelector('.punchfx img, .punchfx .ei') || [...document.querySelectorAll('img')].some(i => i.getAttribute('src') === __t.IMG['👊']), combo: document.getElementById('combo').className, tier: document.getElementById('arena').dataset.combo }));
+    await p.evaluate(() => __t.fxHold(0));
+    return r;
+  };
+  await testAttackFx(p, shot, ready, hitOnce, view);
+  await ctx.close();
+}
+
 async function playAll(view) {
   const SHOTS = path.join(ROOT, 'build', 'shots', view.name); mkdirSync(SHOTS, { recursive: true });
   const { ctx, p } = await newPage(view);
@@ -618,6 +674,9 @@ async function playAll(view) {
   if (!s5.punch || !/atk-punch/.test(s5.hero) || s5.slash) problems.push(`[${view.name}] without a weapon the hero should punch: ${JSON.stringify(s5)}`);
   // 拳击特效只有光圈，界面上不能冒出系统拳头 emoji 👊
   if (s5.fist) problems.push(`[${view.name}] the punch effect must not show the 👊 emoji: ${JSON.stringify(s5)}`);
+
+  // 任务 15：攻击特效按品质（白蓝粉紫橙红）+ 成长阶段（1..4）及拳头（阶段 1、4）测试与截图
+  await testAttackFx(p, shot, ready, hitOnce, view);
   // 蓄力 = 本题限时：普通关 12 秒蓄满打一下；过 70% 道具按钮闪「快用去错！」
   await ready();
   const ct = await p.evaluate(() => __t.chargeTime());
@@ -1187,13 +1246,17 @@ async function r5Run(view) {
   await ctx.close();
 }
 const VIEWS = [{ name: '375', viewport: { width: 375, height: 667 }, dpr: 2, safe: { top: 0, bottom: 0 } }, { name: '393', viewport: { width: 393, height: 852 }, dpr: 3, safe: { top: 59, bottom: 34 } }];
-if (!['r5', 'r6'].includes(process.env.ONLY)) {
-  await itemMigration();
-  for (const v of VIEWS) await playAll(v);
-  await betaCheck();
-  await resetCheck();
+if (process.env.ONLY === 'fx') {
+  for (const v of VIEWS) await runAttackFxOnly(v);
+} else {
+  if (!['r5', 'r6'].includes(process.env.ONLY)) {
+    await itemMigration();
+    for (const v of VIEWS) await playAll(v);
+    await betaCheck();
+    await resetCheck();
+  }
+  for (const v of VIEWS) await r5Run(v);
 }
-for (const v of VIEWS) await r5Run(v);
 await b.close();
 if (problems.length) { console.error('\nFAILED:\n- ' + problems.join('\n- ')); process.exit(1); }
 console.log('\nALL GOOD — screenshots in build/shots/375/ and build/shots/393/');
