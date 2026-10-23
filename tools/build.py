@@ -70,6 +70,7 @@ TEST_HOOK = ("window.__t={noEvolve:true,stage:1,avatarHTML,HERO_HEAD,maybeEvolve
              "pyQ,pyBlend,pyBlendHz,blendQ,PY,LLK_SETS,llkPairs,pyLegal,pySplit,pyMark,pyBasic,pyInit,pyFin,pyCat,canInit,canFin,BLEND_FINS,PY_TYPES,"
              "wordOpts,kidOpts,numOptions,linkPick,invTier,INV_TIERS,INV_FORMS,"
              "art,chargeTime,renderItems,closeHint,showHint,openLevel,lvBonus,fxHold(ms){ FX_HOLD = ms; },setDrops(f){ dropOverride = f; },setArt(k,url){ if(url) ART[k] = url; else delete ART[k]; },"
+             "ITEMS,GEAR_AFFIXES,monsterAttack,monsterHit,enrageCheck,FURY,BOSS_FURY,RAGE,Q_TIME,WORD_TIME,HERO_HP,HERO_HP_BOSS,RUN_HP,runLife,setMonRoll(v){ monRollForce = v; },"
              "setDaily(n){ daily().n = n; save(); renderMap(); }};\n")
 
 EMOJI_RANGES = [(0x1F000, 0x1FAFF), (0x2600, 0x27BF), (0x2300, 0x23FF), (0x2B00, 0x2BFF), (0x2190, 0x21FF),

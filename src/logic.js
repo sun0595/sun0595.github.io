@@ -63,6 +63,8 @@ const sfx = {
   crit:  ()=>{ tone([523,659,784,1047],.06,"square",.07); noise(.15,.2,3000); },
   wrong: ()=>tone([200,150],.12,"sawtooth",.06),
   roar:  ()=>{ slide(330,80,.5,"sawtooth",.13); noise(.45,.3,500); },
+  // 怪兽狂暴：低沉的吼叫（三角波往下滑 + 低频噪声），不刺耳
+  growl: ()=>{ slide(150,55,.9,"triangle",.18); slide(110,45,.9,"sine",.14); noise(.8,.28,320); },
   hit:   ()=>{ noise(.28,.7,1200); tone([110,70],.12,"square",.13); },
   tick:  n=>{ tone([700+(6-(n||5))*140],.07,"square",.07); },
   shield:()=>{ tone([1200,1700],.06,"sine",.12); noise(.12,.15,6000); },
@@ -2111,10 +2113,33 @@ const MAXSTARS = WORLDS_V2.length*15*3;
 const setOwned = k => (STK[k] && S.stickers) ? STK[k].list.filter(e=>S.stickers[e]).length : 0;
 const setDone = k => STK[k] ? setOwned(k)===STK[k].list.length : false;
 
-/* 当天难度递增（家长 10-21 决定）：每题固定 15 秒（应用题 40 秒），按当天第几次通关加码
-   第 1–15 次：正常；16–30：怪兽每次攻击扣 2 心、每题 10 秒；31–45：扣 3 心、8 秒；46 起：扣 3 心、6 秒 */
-const Q_TIME = 15, WORD_TIME = 40, WORD_MIN = 20;
-const RAGE = [{dmg:1,t:15},{dmg:2,t:10},{dmg:3,t:8},{dmg:3,t:6}];
+/* 当天难度递增（家长 10-21 决定，10-23 再缩短）：每题固定 12 秒（应用题 35 秒），按当天第几次通关加码
+   第 1–15 次：正常；16–30：怪兽伤害 ×2、每题 8 秒；31–45：×3、6.5 秒；46 起：×3、5 秒 */
+const Q_TIME = 12, WORD_TIME = 35, WORD_MIN = 17;
+const RAGE = [{dmg:1,t:12},{dmg:2,t:8},{dmg:3,t:6.5},{dmg:3,t:5}];
+/* 勇士血条（家长 10-23：心改成血条，和怪兽一样）：原来 1 颗心 = 10 点血。
+   普通关 30 血、Boss 50 血、连闯 50 血（赢一场 +10）；等级加成见 lvBonus（每 3 级 +10，最多 +20）。
+   怪兽一下 = 10 × 当天狂暴倍数（RAGE.dmg）× 怪兽狂暴倍数 × 随机 0.8～1.2，取整；10% 机会暴击 ×1.5。
+   保护不再整下免除，只减伤：护盾每层挡一次攻击的 50%；幸运光环（答错时）本次伤害减半。
+   加血道具回 30% 最大血量；连对回血每点回 10%。 */
+const HP_PER_HEART = 10, HERO_HP = 30, HERO_HP_BOSS = 50, RUN_HP = 50, RUN_HEAL = 10;
+const MON_HIT = 10, MON_HIT_LO = 0.8, MON_HIT_HI = 1.2, MON_CRIT = 0.1, MON_CRIT_X = 1.5, GUARD_CUT = 0.5;
+const HEAL_PCT = 0.3, COMBO_HEAL_PCT = 0.1;
+/* 怪兽狂暴（所有怪兽）：血量 ≤ 40% 时进入狂暴，一场只一次：攻击 ×1.5，蓄力快 20%（答题时间 ×0.8）。
+   Boss 还是半血暴怒，更强：攻击 ×1.8，蓄力快 25%。 */
+const FURY = {at:0.4, atk:1.5, t:0.8}, BOSS_FURY = {at:0.5, atk:1.8, t:0.75};
+// 怪兽打一下扣多少血：rageDmg = RAGE.dmg，fury = 怪兽狂暴倍数，r1 / r2 = 随机数（浮动 / 暴击），guard = 这一下有护盾或幸运（减半）
+// cap：这一下最多扣多少（战斗里满血时传「最大血量 − 1」，满血不会被一击打倒；Fable 审查：每天后面的关卡暴击可能 ≥ 30）。不传不封顶
+function monsterHit(rageDmg, fury, r1, r2, guard, cap){
+  const crit = r2 < MON_CRIT;
+  let full = Math.max(1, Math.round(MON_HIT * rageDmg * (fury||1) * (MON_HIT_LO + (MON_HIT_HI-MON_HIT_LO)*r1) * (crit ? MON_CRIT_X : 1)));
+  if(cap > 0) full = Math.min(full, cap);
+  return {full, crit, dmg: guard ? Math.max(1, Math.round(full*GUARD_CUT)) : full};
+}
+// 回血：最大血量的 pct（至少 1 点）
+const healAmt = (max, pct) => Math.max(1, Math.round(max*pct));
+// 连闯的血量：旧的 run.hearts（颗心）按 ×10 换算
+const runLife = run => !run ? 0 : run.hp!=null ? run.hp : run.hearts!=null ? run.hearts*HP_PER_HEART : RUN_HP;
 const today = () => { const d = new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
 function daily(){ const d = today(); if(!S.daily || S.daily.date!==d) S.daily = {date:d, n:0}; return S.daily; }
 const rageLevel = () => Math.min(RAGE.length-1, Math.floor(daily().n/15));
@@ -2447,7 +2472,7 @@ G.spot = function(w, gi){
 /* 颜色题 COLOR：选项是色块按钮（不写颜色名，读题时读出颜色名）。四种：
    basic  认基本色（选项明度也差得多）；shade 深浅相近的颜色里找（红 / 粉红 / 紫）；hue 不同色相里找（橙 / 黄 / 绿）；
    mix    颜料混合：两个颜料桶倒在一起变成什么颜色（红 + 黄 = 橙、蓝 + 黄 = 绿、红 + 蓝 = 紫……）。
-   答错记进颜色题记录（logColorMiss），不扣心、不卡关。第 1 大关只有 basic，第 2 起加 hue，第 3 起加 shade，第 4 起加 mix。 */
+   答错记进颜色题记录（logColorMiss），不扣血、不卡关。第 1 大关只有 basic，第 2 起加 hue，第 3 起加 shade，第 4 起加 mix。 */
 const COLORS = {red:["红色","#e53935"], yellow:["黄色","#fdd835"], blue:["蓝色","#1e88e5"], green:["绿色","#43a047"], black:["黑色","#212121"], white:["白色","#ffffff"],
   orange:["橙色","#fb8c00"], purple:["紫色","#8e24aa"], pink:["粉红色","#f48fb1"], brown:["棕色","#8d6e63"], gray:["灰色","#9e9e9e"],
   lightblue:["浅蓝色","#81d4fa"], lightgreen:["浅绿色","#aed581"], darkred:["深红色","#8e1b1b"], lightyellow:["浅黄色","#fff59d"]};
@@ -2618,9 +2643,9 @@ function matchGenFor(w,l){
   }
   return null;
 }
-/* 道具（家长 10-22 重做）：加心 +1；去错 = 去掉这题一个错误选项（消除 / 连连看里高亮一对正确的）；换题 = 换一道同类型更简单的。
+/* 道具（家长 10-22 重做，10-23 心改血量）：加血 = 回 30% 最大血量；去错 = 去掉这题一个错误选项（消除 / 连连看里高亮一对正确的）；换题 = 换一道同类型更简单的。
    旧的冰冻 / 加时在 migrate() 里 1:1 折算成去错 / 换题（S.items.ice / time 留着但清零） */
-const ITEMS = {heal:{e:"💖",n:"加心",tip:"💖 加一颗心"}, cut:{e:"🧹",n:"去错",tip:"去掉一个错误答案"}, swap:{e:"🔄",n:"换题",tip:"换一道简单点的题"}};
+const ITEMS = {heal:{e:"💖",n:"加血",tip:"💖 回复 30% 血量"}, cut:{e:"🧹",n:"去错",tip:"去掉一个错误答案"}, swap:{e:"🔄",n:"换题",tip:"换一道简单点的题"}};
 // 获得过的最高品质记在 S.bestQ（品质 key，"" = 还没有）；金色光环 = 获得过橙色装备（旧存档集齐稀有贴纸的也保留）
 const qRank = k => ["white","blue","pink","purple","orange","red"].indexOf(k);
 const hasBest = k => qRank(S.bestQ||"") >= qRank(k);
@@ -2778,19 +2803,19 @@ const GEAR_AFFIXES = {
     e: "⏳",
     format: v => "答题时间 +" + v + "秒",
     ranges: {
-      white:  [1, 2],
-      blue:   [2, 3],
-      pink:   [3, 4],
-      purple: [4, 6],
-      orange: [6, 8],
-      red:    [8, 12]
+      white:  [1, 1],
+      blue:   [1, 2],
+      pink:   [2, 3],
+      purple: [3, 4],
+      orange: [4, 6],
+      red:    [6, 8]
     }
   },
   shield: {
     id: "shield",
     name: "每关护盾",
     e: "🛡️",
-    format: v => "每关护盾 " + v + "次",
+    format: v => "每关护盾 " + v + "次（每次挡一半伤害）",
     ranges: {
       white:  [1, 1],
       blue:   [1, 1],
@@ -2802,9 +2827,9 @@ const GEAR_AFFIXES = {
   },
   comboHeal: {
     id: "comboHeal",
-    name: "连对回心",
+    name: "连对回血",
     e: "💖",
-    format: v => v === 1 ? "连对 5 题回 1 颗心" : "连对 5 题回 " + v + " 颗心",
+    format: v => "连对 5 题回 " + v*10 + "% 血量",
     ranges: {
       white:  [1, 1],
       blue:   [1, 1],
@@ -2830,9 +2855,9 @@ const GEAR_AFFIXES = {
   },
   lucky: {
     id: "lucky",
-    name: "幸运免伤",
+    name: "幸运减伤",
     e: "🍀",
-    format: v => "每关答错免伤 " + v + "次",
+    format: v => "每关答错伤害减半 " + v + "次",
     ranges: {
       white:  [1, 1],
       blue:   [1, 1],
@@ -3152,7 +3177,7 @@ const HERO_EXP_BASE_NEED = 50;  // 1 级升 2 级
 const HERO_EXP_NEED_STEP = 25;  // 每高一级，升级经验 +25
 const DROP_SLOTS = ["weapon", "helmet", "armor", "shield"];
 const DROP_CHANCE_BY_WORLD = [0.20, 0.21, 0.23, 0.24, 0.26, 0.27, 0.29, 0.30];
-const ITEM_DROP_RATE = 0.25;   // 道具在战斗里更有用了（加心、去错、换题），掉得也多一点
+const ITEM_DROP_RATE = 0.25;   // 道具在战斗里更有用了（加血、去错、换题），掉得也多一点
 const ITEM_CAP = 5;
 const ITEM_OVERFLOW_EXP = 10;   // 道具满了，换成这么多装备经验
 const ITEM_KEYS = ["heal", "cut", "swap"];
@@ -3212,21 +3237,21 @@ function gainExp(info){
 function expNeed(lv){
   return HERO_EXP_BASE_NEED + HERO_EXP_NEED_STEP * ((lv || 1) - 1);
 }
-/* 等级加成：每升 LV_ATK_EVERY 级基础攻击 +1，每升 LV_HEART_EVERY 级心上限 +1（最多 +LV_HEART_MAX，心太多一排放不下）。
-   Lv1 没有加成；攻击加在答题打怪的每一下（消除 / 连连看不加，和装备攻击一样），心加在普通关和 Boss（连闯固定 5 心不变）。 */
+/* 等级加成：每升 LV_ATK_EVERY 级基础攻击 +1，每升 LV_HP_EVERY 级血量上限 +LV_HP_STEP（最多 +LV_HP_MAX，原来是心 +1、最多 +2）。
+   Lv1 没有加成；攻击加在答题打怪的每一下（消除 / 连连看不加，和装备攻击一样），血量加在普通关和 Boss（连闯固定 50 血不变）。 */
 const LV_ATK_EVERY = 2;
-const LV_HEART_EVERY = 3;
-const LV_HEART_MAX = 2;
+const LV_HP_EVERY = 3, LV_HP_STEP = HP_PER_HEART;
+const LV_HP_MAX = 2*LV_HP_STEP;
 function lvBonus(lv){
   const n = Math.max(0, (lv || 1) - 1);
-  return {atk: Math.floor(n / LV_ATK_EVERY), hearts: Math.min(LV_HEART_MAX, Math.floor(n / LV_HEART_EVERY))};
+  return {atk: Math.floor(n / LV_ATK_EVERY), hp: Math.min(LV_HP_MAX, Math.floor(n / LV_HP_EVERY)*LV_HP_STEP)};
 }
 // 下一次加成在第几级、加什么（都满了返回 null）
 function nextLvBonus(lv){
   const now = lvBonus(lv);
   for(let l = (lv || 1) + 1; l < (lv || 1) + 50; l++){
-    const b = lvBonus(l), atk = b.atk - now.atk, hearts = b.hearts - now.hearts;
-    if(atk || hearts) return {lv:l, atk, hearts};
+    const b = lvBonus(l), atk = b.atk - now.atk, hp = b.hp - now.hp;
+    if(atk || hp) return {lv:l, atk, hp};
   }
   return null;
 }
