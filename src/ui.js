@@ -571,7 +571,7 @@ const growKey = (i, st) => st>=2 ? (HEROES[i] && HEROES[i].mystic ? "base" : GRO
 const growArt = (i, eq, st) => { if(!(st>=2)) return null; const mys = HEROES[i] && HEROES[i].mystic;
   if(i===0 && eq && eq.armor && art("grow_"+eq.armor.quality+"_"+st)) return art("grow_"+eq.armor.quality+"_"+st);
   return art("grow_"+(mys ? "base" : GROW_NAME[i]||"base")+"_"+st); };
-const heroArtFor = (i, eq, st) => growArt(i, eq, st==null ? heroStage() : st) || (HEROES[i] && HEROES[i].mystic ? art("hero_base") : i===0 ? ((eq && eq.armor && art("hero_"+eq.armor.quality)) || art("hero_base")) : art(HERO_ART[i]));
+const heroArtFor = (i, eq, st) => growArt(i, eq, st==null ? (i===S.hero ? heroStage() : heroStage(heroLvOf(i))) : st) || (HEROES[i] && HEROES[i].mystic ? art("hero_base") : i===0 ? ((eq && eq.armor && art("hero_"+eq.armor.quality)) || art("hero_base")) : art(HERO_ART[i]));
 // 勇士选择页的头像（没解锁的在选择页里涂成剪影）
 const heroPic = i => { const u = heroArtFor(i, null); return u ? artTag(u, "ei art", img(HEROES[i].e)) : img(HEROES[i].e); };
 // 勇士页：擅长什么题
@@ -646,17 +646,17 @@ function openHeroes(){
     const h = HEROES[view], un = heroUnlocked(view), showMystic = normalHeroesDone();
     if(h.mystic && !un) return renderMystic(first);
     // 没解锁的勇士：只给剪影、「？？？」和解锁条件，名字、技能都不露（家长 10-22）
-    const body = (un ? '<div class="herostage'+(h.mystic?" mystic":"")+'" style="--hcol:'+h.col+'">'+(h.mystic ? mysticPic(true) : heroPic(view))+'<div><b>'+h.n+'</b><p>'+img(h.shot)+' '+heroGoodText(h)+'</p></div></div>'
+    const body = (un ? '<div class="herostage'+(h.mystic?" mystic":"")+'" style="--hcol:'+h.col+'">'+(h.mystic ? mysticPic(true) : heroPic(view))+'<div><b>'+h.n+' <span class="hlvt num">Lv.'+heroLvOf(view)+'</span></b><p>'+img(h.shot)+' '+heroGoodText(h)+'</p></div></div>'
         : '<div class="herostage locked"><span class="sil">'+heroPic(view)+'</span><div><b class="qqq">？？？</b>'
           + '<p class="lockline">'+img("🔒")+' '+(h.gear ? gearNeed(h.gear) : '需要 '+h.need+' 颗 '+img("⭐"))+'</p></div></div>')
       + '<div class="heroes'+(showMystic?" h9":"")+'">'+HEROES.map((x,i)=>x.mystic ? (showMystic ? '<button class="hcard mystic'+(i===S.hero?" sel":"")+(heroUnlocked(i)?"":" lock")+(i===view?" view":"")+'" data-i="'+i+'">'+mysticPic(heroUnlocked(i))+'</button>' : '')
-        : '<button class="hcard'+(i===S.hero?" sel":"")+(heroUnlocked(i)?"":" lock")+(i===view?" view":"")+'" data-i="'+i+'">'+heroPic(i)+(heroUnlocked(i)?"":'<span class="lk">'+img("🔒")+'</span>')+'</button>').join("")+'</div>'
+        : '<button class="hcard'+(i===S.hero?" sel":"")+(heroUnlocked(i)?"":" lock")+(i===view?" view":"")+'" data-i="'+i+'">'+heroPic(i)+(heroUnlocked(i)?'<span class="hlv num">Lv.'+heroLvOf(i)+'</span>':'<span class="lk">'+img("🔒")+'</span>')+'</button>').join("")+'</div>'
       + '<p>'+img("✨")+' 金色光环：所有勇士暴击多打 1 滴血'+(goldAura() ? '（已获得）' : '<br><small>拿到橙色或更好的装备就能获得</small>')+'</p>'
       + '<button class="btn green" id="hGo">'+img("⚔️")+' 出发！</button>';
     if(first) openPage({title:"选择勇士", back:true, onClose:renderMap, body}); else setBody(body);
     $("pbody").querySelectorAll(".hcard").forEach(b=>b.onclick=()=>{
       view = +b.dataset.i;
-      if(heroUnlocked(view)){ S.hero = view; save(); sfx.right(); say(HEROES[view].n+"，"+strip(heroGoodText(HEROES[view]))); }
+      if(heroUnlocked(view)){ switchHero(view); save(); sfx.right(); say(HEROES[view].n+"，"+strip(heroGoodText(HEROES[view]))); }
       else if(HEROES[view].mystic) sfx.click();
       else { sfx.click(); say(HEROES[view].gear ? "拿到"+GEAR_QUALITY_MAP[HEROES[view].gear].name+"色装备，就能解锁这个勇士" : "再拿"+(HEROES[view].need-totalStars())+"颗星，就能解锁这个勇士"); }
       render(false);

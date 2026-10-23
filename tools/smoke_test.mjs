@@ -530,6 +530,13 @@ async function playAll(view) {
   const helmOn = await p.evaluate(() => { const S = __t.S, keep = S.equipped.helmet; S.equipped.helmet = { id: 'hx', slot: 'helmet', quality: 'orange', name: '王冠', e: '👑', lv: 1, exp: 0, affixes: [] };
     const d = document.createElement('div'); d.innerHTML = __t.avatarHTML(S.equipped); const ok = !!d.querySelector('.helm img'); S.equipped.helmet = keep; return ok; });
   if (!helmOn) problems.push(`[${view.name}] worn helmet should be drawn on the hero (.helm)`);
+  // 每位勇士各自的等级（家长 10-23）：换到没上过场的勇士是 1 级；换回来原来的等级、经验还在；别的勇士按自己的等级长大
+  const own = await p.evaluate(() => { const T = __t, S = T.S, h0 = S.hero, lv0 = S.heroLv, ex0 = S.exp, other = h0 === 4 ? 5 : 4;
+    const had = (S.heroLvs || {})[other]; T.switchHero(other); const fresh = had ? S.heroLv === had.lv : S.heroLv === 1;
+    const lvO = S.heroLv; S.heroLv = 16; T.switchHero(h0); const back = S.heroLv === lv0 && S.exp === ex0 && T.heroLvOf(other) === 16 && T.heroLvOf(h0) === lv0;
+    T.stage = 0; const grown = /grow_/.test(T.growArt(other, null, T.heroStage(T.heroLvOf(other))) || '') ; T.stage = 1;
+    T.switchHero(other); S.heroLv = lvO; T.switchHero(h0); return { fresh, back, grown, h: S.hero === h0 }; });
+  if (!own.fresh || !own.back || !own.h) problems.push(`[${view.name}] each hero keeps its own level: ${JSON.stringify(own)}`);
   // 颜色题答错不扣血：这里关掉颜色题，免得第一题刚好是颜色题
   // 当天第 16 次通关前起进入「狂暴 ×2」：怪兽每次攻击 ×2（20 血）、每题 8 秒
   await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.mapWorld = 0; s.equipped = { weapon: null, helmet: null, armor: null, shield: null }; s.qOn = Object.assign(s.qOn || {}, { color: false }); localStorage.setItem(k, JSON.stringify(s)); }, V1);
