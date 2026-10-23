@@ -1490,7 +1490,7 @@ function monsterAttack(reason){
     }
     if(guard) sfx.shield();
     const [r1, r2] = monRollForce || [Math.random(), Math.random()];
-    const hit = monsterHit(B.dmg, B.fury, r1, r2, !!guard);
+    const hit = monsterHit(B.dmg, B.fury, r1, r2, !!guard, B.life>=B.maxLife ? B.maxLife-1 : 0);
     B.monHit = Object.assign({reason, guard}, hit);
     sfx.hit();
     restart($("flash"),"on");
