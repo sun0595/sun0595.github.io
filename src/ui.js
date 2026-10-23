@@ -551,7 +551,26 @@ const HERO_HANDS = [{}, {}, {fr:.17, fl:.84, fy:.73}, {fr:.20, fl:.82, fy:.74}, 
 const HERO_HEAD = [{hx:.49, hy:.13, hw:.51}, {hx:.5, hy:.13, hw:.51}, {hx:.5, hy:.15, hw:.48}, {hx:.5, hy:.11, hw:.48}, {hx:.55, hy:.12, hw:.44},
   {hx:.5, hy:.15, hw:.41}, {hx:.47, hy:.14, hw:.44}, {hx:.5, hy:.1, hw:.53}, {hx:.49, hy:.13, hw:.51}];
 // 神秘勇士（下标 8）还没有原画：用小勇士的原画画成剪影 + 金色光效（CSS .a-h8 / .mys）
-const heroArtFor = (i, eq) => HEROES[i] && HEROES[i].mystic ? art("hero_base") : i===0 ? ((eq && eq.armor && art("hero_"+eq.armor.quality)) || art("hero_base")) : art(HERO_ART[i]);
+/* 成长外观（家长 10-23）：第 2–4 阶段（heroStage）换成长大的原画 grow_<名字>_<阶段>；
+   小勇士按盔甲品质 grow_<品质>_<阶段>（没穿或没有这张就 grow_base_<阶段>）；神秘勇士是小勇士的剪影，跟着小勇士长大。
+   没有这张原画就退回第 1 阶段的原画。GROW_POSE 是长大后手和头的位置（同 HERO_HANDS / HERO_HEAD 的写法）。 */
+const GROW_NAME = ["base","ninja","robot","astronaut","trex","dragon","unicorn","king"];
+const GROW_POSE = {
+  dragon_2:{fr:.2, fl:.8, fy:.6, hx:.5, hy:.17, hw:.41}, dragon_3:{fr:.3, fl:.72, fy:.54, hx:.5, hy:.15, hw:.36}, dragon_4:{fr:.3, fl:.72, fy:.52, hx:.5, hy:.13, hw:.32},
+  trex_2:{fr:.36, fl:.76, fy:.58, hx:.55, hy:.13, hw:.48}, trex_3:{fr:.3, fl:.7, fy:.5, hx:.42, hy:.1, hw:.38},
+  unicorn_2:{fy:.56, hx:.45, hy:.18, hw:.46}, unicorn_3:{fy:.5, hx:.68, hy:.13, hw:.34},
+  trex_4:{fr:.22, fl:.74, fy:.48, hx:.45, hy:.1, hw:.38}, unicorn_4:{fy:.5, hx:.7, hy:.13, hw:.31},
+  robot_2:{fr:.15, fl:.85, fy:.56, hx:.5, hy:.12, hw:.50}, robot_3:{fr:.13, fl:.87, fy:.55, hx:.5, hy:.1, hw:.36}, robot_4:{fr:.11, fl:.89, fy:.55, hx:.5, hy:.1, hw:.36},
+  astronaut_2:{fr:.12, fl:.88, fy:.55, hx:.5, hy:.08, hw:.48}, astronaut_3:{fr:.12, fl:.88, fy:.55, hx:.5, hy:.08, hw:.46}, astronaut_4:{fr:.12, fl:.88, fy:.53, hx:.5, hy:.08, hw:.43},
+  ninja_2:{fr:.15, fl:.85, fy:.7, hx:.5, hy:.13, hw:.55}, ninja_3:{fr:.15, fl:.87, fy:.62, hx:.52, hy:.1, hw:.45}, base_2:{fr:.15, fl:.85, fy:.55, hx:.5, hy:.09, hw:.48},
+  ninja_4:{fr:.2, fl:.8, fy:.5, hx:.5, hy:.09, hw:.38}, base_3:{fr:.16, fl:.84, fy:.54, hx:.5, hy:.09, hw:.46}, base_4:{fr:.2, fl:.8, fy:.55, hx:.5, hy:.09, hw:.46},
+  king_2:{fr:.2, fl:.8, fy:.6, hx:.5, hy:.11, hw:.48}, king_3:{fr:.25, fl:.75, fy:.55, hx:.5, hy:.1, hw:.36}, king_4:{fr:.25, fl:.75, fy:.53, hx:.5, hy:.1, hw:.34}
+};
+const growKey = (i, st) => st>=2 ? (HEROES[i] && HEROES[i].mystic ? "base" : GROW_NAME[i]||"base")+"_"+st : "";
+const growArt = (i, eq, st) => { if(!(st>=2)) return null; const mys = HEROES[i] && HEROES[i].mystic;
+  if(i===0 && eq && eq.armor && art("grow_"+eq.armor.quality+"_"+st)) return art("grow_"+eq.armor.quality+"_"+st);
+  return art("grow_"+(mys ? "base" : GROW_NAME[i]||"base")+"_"+st); };
+const heroArtFor = (i, eq, st) => growArt(i, eq, st==null ? heroStage() : st) || (HEROES[i] && HEROES[i].mystic ? art("hero_base") : i===0 ? ((eq && eq.armor && art("hero_"+eq.armor.quality)) || art("hero_base")) : art(HERO_ART[i]));
 // 勇士选择页的头像（没解锁的在选择页里涂成剪影）
 const heroPic = i => { const u = heroArtFor(i, null); return u ? artTag(u, "ei art", img(HEROES[i].e)) : img(HEROES[i].e); };
 // 勇士页：擅长什么题
@@ -691,16 +710,19 @@ const isWorn = g => !!g && !!S.equipped[g.slot] && S.equipped[g.slot].id===g.id;
 // placeholder look until the real art arrives: hero emoji with the four pieces stacked on head / hands / chest
 // 小勇士 with original art: the armour's quality picks the whole look (hero_<品质>, else hero_base); weapon / shield
 // pictures sit in the hands if they exist. Other heroes, or no art at all: the 3D emoji with the gear icons around it.
-function heroArtURL(eq){ return heroArtFor(HEROES.indexOf(hero()), eq); }
+function heroArtURL(eq, st){ return heroArtFor(HEROES.indexOf(hero()), eq, st); }
 const heroFace = () => { if(hero().mystic) return mysticPic(true); const u = heroArtURL(S.equipped); return u ? artTag(u, "ei art", img(hero().e)) : img(hero().e); };
-function avatarHTML(eq){
-  const base = heroArtURL(eq);
+function avatarHTML(eq, st){
+  st = st==null ? heroStage() : st;
+  const base = heroArtURL(eq, st);
   if(base){
-    const hi = HEROES.indexOf(hero()), hp = HERO_HANDS[hi] || {};
+    const hi = HEROES.indexOf(hero()), gk = growArt(hi, eq, st) ? growKey(hi, st) : "", gp = GROW_POSE[gk];
+    const hp = gp ? Object.assign({}, HERO_HANDS[hi], gp) : HERO_HANDS[hi] || {};
     const hand = (slot, side) => eq[slot] && art(slot+"_"+eq[slot].quality) ? artTag(art(slot+"_"+eq[slot].quality), "hand "+side+" q-"+eq[slot].quality, "", "--qc:"+qCol(eq[slot])) : "";
     // fists sit a little differently per look (小勇士的盔甲品质，或别的勇士 h1…h7)
-    const look = hi ? "h"+hi : eq.armor && art("hero_"+eq.armor.quality) ? eq.armor.quality : "base";
-    const hd = HERO_HEAD[hi] || HERO_HEAD[0];
+    // 神秘勇士长大了也保持剪影 + 金光（a-h8），位置照样用 GROW_POSE
+    const look = HEROES[hi] && HEROES[hi].mystic ? "h"+hi : gk ? "g"+st : hi ? "h"+hi : eq.armor && art("hero_"+eq.armor.quality) ? eq.armor.quality : "base";
+    const hd = gp ? Object.assign({}, HERO_HEAD[hi] || HERO_HEAD[0], gp) : HERO_HEAD[hi] || HERO_HEAD[0];
     const grip = ["fr","fl","fy"].filter(k=>hp[k]!=null).map(k=>"--"+k+":"+hp[k]).concat(["hx","hy","hw"].map(k=>"--"+k+":"+hd[k])).join(";");
     // 头盔：用这件头盔自己的 3D 图（铁盔 / 王冠 / 战帽 / 法帽，不用界面线条图标），带品质颜色的光
     const helm = eq.helmet ? '<span class="helm q-'+eq.helmet.quality+'" style="--qc:'+qCol(eq.helmet)+'">'+imgQ(eq.helmet.e)+'</span>' : '';
@@ -1696,6 +1718,7 @@ function animateReward(r){
       sfx.win(); confetti(140); say("升级啦！"+(up?strip(up).replace(/\+/g,"加")+"！":"")+(gear.length?"奖励"+gear[0].name+"！":""));
       end();
       setTimeout(()=>{ if(seq===pageSeq) lu.hidden = true; }, 2600);
+      setTimeout(maybeEvolve, 2900);   // 跨过 5 / 10 / 15 级就接着演「长大了」
     }, 750);
   }, 900);
 }
@@ -1783,12 +1806,50 @@ function lose(){
     $("rMap").onclick = ()=>{ closePage(); toMap(); };
   }, 800);
 }
+/* 「长大了」演出（家长 10-23：像宝可梦进化，让孩子看到自己长大）：等级跨过 5 / 10 / 15 级（heroStage 变大）时，
+   弹出一层：先是原来的样子，开始发白光，原来的样子和长大的样子两个白色剪影来回闪、越闪越快，白光一闪，变成新的样子。
+   S.seenStage 记已经演过的阶段；战斗中不演（等回到地图或结算页）。 */
+const STAGE_NAMES = {human:["儿童","少年","青少年","壮年"], beast:["幼崽","少年","青年","成年"], robot:["一型","二型","三型","守护机甲"]};
+const stageName = (i, st) => (GROW_NAME[i]==="robot" ? STAGE_NAMES.robot : ["trex","dragon","unicorn"].includes(GROW_NAME[i]) ? STAGE_NAMES.beast : STAGE_NAMES.human)[st-1];
+let evolving = false;
+function maybeEvolve(){
+  const st = heroStage(), from = S.seenStage || 1;
+  // 测试版（build.py --test）里 __t.noEvolve 默认为真：自动走查时不弹，免得挡住后面的点击
+  // 战斗进行中不演；打完了（结算页，B.over）可以演
+  if(evolving || st <= from || (!$("battle").hidden && !(B && B.over)) || (window.__t && window.__t.noEvolve)) return false;
+  evolving = true; S.seenStage = st; save();
+  const h = hero(), hi = HEROES.indexOf(h), eq = S.equipped;
+  const ov = document.createElement("div"); ov.className = "evo"; ov.id = "evo";
+  ov.innerHTML = '<div class="evobox"><div class="ribbon evorib">'+emo("✨ 咦？"+h.n+"在发光……")+'</div>'
+    + '<div class="evostage"><span class="evoa">'+avatarHTML(eq, from)+'</span><span class="evob" style="opacity:0">'+avatarHTML(eq, st)+'</span><span class="evoflash"></span></div>'
+    + '<div class="evotxt" id="evoTxt"></div><button class="btn green" id="evoOk" hidden>太棒了！</button></div>';
+  document.body.appendChild(ov);
+  say("咦？"+h.n+"在发光！");
+  const A = ov.querySelector(".evoa"), Z = ov.querySelector(".evob");
+  setTimeout(()=>ov.classList.add("evo-glow"), 900);
+  // 两个剪影来回换，间隔越来越短，音调越来越高
+  const gaps = [480, 400, 330, 270, 220, 170, 130, 100, 80, 60, 50, 50];
+  let t = 1300, flip = false;
+  gaps.forEach((g, k) => { t += g; setTimeout(()=>{ flip = !flip; A.style.opacity = flip ? 0 : 1; Z.style.opacity = flip ? 1 : 0; tone([520+k*45], .05, "sine", .035); }, t); });
+  setTimeout(()=>{ A.style.opacity = 0; Z.style.opacity = 1; ov.classList.add("evo-flash"); tone([660, 880, 1320], .12, "sine", .06); }, t + 80);
+  setTimeout(()=>{
+    if(!ov.isConnected){ evolving = false; return; }
+    ov.classList.remove("evo-glow"); ov.classList.add("evo-done");
+    const nm = stageName(hi, st);
+    ov.querySelector(".evorib").innerHTML = emo("🎉 "+h.n+"长大了！");
+    $("evoTxt").innerHTML = '<b class="num">Lv.'+S.heroLv+'</b> · '+nm;
+    sfx.win(); confetti(160); say(h.n+"长大了！变成"+nm+"啦！");
+    const ok = $("evoOk"); ok.hidden = false; ok.onclick = tapOnce(()=>{ ov.remove(); evolving = false; });
+  }, t + 420);
+  return true;
+}
 function toMap(){
   if(B) B.over = true;
   cancelAnimationFrame(rafId); fleeTick(); $("tutor").hidden = true;
   try{ speechSynthesis.cancel(); }catch(e){}
   $("battle").hidden = true; $("map").hidden = false;
   renderMap(true);   // back on the map: centre the (new) current level
+  setTimeout(maybeEvolve, 500);   // 等级跨过 5 / 10 / 15 级：回到地图时演一次「长大了」
 }
 
 /* ================= Boss 连闯（地图上的特别挑战） =================
@@ -1959,4 +2020,5 @@ function mapNote(e, html){
 const repeat = ()=>{ if(!B || !B.q) return; if(thinking()) say(strip(B.q.steps[B.step].t), true); else say(B.q.speak, true); };
 $("speakBtn").onclick = e=>{ e.stopPropagation(); repeat(); };
 $("qText").addEventListener("click", e=>{ if(e.target.closest("button")) return; repeat(); });
+setTimeout(maybeEvolve, 1200);   // 打开游戏时：等级已经跨过阶段但还没看过演出
 renderMap();

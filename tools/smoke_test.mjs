@@ -510,6 +510,17 @@ async function playAll(view) {
   const runBag = await p.evaluate(() => __t.S.bag.length);
   await tap('.card[data-i="0"]'); await p.waitForTimeout(700); await shot('15b-run-card');
   if (await p.evaluate(() => __t.S.bag.length) !== runBag + 1) problems.push(`[${view.name}] run treasure card did not give gear`);
+  // 成长外观（家长 10-23；测试版平时用 __t.stage = 1 固定第 1 阶段，这里临时放开）：1–5 / 6–10 / 11–15 / 16+ 四个阶段；每位勇士 2–4 阶段都有原画（小勇士再按 6 种盔甲）；跨阶段回到地图演一次「长大了」
+  const grow = await p.evaluate(() => { const T = __t, S = T.S, keep = { lv: S.heroLv, seen: S.seenStage, hero: S.hero, eq: S.equipped };
+    const st = [1, 5, 6, 10, 11, 15, 16, 30].map(l => T.heroStage(l)).join('');
+    const miss = []; for (let i = 0; i < 8; i++) for (let k = 2; k <= 4; k++) if (!T.growArt(i, null, k)) miss.push(i + '_' + k);
+    for (const q of ['white', 'blue', 'pink', 'purple', 'orange', 'red']) for (let k = 2; k <= 4; k++) if (!T.art('grow_' + q + '_' + k)) miss.push(q + '_' + k);
+    T.toMap(); T.noEvolve = false; T.stage = 0; S.heroLv = 6; S.seenStage = 1; const shown = T.maybeEvolve(); const ov = !!document.getElementById('evo'); const again = T.maybeEvolve();
+    const seen = S.seenStage; const e = document.getElementById('evo'); if (e) e.remove();
+    const mi = T.HEROES.findIndex(h => h.mystic), mys = document.createElement('div'); const mf = S.mystic.found; S.hero = mi; S.mystic.found = true; mys.innerHTML = T.avatarHTML(S.equipped, 3);
+    const mysOk = !!mys.querySelector('.av.a-h8'); S.hero = keep.hero; S.mystic.found = mf;
+    T.noEvolve = true; T.stage = 1; S.heroLv = keep.lv; S.seenStage = keep.seen; return { st, miss, shown, ov, again, seen, mysOk }; });
+  if (grow.st !== '11223344' || grow.miss.length || !grow.shown || !grow.ov || grow.again || grow.seen !== 2 || !grow.mysOk) problems.push(`[${view.name}] hero growth: ${JSON.stringify(grow)}`);
   // 穿上的头盔要戴在勇士头上（家长 10-23：穿上王冠战斗里看不到）
   const helmOn = await p.evaluate(() => { const S = __t.S, keep = S.equipped.helmet; S.equipped.helmet = { id: 'hx', slot: 'helmet', quality: 'orange', name: '王冠', e: '👑', lv: 1, exp: 0, affixes: [] };
     const d = document.createElement('div'); d.innerHTML = __t.avatarHTML(S.equipped); const ok = !!d.querySelector('.helm img'); S.equipped.helmet = keep; return ok; });
