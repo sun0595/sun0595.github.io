@@ -517,8 +517,8 @@ async function playAll(view) {
     for (const q of ['white', 'blue', 'pink', 'purple', 'orange', 'red']) for (let k = 2; k <= 4; k++) if (!T.art('grow_' + q + '_' + k)) miss.push(q + '_' + k);
     T.toMap(); T.noEvolve = false; T.stage = 0; S.heroLv = 6; S.seenStage = 1; const shown = T.maybeEvolve(); const ov = !!document.getElementById('evo'); const again = T.maybeEvolve();
     const seen = S.seenStage; const e = document.getElementById('evo'); if (e) e.remove();
-    const mi = T.HEROES.findIndex(h => h.mystic), mys = document.createElement('div'); S.hero = mi; S.mystic.found = true; mys.innerHTML = T.avatarHTML(S.equipped, 3);
-    const mysOk = !!mys.querySelector('.av.a-h8'); S.hero = keep.hero;
+    const mi = T.HEROES.findIndex(h => h.mystic), mys = document.createElement('div'); const mf = S.mystic.found; S.hero = mi; S.mystic.found = true; mys.innerHTML = T.avatarHTML(S.equipped, 3);
+    const mysOk = !!mys.querySelector('.av.a-h8'); S.hero = keep.hero; S.mystic.found = mf;
     T.noEvolve = true; T.stage = 1; S.heroLv = keep.lv; S.seenStage = keep.seen; return { st, miss, shown, ov, again, seen, mysOk }; });
   if (grow.st !== '11223344' || grow.miss.length || !grow.shown || !grow.ov || grow.again || grow.seen !== 2 || !grow.mysOk) problems.push(`[${view.name}] hero growth: ${JSON.stringify(grow)}`);
   // 穿上的头盔要戴在勇士头上（家长 10-23：穿上王冠战斗里看不到）
