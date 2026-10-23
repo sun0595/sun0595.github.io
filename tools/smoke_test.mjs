@@ -539,7 +539,7 @@ async function playAll(view) {
   if (!own.fresh || !own.back || !own.h) problems.push(`[${view.name}] each hero keeps its own level: ${JSON.stringify(own)}`);
   // 升级送装备只在所有勇士里第一次到这个等级时给
   const lvr = await p.evaluate(() => { const T = __t, S = T.S, h0 = S.hero, keep = { top: S.topLv, bag: S.bag.length }; const other = h0 === 4 ? 5 : 4; T.switchHero(other);
-    const lv1 = S.heroLv, ex1 = S.exp; S.topLv = Math.max(S.topLv || 0, 10); S.heroLv = 2; S.exp = 0; const r = window.gainExp(window.expNeed(2));
+    const lv1 = S.heroLv, ex1 = S.exp; S.topLv = Math.max(S.topLv || 0, 10); S.heroLv = 2; S.exp = 0; const r = window.addExp(window.expNeed(2));
     const noGear = r.levels.length === 1 && r.rewards.length === 0 && S.bag.length === keep.bag;
     S.heroLv = lv1; S.exp = ex1; S.topLv = keep.top; T.switchHero(h0); return { noGear, levels: r.levels }; });
   if (!lvr.noGear) problems.push(`[${view.name}] level-up gear only once per level across heroes: ${JSON.stringify(lvr)}`);
