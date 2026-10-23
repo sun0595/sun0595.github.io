@@ -2667,7 +2667,8 @@ function boardDropPair(board){
 const stickerCount = () => Object.keys(S.stickers).length;
 function hero(){ if(!heroUnlocked(S.hero)) S.hero=0; return HEROES[S.hero]; }
 // 勇士成长阶段：1–5 级 1（儿童）、6–10 级 2（少年）、11–15 级 3（青少年）、16 级起 4（壮年）
-const heroStage = (lv = S.heroLv || 1) => lv <= 5 ? 1 : lv <= 10 ? 2 : lv <= 15 ? 3 : 4;
+// （测试版 __t.stage 可以固定当前阶段，自动走查用；正式版没有 __t）
+function heroStage(lv){ if(lv==null){ if(window.__t && window.__t.stage) return window.__t.stage; lv = S.heroLv || 1; } return lv <= 5 ? 1 : lv <= 10 ? 2 : lv <= 15 ? 3 : 4; }
 
 /* ================= gear system (装备系统) ================= */
 // 1. 六种品质：白、蓝、粉、紫、橙、红（颜色、掉落权重，红最稀有）
