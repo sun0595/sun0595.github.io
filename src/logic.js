@@ -2492,6 +2492,11 @@ const colorMiss = (q, v) => logColorMiss({name:cName(q.answer), hex:cHex(q.answe
 // 第 1 大关以认色和动物叫声为主：实物辨认少一半
 const K_RATE = 0.09, K_KINDS = [["fact", w=>G.fact(w)], ["spot", w=>G.spot(w)], ["color", w=>G.color(w)]];
 const kRate = (c, w) => c==="spot" && w===0 ? K_RATE/2 : K_RATE;
+const isK = q => !!q && (q.kind==="fact" || q.kind==="spot" || q.kind==="color");
+function noTwoK(gen){
+  let prev = false;
+  return () => { let q = gen(); for(let k=0; k<20 && prev && isK(q); k++) q = gen(); prev = isK(q); return q; };
+}
 function knowledgeMix(gen, w){
   let last = false;
   return () => {
@@ -2562,8 +2567,8 @@ function levelDef(w,l){
     if(useSmall()) return G.inv(it2==="d1n" ? "20n" : "20", pick(INV_FORMS));   // 糖果小镇前 9 关还是不进位不退位
     if(!chains.length || Math.random()>=.4) return G.inv(it2, pick(INV_FORMS));
     const ct = (chains[0].args||[])[0] || iv.c;
-    // 10 以上的连式：家长没打开「连式填中间数」就只求最后得数（a + b − c = ?）
-    if((CHAIN_TIERS[ct] || CHAIN_TIERS["10"]).max>10 && !qOn("chainMid")) return G.chain3(ct);
+    // 10 以上的连式：家长没打开「连式填中间数」就不出连式逆向（80 + ? − 10 = 90），换成一步的逆向题（? + 30 = 90）
+    if((CHAIN_TIERS[ct] || CHAIN_TIERS["10"]).max>10 && !qOn("chainMid")) return G.inv(it2, pick(INV_FORMS));
     const q = G.chain3(ct, true);
     return introDone ? q : chainIntro(q);
   };
@@ -2583,6 +2588,8 @@ function levelDef(w,l){
   // 家长开关和勇士擅长（拼读关整关拼读，不动）
   if(mode==="battle") g = knowledgeMix(g, w);   // 小知识、实物辨认、颜色题穿插（第五轮）
   if(mode!=="blend") g = qFilter(g, w);
+  // 知识题不连着出：qFilter 换题时会多抽几道，knowledgeMix 自己记的「上一道」可能被扔掉的题打乱，所以在最外层再把一次关
+  if(mode==="battle") g = noTwoK(g);
   return {w, l, m:lv.emoji, n:lv.name, boss:!!lv.boss, mode, g, math:qFilter(math, w), easy, hp:10 + Math.floor(i/10) + (lv.boss?5:0)};
 }
 /* 算术消除用的出题器：只要"算式 = ?"这种直接算的题（不要填空题），而且至少 6 个得数各有 2 道不同算式，
