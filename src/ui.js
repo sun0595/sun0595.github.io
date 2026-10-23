@@ -1061,8 +1061,10 @@ function qTime(){
   const base = BOARD_TIME[B.mode] ? Math.round(BOARD_TIME[B.mode]*t/Q_TIME)
     : B.q && B.q.kind==="word" ? Math.max(WORD_MIN, Math.round(WORD_TIME*t/Q_TIME)) : t;
   const slow = Math.min(SLOW_CAP, B.gs.slow);
-  return (base + B.gs.time) * (1 + slow/100) * (B.furyT||1);
+  // 最少 Q_MIN 秒（Fable 审查：每天第 46 关起 Boss 暴怒只剩 3.75 秒）
+  return Math.max(Q_MIN, (base + B.gs.time) * (1 + slow/100) * (B.furyT||1));
 }
+const Q_MIN = 4;
 /* 战斗手感（家长试玩反馈：要像成熟手游）。数字都在这里调：
    - 怪兽蓄力 = 本题限时（家长 10-22：只留一条计时条，在怪兽血条正下方）：一题 12 秒（狂暴 8 / 6.5 / 5，怪兽狂暴再 ×0.8），蓄满怪兽就打一下；
      答对一题，怪兽被打断，蓄力清零；答错立刻挨一下，蓄力也重来。
