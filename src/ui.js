@@ -1517,7 +1517,7 @@ function slashFx(col, crit, qKey, st){
       + '<polygon class="fx-star pink" points="68,52 69.5,55 73,55 70,57 71.5,60 68,58 64.5,60 66,57 63,55 66.5,55" style="--tx:26px;--ty:8px"/>'
       + '</g>';
   } else if(qKey === "purple"){
-    // 紫·雷电：紫色闪电劈下、电弧跳动、画面微闪紫光
+    // 紫·雷电：紫色闪电劈下、电弧跳动（画面微闪紫光统一在 heroAttack 命中瞬间触发一次）
     svgContent += '<path class="fx-lightning" d="M52 -35 L44 10 L60 12 L36 54 L50 52 L26 96"/>'
       + '<path class="fx-lightning core" d="M52 -35 L44 10 L60 12 L36 54 L50 52 L26 96"/>'
       + '<g class="fx-arcs">'
@@ -1525,7 +1525,6 @@ function slashFx(col, crit, qKey, st){
       + '<path class="fx-arc a2" d="M26 62 Q46 76 60 56"/>'
       + '<path class="fx-arc a3" d="M40 32 Q62 46 46 66"/>'
       + '</g>';
-    tint("#a855f7");
   } else if(qKey === "orange"){
     // 橙·火焰：火焰斩、火星上飘、烈焰拖尾、怪兽脚下一圈火环
     svgContent += '<path class="flame-trail" d="M12 92 Q28 24 96 16"/>'
@@ -1593,20 +1592,22 @@ function punchFx(crit, st){
   addFxEl(el, 480);
 }
 
-// 少年残影拖尾：冲刺时身后留 2–3 个残影
+// 少年残影拖尾：冲刺时身后留 2–3 个残影（继承 sprite 类与尺寸）
 function spawnGhostTrails(hs, mr){
   const cur = B, a = $("arena"), hr0 = hs.getBoundingClientRect(), ar0 = a.getBoundingClientRect();
   const startX = hr0.left - ar0.left, startY = hr0.top - ar0.top;
   const dashDist = Math.max(20, mr.left - hr0.right + hr0.width * 0.4);
+  const hsFont = getComputedStyle(hs).fontSize;
   [0.3, 0.65].forEach((pct, i) => {
     setTimeout(() => {
       if(B !== cur || B.over) return;
       const g = document.createElement("div");
-      g.className = "atk-ghost g" + (i + 1);
+      g.className = "sprite atk-ghost g" + (i + 1);
       g.style.left = (startX + dashDist * pct) + "px";
       g.style.top = startY + "px";
       g.style.width = hr0.width + "px";
       g.style.height = hr0.height + "px";
+      g.style.fontSize = hsFont;
       g.innerHTML = hs.innerHTML;
       g.querySelectorAll("[id]").forEach(x => x.removeAttribute("id"));
       addFxEl(g, 360);
@@ -1693,9 +1694,10 @@ function heroAttack(board){   // board = {dmg, crit} for 消除 / 连连看
       arenaCamPunch();
       groundWaveFx(wpn ? qCol(wpn) : "#ffe14d");
     }
+    const isPurple = wpn && wpn.quality === "purple";
     ms.className = "sprite"; void ms.offsetWidth; ms.className = "sprite hit"+(heavy||isRed?" heavy":"")+(crit?" crit":"");
     sfx.thud(heavy||crit||isRed); crit ? sfx.crit() : sfx.right();
-    fxAt(h.fx, crit); tint(crit ? "#ffe14d" : h.col);   // 勇士技能的特色特效照样有
+    fxAt(h.fx, crit); tint(isPurple ? "#a855f7" : crit ? "#ffe14d" : h.col);   // 紫装命中瞬间微闪紫光，其余保留暴击金光/勇士原色
     dmgPop(dmg, crit);
     shake(crit||heavy||tier>=2||isRed ? "quake" : "quakeS");
     $("arena").dataset.combo = String(tier);
