@@ -126,7 +126,7 @@ const cleanSpeech = t => String(t).replace(EMO_RE, "");
    Names (tools/art_prep.py makes them from the painted originals):
      map_<世界id>     tall picture of one world's island, levels are placed along its painted road (ART_ROADS)
      hero_base        小勇士 without armour; hero_<品质> = the whole look when wearing armour of that quality
-     weapon_<品质> / shield_<品质>  held in the right / left hand (helmets only show in the bag)
+     weapon_<品质> / shield_<品质>  held in the right / left hand (helmets: their own icon on the head, HERO_HEAD)
      mon_<世界id>_<关号 1–15>        monsters, 第 15 关 is the Boss */
 const ART = {}, ART_SIZE = {};
 for(const k in ART_D){
@@ -546,6 +546,10 @@ const gearNeed = k => '获得过<b style="color:'+GEAR_QUALITY_MAP[k].col+'">'+G
    穿了盔甲：脚下多一圈盔甲品质颜色的光环（.aura）。没有原画就是 3D 图 */
 const HERO_ART = ["", "hero2_ninja", "hero2_robot", "hero2_astronaut", "hero2_trex", "hero2_dragon", "hero2_unicorn", "hero2_king"];
 const HERO_HANDS = [{}, {}, {fr:.17, fl:.84, fy:.73}, {fr:.20, fl:.82, fy:.74}, {fr:.40, fl:.80, fy:.60}, {fr:.17, fl:.84, fy:.74}, {fr:.02, fl:.98, fy:.56, float:true}, {}];
+// 头盔戴在头顶（家长 10-23：穿上王冠要在角色身上看得见）：hx = 头的中心 x，hy = 头盔下沿压到的 y，hw = 头盔宽，都是原画的比例。
+// 国王原画自带王冠，头盔直接盖在王冠上；神秘勇士（下标 8）用小勇士的原画，同第 0 个
+const HERO_HEAD = [{hx:.49, hy:.13, hw:.51}, {hx:.5, hy:.13, hw:.51}, {hx:.5, hy:.15, hw:.48}, {hx:.5, hy:.11, hw:.48}, {hx:.55, hy:.12, hw:.44},
+  {hx:.5, hy:.15, hw:.41}, {hx:.47, hy:.14, hw:.44}, {hx:.5, hy:.1, hw:.53}, {hx:.49, hy:.13, hw:.51}];
 // 神秘勇士（下标 8）还没有原画：用小勇士的原画画成剪影 + 金色光效（CSS .a-h8 / .mys）
 const heroArtFor = (i, eq) => HEROES[i] && HEROES[i].mystic ? art("hero_base") : i===0 ? ((eq && eq.armor && art("hero_"+eq.armor.quality)) || art("hero_base")) : art(HERO_ART[i]);
 // 勇士选择页的头像（没解锁的在选择页里涂成剪影）
@@ -696,9 +700,12 @@ function avatarHTML(eq){
     const hand = (slot, side) => eq[slot] && art(slot+"_"+eq[slot].quality) ? artTag(art(slot+"_"+eq[slot].quality), "hand "+side+" q-"+eq[slot].quality, "", "--qc:"+qCol(eq[slot])) : "";
     // fists sit a little differently per look (小勇士的盔甲品质，或别的勇士 h1…h7)
     const look = hi ? "h"+hi : eq.armor && art("hero_"+eq.armor.quality) ? eq.armor.quality : "base";
-    const grip = ["fr","fl","fy"].filter(k=>hp[k]!=null).map(k=>"--"+k+":"+hp[k]).join(";");
+    const hd = HERO_HEAD[hi] || HERO_HEAD[0];
+    const grip = ["fr","fl","fy"].filter(k=>hp[k]!=null).map(k=>"--"+k+":"+hp[k]).concat(["hx","hy","hw"].map(k=>"--"+k+":"+hd[k])).join(";");
+    // 头盔：用这件头盔自己的 3D 图（铁盔 / 王冠 / 战帽 / 法帽，不用界面线条图标），带品质颜色的光
+    const helm = eq.helmet ? '<span class="helm q-'+eq.helmet.quality+'" style="--qc:'+qCol(eq.helmet)+'">'+imgQ(eq.helmet.e)+'</span>' : '';
     const aura = eq.armor ? '<span class="aura q-'+eq.armor.quality+'" style="--qc:'+qCol(eq.armor)+'"></span>' : '';
-    return '<span class="av lay a-'+look+(hp.float?" float":"")+'"'+(grip?' style="'+grip+'"':'')+'>'+aura+artTag(base, "ei art", img(hero().e))+hand("weapon","rh")+hand("shield","lh")+'</span>';
+    return '<span class="av lay a-'+look+(hp.float?" float":"")+'"'+(grip?' style="'+grip+'"':'')+'>'+aura+artTag(base, "ei art", img(hero().e))+helm+hand("weapon","rh")+hand("shield","lh")+'</span>';
   }
   return '<span class="av">'+img(hero().e)+SLOT_KEYS.map(k=>eq[k] ? '<span class="ag '+k+' q-'+eq[k].quality+'" style="--qc:'+qCol(eq[k])+'">'+img(eq[k].e)+'</span>' : '').join("")+'</span>';
 }

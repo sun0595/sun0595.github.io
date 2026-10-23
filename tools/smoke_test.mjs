@@ -510,6 +510,10 @@ async function playAll(view) {
   const runBag = await p.evaluate(() => __t.S.bag.length);
   await tap('.card[data-i="0"]'); await p.waitForTimeout(700); await shot('15b-run-card');
   if (await p.evaluate(() => __t.S.bag.length) !== runBag + 1) problems.push(`[${view.name}] run treasure card did not give gear`);
+  // 穿上的头盔要戴在勇士头上（家长 10-23：穿上王冠战斗里看不到）
+  const helmOn = await p.evaluate(() => { const S = __t.S, keep = S.equipped.helmet; S.equipped.helmet = { id: 'hx', slot: 'helmet', quality: 'orange', name: '王冠', e: '👑', lv: 1, exp: 0, affixes: [] };
+    const d = document.createElement('div'); d.innerHTML = __t.avatarHTML(S.equipped); const ok = !!d.querySelector('.helm img'); S.equipped.helmet = keep; return ok; });
+  if (!helmOn) problems.push(`[${view.name}] worn helmet should be drawn on the hero (.helm)`);
   // 颜色题答错不扣心：这里关掉颜色题，免得第一题刚好是颜色题
   // 当天第 16 次通关前起进入「狂暴 ×2」：怪兽每次攻击扣 2 颗心、每题 10 秒
   await p.evaluate(k => { const s = JSON.parse(localStorage.getItem(k)); s.mapWorld = 0; s.equipped = { weapon: null, helmet: null, armor: null, shield: null }; s.qOn = Object.assign(s.qOn || {}, { color: false }); localStorage.setItem(k, JSON.stringify(s)); }, V1);
